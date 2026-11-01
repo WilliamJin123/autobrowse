@@ -238,6 +238,7 @@ function formWalk(
 ): Walk<SignInContext> {
   let submitted = false;
   let typedPrevious = false;
+  let typedUsername = false;
   const fail = (why: string): never => {
     throw new LoginFailed(site, why);
   };
@@ -358,9 +359,11 @@ function formWalk(
       looks: "the login form: username and password boxes",
       shows: [spec.username, spec.password],
       async act({ fp }) {
-        await fp.act({ kind: "fill", value: cred.username }, spec.username, {
-          goal: "type username",
-        });
+        // retyping the address makes Apple's widget drop the password box again
+        if (!typedUsername)
+          await fp.act({ kind: "fill", value: cred.username }, spec.username, {
+            goal: "type username",
+          });
         await submit(fp, password, "type password");
       },
     },
@@ -376,6 +379,9 @@ function formWalk(
         await fp.act({ kind: "click" }, spec.next ?? spec.submit, {
           goal: "continue past username",
         });
+        typedUsername = true;
+        // password shows late (Apple); settle before the next screen reads
+        if (spec.next) await fp.has(spec.password, 8000);
       },
     },
     {
