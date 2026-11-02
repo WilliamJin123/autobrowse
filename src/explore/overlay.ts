@@ -677,8 +677,10 @@ export function overlayFor(startOn: boolean) {
       }
     },
     /** Before an act: the target flashes and the panel says what is done. */
-    async flash(page: Page, hints: Hints, doing: string): Promise<void> {
+    /** `thought`: the act's goal; it stays on the panel until the next one. */
+    async flash(page: Page, hints: Hints, doing: string, thought?: string): Promise<void> {
       if (!enabled) return;
+      if (thought) state.thought = clipLine(thought, 240);
       // Looked up with boxes off too: it decides whether the panel lets the press through.
       state.aim = await boxOf(page, hints);
       state.aimed = true;

@@ -1834,7 +1834,8 @@ async function serve(
       await overlay.flash(
         page,
         c.hints as Hints,
-        `${c.cmd}${"goal" in c && c.goal ? `: ${c.goal}` : ""}`,
+        c.cmd,
+        "goal" in c && c.goal ? String(c.goal) : undefined,
       );
     switch (c.cmd) {
       case "overlay": {

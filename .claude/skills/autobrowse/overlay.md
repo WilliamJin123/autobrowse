@@ -25,18 +25,15 @@ It is off for every screenshot and every film frame. Nothing depends on it, so r
 
 ## Buttons
 
-- `[●]` (default): the panel takes clicks (expand a row, scroll the trace). The page never sees them.
-- `[○]`: clicks pass through the panel to the page. Only the buttons and the grip take them.
-  The panel fades to a third, so the mode shows. A hover on a button brings it half up.
-- `[▸]`/`[◂]` moves it to the other side. `[_]`/`[+]` folds it.
-- `[×]` hides it to a chip at the bottom (`▌autobrowse ○ show`). Click the chip to show it again.
-- Drag the top corner grip to resize it.
-- Each choice carries to the next page. While a command runs, the whole panel lets clicks through and fades a little.
+- Your clicks land on the panel. The page never sees them. The agent's acts go through it.
+- Drag the bar to move it. Drag any corner to size it; the text scales with its width.
+- `[◆]`/`[◇]` shows or hides the boxes. `[_]` minimizes it to a tab on the left edge. Click the tab to show it again.
+- Wheel over the trace to scroll it, live. Each choice carries to the next page.
 
 ## Drive it (explore)
 
-- `{"cmd":"overlay","goal":"…","step":"3 of 8","thought":"…"}`: panel fields. Set the goal
-  first, then a thought before each act that needs a why.
+- Set the goal once: `{"cmd":"overlay","goal":"…","step":"3 of 8"}`.
+- Give each act a short `goal` (why you act). The panel shows it as the thought. Send no overlay call per act.
 - `refs:[{n,hints}]` boxes controls with numbers; `clear:true` empties the fields.
 - `on:false` takes it down and keeps the trace; `on:true` draws it again.
 - It takes no part in your acts and no row in the run's history.

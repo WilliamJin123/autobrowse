@@ -32,7 +32,9 @@ describe("headed overlay", () => {
       expect(drawn).toEqual({ drawn: true, boxes: 2 });
       expect(await page.evaluate(layers)).toBe(1);
       expect(await page.locator("body").ariaSnapshot()).toBe(before);
-      await o.flash(page, { role: "button", name: "Save" }, "click: save");
+      await o.flash(page, { role: "button", name: "Save" }, "click", "save the draft");
+      // The act's goal is the thought: no separate overlay call per act.
+      expect(await page.evaluate(`${ui}.s.thought`)).toBe("save the draft");
       // The layer takes no press: the button under it gets the click.
       await page.mouse.click(10, 10);
       expect(await page.getByRole("button").textContent()).toBe("Hit");
