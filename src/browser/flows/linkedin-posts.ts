@@ -342,7 +342,15 @@ export interface Posts {
   dropped: number;
   /** Why the read stopped: `max` posts, or the list ran out. */
   ended?: "max" | "cursor" | "end";
+  /** Where the page stood when the list ran out: at its foot or not, and its last words. */
+  foot?: { atFoot: boolean; height: number; tail: string };
 }
+
+const FOOT = `(() => {
+  const e = document.scrollingElement || document.documentElement;
+  const t = document.body.innerText;
+  return { atFoot: e.scrollTop + innerHeight >= e.scrollHeight - 200, height: e.scrollHeight, tail: t.slice(-400) };
+})()`;
 
 /** LinkedIn's own query: filters quoted (`datePosted="past-week"`), newest first. */
 export const postsSearchUrl = (
@@ -422,7 +430,11 @@ export async function readPosts(
       return true;
     },
   });
-  return { posts: rows, dropped: dropped.size, ended };
+  const foot =
+    ended === "end"
+      ? await fp.page.evaluate<Posts["foot"]>(FOOT).catch(() => undefined)
+      : undefined;
+  return { posts: rows, dropped: dropped.size, ended, ...(foot ? { foot } : {}) };
 }
 
 export const linkedinSearchPosts = defineFlow<SearchPostsInput, Posts>({
@@ -541,8 +553,6 @@ export interface PostList {
   paging: { start: number; count: number };
   /** Cards that named no post urn. */
   dropped: number;
-  /** Why the read stopped: `max` posts, or the list ran out. */
-  ended?: "max" | "cursor" | "end";
 }
 
 /** The profile at `/in/me/`, as `https://www.linkedin.com/in/<vanity>/`. */
