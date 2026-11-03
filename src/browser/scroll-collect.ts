@@ -25,6 +25,8 @@ export interface ScrollCollect<T> {
   scroll?: () => Promise<void>;
   /** ms to let new rows load after a scroll. */
   settleMs?: number;
+  /** A step with nothing new: load more by hand ("Show more results"); true when it did. Once a dry spell. */
+  more?: () => Promise<boolean>;
   /** Tests: a fixed source for the step's draws. */
   random?: Random;
 }
@@ -54,6 +56,7 @@ export async function scrollCollect<T>(fp: FlowPage, o: ScrollCollect<T>): Promi
   const random = o.random ?? Math.random;
   const rows = new Map<string, T>();
   let idle = 0;
+  let pressed = false;
   for (let i = 0; i < MOST_SCROLLS; i++) {
     let fresh = 0;
     for (const row of await o.read()) {
@@ -65,7 +68,10 @@ export async function scrollCollect<T>(fp: FlowPage, o: ScrollCollect<T>): Promi
       fresh++;
       if (rows.size >= o.max) return { rows: [...rows.values()], ended: "max" };
     }
-    idle = fresh ? 0 : idle + 1;
+    if (fresh) idle = 0;
+    else if (!pressed && o.more && (await o.more())) pressed = true;
+    else idle++;
+    if (fresh) pressed = false;
     if (idle >= (o.idle ?? IDLE)) break;
     if (o.scroll) await o.scroll();
     else {

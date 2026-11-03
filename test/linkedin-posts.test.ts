@@ -296,7 +296,10 @@ describe("linkedin posts: the SDUI search page (fixture mapped live 2026-10-07)"
 
 describe("linkedin posts: the flows and the routes", () => {
   const scripted = (screens: RawPost[][]) => {
-    const { fp, acts } = fakePage({ text: [""], present: (h) => h.name !== "/^don.t allow$/i" });
+    const { fp, acts } = fakePage({
+      text: [""],
+      present: (h) => h.name !== "/^don.t allow$/i" && !/more results/.test(String(h.name)),
+    });
     const opened: string[] = [];
     fp.open = async (url: string) => {
       opened.push(url);
@@ -351,6 +354,16 @@ describe("linkedin posts: the flows and the routes", () => {
       "click menuitem",
     ]);
     expect(out.posts.map((p) => p.urn)).toEqual(["urn:li:activity:7001", "urn:li:ugcPost:7002"]);
+  });
+
+  it("presses Show more results where the list stops, and says why it ended", async () => {
+    const { fp, acts } = scripted([[CLASSIC], [CLASSIC], [CLASSIC, SDUI]]);
+    let more = 0;
+    fp.has = async (h) => !h.role || (/more results/.test(String(h.name)) && more++ === 0);
+    const out = await linkedinCompanyPosts.run(fp, { company: "sample-co", max: 5 });
+    expect(acts.map((a) => a.hints.name)).toEqual(["/^(show|see) more results$/i"]);
+    expect(out.posts.map((p) => p.urn)).toEqual(["urn:li:activity:7001", "urn:li:ugcPost:7002"]);
+    expect(out.ended).toBe("end");
   });
 
   it("company: no sort menu, the page is read as it is", async () => {

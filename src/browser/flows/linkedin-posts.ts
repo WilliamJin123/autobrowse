@@ -1,7 +1,8 @@
 /**
  * Recent posts by others, for wren's comment loop: a content search for a
  * keyword, or a company's Posts tab. Read only: it opens one page and
- * scrolls; on the Posts tab it also picks "Sort by: Recent". It never clicks
+ * scrolls (and presses "Show more results" where the list stops); on the Posts
+ * tab it also picks "Sort by: Recent". It never clicks
  * a post, a reaction, follow or connect.
  *
  * A post is only worth reading here with its urn (the comment route needs
@@ -339,6 +340,8 @@ export interface Posts {
   posts: FeedPost[];
   /** Cards that named no post urn. */
   dropped: number;
+  /** Why the read stopped: `max` posts, or the list ran out. */
+  ended?: "max" | "cursor" | "end";
 }
 
 /** LinkedIn's own query: filters quoted (`datePosted="past-week"`), newest first. */
@@ -367,6 +370,7 @@ export const companyPostsUrl = (company: string): string => {
 
 const SORT_TOP: Hints = { role: "button", name: "/^sort by:\\s*top$/i" };
 const SORT_RECENT: Hints = { role: "button", name: "/^sort by:\\s*recent$/i" };
+const SHOW_MORE: Hints = { role: "button", name: "/^(show|see) more results$/i" };
 const RECENT: Hints = { role: "menuitem", name: "/^recent$/i" };
 
 /** The Posts tab's "Sort by: Top" menu set to Recent; a page without the menu is read as it is. */
@@ -399,7 +403,7 @@ export async function readPosts(
   const now = new Date();
   // Dropped cards have no urn to key on: their opening text stands in, so a card seen twice counts once.
   const dropped = new Set<string>();
-  const { rows } = await scrollCollect(fp, {
+  const { rows, ended } = await scrollCollect(fp, {
     read: async () => {
       const out: FeedPost[] = [];
       for (const raw of await fp.page.evaluate<RawPost[]>(READ_POSTS)) {
@@ -412,8 +416,13 @@ export async function readPosts(
     },
     key: (p) => p.urn,
     max,
+    more: async () => {
+      if (!(await fp.has(SHOW_MORE, 1_500))) return false;
+      await fp.act({ kind: "click" }, SHOW_MORE, { goal: "load more posts" });
+      return true;
+    },
   });
-  return { posts: rows, dropped: dropped.size };
+  return { posts: rows, dropped: dropped.size, ended };
 }
 
 export const linkedinSearchPosts = defineFlow<SearchPostsInput, Posts>({
@@ -532,6 +541,8 @@ export interface PostList {
   paging: { start: number; count: number };
   /** Cards that named no post urn. */
   dropped: number;
+  /** Why the read stopped: `max` posts, or the list ran out. */
+  ended?: "max" | "cursor" | "end";
 }
 
 /** The profile at `/in/me/`, as `https://www.linkedin.com/in/<vanity>/`. */

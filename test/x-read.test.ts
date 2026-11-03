@@ -186,6 +186,26 @@ describe("scrollCollect", () => {
     expect(got).toEqual({ rows: ["pin", "n3", "n2"], ended: "cursor" });
   });
 
+  it("presses for more once a dry spell, and ends when that brings nothing", async () => {
+    const shown = ["a", "b"];
+    let presses = 0;
+    const f = feedPage(shown, 5);
+    const got = await scrollCollect(f.fp, {
+      read: async () => [...shown],
+      key: (r) => r,
+      max: 50,
+      idle: 2,
+      settleMs: 0,
+      more: async () => {
+        presses++;
+        if (presses === 1) shown.push("c", "d");
+        return true;
+      },
+    });
+    expect(got).toEqual({ rows: ["a", "b", "c", "d"], ended: "end" });
+    expect(presses).toBe(2);
+  });
+
   it("ends after idle scrolls bring nothing new", async () => {
     const f = feedPage(["a", "b"]);
     const got = await scrollCollect(f.fp, {
