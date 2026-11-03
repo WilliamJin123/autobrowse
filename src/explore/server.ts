@@ -166,7 +166,7 @@ import {
 } from "./commands.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES } from "./lease.js";
-import { marksFor, missed } from "./marks.js";
+import { type Box, marksFor, missed } from "./marks.js";
 import { overlayFor, traceRow } from "./overlay.js";
 
 export { type Command, commandSchema, placeHint } from "./commands.js";
@@ -913,6 +913,10 @@ async function serve(
       const pic = await picture();
       if (pic) stepPics.push(pic);
     });
+    await overlay.marked(
+      page,
+      taken.marks.map((m, i) => ({ n: m.n, box: boxes[i] as Box })),
+    );
     if (capture)
       stepBoxes = boxes.map((b) => [
         Math.round(b.x),

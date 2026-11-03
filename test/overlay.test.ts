@@ -223,6 +223,27 @@ describe("headed overlay", () => {
     }
   });
 
+  it("a marks shot's boxes stay drawn in its colours; the boxes button hides and shows them", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+      await page.setContent(PAGE);
+      const o = overlayFor(true);
+      await o.marked(page, [{ n: 1, box: { x: 20, y: 40, w: 60, h: 20 } }]);
+      expect(await page.evaluate(`${ui}.s.boxes.length`)).toBe(1);
+      const marks = await btnAt(page, "marks");
+      await page.mouse.click(marks.x, marks.y);
+      expect(await page.evaluate(`${ui}.marks`)).toBe(false);
+      // Kept while off: on again, they come back with no new shot.
+      expect(await page.evaluate(`${ui}.s.boxes.length`)).toBe(1);
+      // An act changes the page: its marks go.
+      await o.after(page);
+      expect(await page.evaluate(`${ui}.s.boxes.length`)).toBe(0);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("a row's note says where the page went and what changed, never a value", () => {
     const r = traceRow(
       { cmd: "click", hints: { role: "button", name: "Go" } } as Command,

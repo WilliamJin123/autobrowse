@@ -208,7 +208,8 @@ async function findAll(page: Page, attr: string): Promise<Found[]> {
   return kept.map(({ n, box, hints: h }) => ({ n, box, hints: h }));
 }
 
-const COLOURS = ["#e5484d", "#0090ff", "#30a46c", "#f76b15", "#8e4ec6", "#d6409f"];
+/** Mark n's colour is `MARK_COLOURS[n % length]`: the shot and the overlay draw the same box. */
+export const MARK_COLOURS = ["#e5484d", "#0090ff", "#30a46c", "#f76b15", "#8e4ec6", "#d6409f"];
 
 /** In the page: the numbered boxes, in a layer no press reaches; `undefined` takes it away. */
 const layerScript = (attr: string, found: Found[] | undefined) => `(() => {
@@ -220,7 +221,7 @@ const layerScript = (attr: string, found: Found[] | undefined) => `(() => {
   host.setAttribute(NAME, '');
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none';
   const root = host.attachShadow({ mode: 'closed' });
-  const COLOURS = ${JSON.stringify(COLOURS)};
+  const COLOURS = ${JSON.stringify(MARK_COLOURS)};
   for (const { n, box } of found) {
     const c = COLOURS[n % COLOURS.length];
     const b = document.createElement('div');

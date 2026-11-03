@@ -1,7 +1,8 @@
 /**
  * The headed overlay (designs/2026-10-27-explore-gaps.md): what the agent
  * sees and why it acts, drawn over the page for a person who watches. Boxes
- * carry the outline's ref numbers; the control about to be acted on flashes;
+ * carry the outline's ref numbers, or a marks shot's (its colours, kept until
+ * the next act); the control about to be acted on flashes;
  * a terminal-style panel holds the goal, the thought, the act and a live
  * trace of every command. It sits in a closed shadow root outside `body` (so
  * the aria tree never reads it) and is taken off for every screenshot.
@@ -25,7 +26,7 @@ import type { Page } from "playwright";
 import { drawsOn } from "../browser/bare.js";
 import { type Hints, locate } from "../browser/locate.js";
 import type { Command } from "./commands.js";
-import type { Box } from "./marks.js";
+import { type Box, MARK_COLOURS } from "./marks.js";
 
 /** One command as the trace shows it; never a typed value. */
 export interface TraceRow {
@@ -200,6 +201,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const ui = window[K] = { ...${JSON.stringify(prefs)}, lastN: -1, host: null };
   ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
   const el = (tag, cls, text, css) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; };
+  const COLOURS = ${JSON.stringify(MARK_COLOURS)};
   const at = (b) => 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;';
   // In the viewport, at least a corner of the bar.
   const clamp = () => {
@@ -212,8 +214,9 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const root = host.attachShadow({ mode: 'closed' });
   const style = el('style', null, [
         '*{box-sizing:border-box}',
-        '.box{position:fixed;border:1.5px dashed;border-radius:2px}',
-        '.tag{position:absolute;left:-1.5px;font:700 10px/13px ui-monospace,Menlo,monospace;color:${T.onAccent};background:${T.accent};padding:0 4px}',
+        // As the marks shot draws them (marks.ts layerScript).
+        '.box{position:fixed;border:2px solid}',
+        '.tag{position:absolute;left:-2px;font:bold 11px/14px monospace;color:#fff;padding:0 3px}',
         '.target{position:fixed;border:2px solid ${T.accent};animation:pulse .9s ease-out infinite}',
         '@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(165,150,214,.75)}100%{box-shadow:0 0 0 12px rgba(165,150,214,0)}}',
         // The whole panel takes the pointer, so a person's click never reaches the page under it.
@@ -411,8 +414,9 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     marks.textContent = '';
     if (ui.marks) {
       for (const { n, box } of s.boxes) {
-        const b = el('div', 'box', null, at(box) + 'border-color:${T.accent}');
-        b.appendChild(el('div', 'tag', String(n), box.y < 14 ? 'top:0' : 'top:-14px'));
+        const c = COLOURS[n % COLOURS.length];
+        const b = el('div', 'box', null, at(box) + 'border-color:' + c);
+        b.appendChild(el('div', 'tag', String(n), (box.y < 16 ? 'top:0' : 'top:-16px') + ';background:' + c));
         marks.appendChild(b);
       }
       if (s.target) marks.appendChild(el('div', 'target', null, at(s.target)));
@@ -635,6 +639,12 @@ export function overlayFor(startOn: boolean) {
       await draw(page);
       // Boxes off: no count, so a 0 never reads as controls missing.
       return { drawn: true, ...(prefs.marks ? { boxes: state.boxes.length } : {}) };
+    },
+    /** A marks shot's numbered boxes stay on the page; the boxes button shows and hides them. */
+    async marked(page: Page, boxes: Array<{ n: number; box: Box }>): Promise<void> {
+      if (!enabled) return;
+      state.boxes = boxes;
+      await draw(page);
     },
     /** The bar's right side (seed, pace); drawn with the next change. */
     tag(meta: string | null): void {
