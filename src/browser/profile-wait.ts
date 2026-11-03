@@ -24,6 +24,7 @@ import {
   profileBusyOf,
   readExplorers,
 } from "./browsers.js";
+import { joinedRun, stepKey } from "./joined-run.js";
 import { listProcs, type Proc } from "./reap.js";
 
 /** The status a call that waited out its bound goes back under: nothing sent, ask again. */
@@ -145,7 +146,13 @@ export async function waitForProfile<T>(
   ctx: WaitContext,
   step: string,
   fn: () => Promise<T>,
-  o: { retry?: RunOptions<T>; take?: boolean; wait?: ProfileWait } = {},
+  o: {
+    retry?: RunOptions<T>;
+    take?: boolean;
+    wait?: ProfileWait;
+    /** The invocation id: a replay joins the try a dropped stream left running (`joinedRun`). */
+    invocation?: string;
+  } = {},
 ): Promise<T> {
   const w = { ...PROFILE_WAIT_DEFAULTS, ...o.wait };
   const once = async (): Promise<T | BusyAnswer> => {
@@ -168,7 +175,10 @@ export async function waitForProfile<T>(
   let waited = 0;
   for (let n = 1; ; n++) {
     const name = n === 1 ? step : `${step} (try ${n})`;
-    const got = (await ctx.run(name, once, o.retry as RunOptions<T | BusyAnswer>)) as
+    const inv = o.invocation;
+    const key = inv ? stepKey(ctx, inv, name) : null;
+    const tryOnce = key ? () => joinedRun(key, once) : once;
+    const got = (await ctx.run(name, tryOnce, o.retry as RunOptions<T | BusyAnswer>)) as
       | T
       | BusyAnswer;
     if (!isBusyAnswer(got)) return got;

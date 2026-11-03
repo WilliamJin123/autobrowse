@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { currentCall, markSubmitted } from "../src/browser/attempt.js";
 import { ProfileBusy } from "../src/browser/browsers.js";
+import { forgetRuns } from "../src/browser/joined-run.js";
 import { HttpError } from "../src/clients/http.js";
 import { memorySiteCalls } from "../src/runs/calls.js";
 import type { SiteFacade } from "../src/sites/facade.js";
@@ -8,10 +9,10 @@ import { DESK_SERVICE, SITES_SERVICE, SiteError, sitesService } from "../src/sit
 import { sentWords } from "../src/sites/service.js";
 
 /** A stand-in Context: `run` calls through and keeps each step's name and retry policy. */
-function ctxOf(headers: Record<string, string> = {}) {
+function ctxOf(headers: Record<string, string> = {}, id = "inv_1") {
   const steps: { name: string; attempts: number | undefined }[] = [];
   const ctx = {
-    request: () => ({ id: "inv_1", headers: new Map(Object.entries(headers)) }),
+    request: () => ({ id, headers: new Map(Object.entries(headers)) }),
     run: async <T>(
       name: string,
       fn: () => Promise<T>,
@@ -61,6 +62,8 @@ const h = (
 ).service;
 
 describe("sites service", () => {
+  // each test reuses an invocation id; a real one is a replay, which joins
+  beforeEach(forgetRuns);
   it("a read retries, a write runs once; the input passes through", async () => {
     const { ctx, steps } = ctxOf();
     expect(await h.call?.(ctx, { site: "linkedin", method: "GET", path: "/rest/posts" })).toEqual({
@@ -84,14 +87,18 @@ describe("sites service", () => {
       path: "/rest/posts",
     });
     expect(calls.at(-1)).toMatchObject({ from: { caller: "wren:demo", invocation: "inv_1" } });
-    await h.call?.(ctxOf({ "x-caller": "wren:demo" }).ctx, {
+    await h.call?.(ctxOf({ "x-caller": "wren:demo" }, "inv_2").ctx, {
       site: "linkedin",
       method: "GET",
       path: "/rest/posts",
       caller: "wren:research",
     });
     expect(calls.at(-1)).toMatchObject({ from: { caller: "wren:research" } });
-    await h.call?.(ctxOf().ctx, { site: "linkedin", method: "GET", path: "/rest/posts" });
+    await h.call?.(ctxOf({}, "inv_3").ctx, {
+      site: "linkedin",
+      method: "GET",
+      path: "/rest/posts",
+    });
     expect(calls.at(-1)).toMatchObject({ from: { caller: null } });
   });
 

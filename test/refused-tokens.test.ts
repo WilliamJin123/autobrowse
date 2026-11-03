@@ -5,9 +5,10 @@
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { linkedinOauthConsent } from "../src/browser/flows/linkedin-oauth-consent.js";
+import { forgetRuns } from "../src/browser/joined-run.js";
 import { HttpError, httpClient, mustOk } from "../src/clients/http.js";
 import { memorySink } from "../src/deps/sink.js";
 import type { SiteFacade } from "../src/sites/facade.js";
@@ -314,6 +315,8 @@ describe("refused tokens", () => {
 });
 
 describe("the desk queues re-makes", () => {
+  // every ctx here is invocation inv_1; a real reuse is a replay, which joins
+  beforeEach(forgetRuns);
   /** A stand-in Context that keeps every one-way send. */
   function ctxOf() {
     const sent: { service: string; handler: string; req: unknown; opts: unknown }[] = [];

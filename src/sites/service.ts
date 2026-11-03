@@ -644,7 +644,12 @@ export function sitesService(
         step,
         () => sendLeg(req, key, spec, (fn) => recorded(calls, base, ++attempt, fn), from),
         // A write may take its profile from an explore session nobody is driving.
-        { retry: WRITE_RETRY, take: true, ...(o.wait ? { wait: o.wait } : {}) },
+        {
+          retry: WRITE_RETRY,
+          take: true,
+          invocation: ctx.request().id,
+          ...(o.wait ? { wait: o.wait } : {}),
+        },
       );
     } catch (err) {
       // A profile held past the bound: nothing was asked of the site.
@@ -739,7 +744,12 @@ export function sitesService(
                 ),
               ),
             // A write may take its profile from an explore session nobody is driving.
-            { retry, take: write, ...(o.wait ? { wait: o.wait } : {}) },
+            {
+              retry,
+              take: write,
+              invocation: ctx.request().id,
+              ...(o.wait ? { wait: o.wait } : {}),
+            },
           );
         };
         try {

@@ -29,6 +29,9 @@ const diskJournal = () => fileSendJournal(join(dir, "sends"));
 /** The wait before the one verify read in a test. */
 const WAIT = 1;
 
+/** Invocation ids unique across builds: a reused one is a replay, which joins (`joinedRun`). */
+let n = 0;
+
 function build(
   opts: { wait?: { boundMs: number; pausesMs: number[] }; gapMs?: Record<string, number> } = {},
 ) {
@@ -40,7 +43,6 @@ function build(
     ...(opts.gapMs ? { verifyGapMs: opts.gapMs } : {}),
   }) as unknown as { service: Record<string, (ctx: never, req: unknown) => Promise<unknown>> };
   const sleeps: number[] = [];
-  let n = 0;
   const ctx = () =>
     ({
       request: () => ({ id: `inv_${++n}`, headers: new Map<string, string>() }),
