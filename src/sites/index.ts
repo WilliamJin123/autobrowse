@@ -40,7 +40,11 @@ export {
   SITES_SERVICE,
   type SitesService,
   sitesService,
-  VERIFY_PAUSES_MS,
+  VERIFY_AGAIN_MS,
+  VERIFY_GAP_MS,
+  VERIFY_HELD_MS,
+  VERIFY_RETRY_MS,
+  VERIFY_WAIT_MS,
 } from "./service.js";
 export { THREADS_MAX, threads, threadsOAuth } from "./threads.js";
 export { tiktok } from "./tiktok.js";

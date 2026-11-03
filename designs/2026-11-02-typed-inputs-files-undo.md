@@ -64,7 +64,10 @@ An `unknown` has two causes. Each needs its own clock.
 | C. A lag window per site before `absent` counts | **Chosen for lagging lists** |
 | D. Fold the verify into the account's scheduled read until it settles | **Chosen for lagging lists**: no extra reads, inside the caps |
 
-- Health: the signals the system already has (the desk's need_login and refused-token holds, the lane holds). No new signal.
+- Health is autobrowse's call: it holds the signals (refused tokens, a read's `need_login`). wren keeps only per-loop holds, so it cannot judge an account.
+  - A refused token on the account: no read; `healthy` in an hour.
+  - A read that failed on a login wall: `healthy` in an hour. Any other failure: in 10 min.
+  - The desk is off: wren's ask times out; wren asks again in 10 min.
 - A verify is a read with its own bucket (WA-982). The LinkedIn rule of one read an hour holds.
 - Still `unknown` after 48 h: it goes to a person.
 
@@ -74,8 +77,9 @@ How:
   - A list that lags, is cut or ranked: `time`, after the site's gap or 30 min.
   - No verify read on the route: `null`, a person decides.
 - The fixed pauses go. A fresh send gets one read after 30 s; what is left is wren's to schedule.
-- wren: `send_attempts` keeps `recheck_at` and `recheck_when`. One loop for every item kind (dm, comment, thread, note, private, sdm, draft):
-  - due rows whose account has no hold (need_login, refused token, cap) ask `sites.verdict` by send key, which only reads;
+- wren: `send_attempts` keeps `recheck_at`, `recheck_when` and the write keys (`writes`). One loop for every item kind (dm, thread, comment, onpost, private, draft):
+  - a row's `send_key` is the send's scope; autobrowse keys each write as scope + route (`writeKey`). So the send records each keyed write's key and service (`sites` or `desk`: the journal is on the machine that ran it);
+  - due rows ask that service's `verdict` by write key, which only reads;
   - `sent`: the item settles as a person's Mark posted does (`settle-send.ts`);
   - `not_sent`: it stays for a person, marked checked;
   - `unknown`: the next `next` replaces the old one.
@@ -109,4 +113,6 @@ Rules:
 - 2026-11-02: A file input is an S3 object ref, presigned at use and cached by sha256 per owner (William: "as long as it scales to multi user and … on a server").
 - 2026-11-02: A failed verify read runs again when health returns, not on a timer (William). A lagging list waits for the site's window.
 - 2026-11-02: No automatic repost, for posts and outreach (William: "duplicate posts might decrease trust").
+- 2026-11-02: wren stores each keyed write's key and service on the row, and asks `verdict` by it (my call). Rejected: a verify-only flag on every kind's send handler, rerun as the DM recheck does: more plumbing, and the reads before the write run again against the caps.
+- 2026-11-02: Health is judged in autobrowse's `verdict`, not by wren (my call): autobrowse has the refused tokens and the read's error code; wren has only per-loop holds.
 - 2026-11-02: Undo steps clean only private leftovers; a public object is never deleted (William).

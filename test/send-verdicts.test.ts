@@ -12,9 +12,12 @@ import {
   fileSendJournal,
   memorySendJournal,
   type SendJournal,
+  SiteError,
   type SiteFacade,
   sitesService,
-  VERIFY_PAUSES_MS,
+  VERIFY_AGAIN_MS,
+  VERIFY_HELD_MS,
+  VERIFY_RETRY_MS,
 } from "../src/sites/index.js";
 import type { SendVerdict } from "../src/sites/verdict.js";
 import { platform, resetPlatform, scratchFacade } from "./send-rig.js";
@@ -23,8 +26,8 @@ let dir: string;
 let journal: SendJournal;
 const diskJournal = () => fileSendJournal(join(dir, "sends"));
 
-/** The pauses before the three verify reads in a test: small, and different. */
-const PAUSES = [1, 2, 3];
+/** The wait before the one verify read in a test. */
+const WAIT = 1;
 
 function build(
   opts: { wait?: { boundMs: number; pausesMs: number[] }; gapMs?: Record<string, number> } = {},
@@ -32,7 +35,7 @@ function build(
   const facade = scratchFacade(join(dir, "started"));
   const svc = sitesService(facade, "sites_verdicts", undefined, null, {
     journal,
-    verifyPausesMs: PAUSES,
+    verifyWaitMs: WAIT,
     ...(opts.wait ? { wait: opts.wait } : {}),
     ...(opts.gapMs ? { verifyGapMs: opts.gapMs } : {}),
   }) as unknown as { service: Record<string, (ctx: never, req: unknown) => Promise<unknown>> };
@@ -126,7 +129,7 @@ describe("a keyed write answers a verdict", () => {
     const { call, sleeps } = build();
     const first = (await call(say("a comment that went out", "k-reddit"))) as SendVerdict;
     expect(first).toMatchObject({ verdict: "sent", how: "verified", id: "c1" });
-    expect(sleeps).toEqual([PAUSES[0]]);
+    expect(sleeps).toEqual([WAIT]);
     // A rerun with the same key answers the same verdict; the write ran once.
     const again = await call(say("a comment that went out", "k-reddit"));
     expect(again).toEqual(first);
@@ -143,9 +146,12 @@ describe("a keyed write answers a verdict", () => {
     };
     expect(first.verdict).toBe("unknown");
     expect(first.reason).toMatch(/after processing/);
-    // Three reads, the pauses between, no more.
-    expect(sleeps).toEqual(PAUSES);
-    expect(platform.reads).toBe(3);
+    // One read; the caller asks again after the lag window, no timer here.
+    expect(sleeps).toEqual([WAIT]);
+    expect(platform.reads).toBe(1);
+    const next = (first as { next?: { at: string; when: string } }).next;
+    expect(next?.when).toBe("time");
+    expect(Date.parse(next?.at ?? "") - Date.now()).toBeGreaterThan(VERIFY_AGAIN_MS - 60_000);
     // The video shows now. The same key reads again; it never publishes again.
     showVideos();
     const again = await call({ ...VIDEO, input: { title: "my demo" }, sendKey: "k-tt" });
@@ -206,7 +212,7 @@ describe("a keyed write answers a verdict", () => {
         input: { note: "n" },
         sendKey: "k-none",
       }),
-    ).toMatchObject({ verdict: "unknown", reason: "no list shows a pinned note" });
+    ).toMatchObject({ verdict: "unknown", reason: "no list shows a pinned note", next: null });
     expect(sleeps).toEqual([]);
     expect(platform.reads).toBe(0);
     expect(platform.writes).toEqual(["pin n"]);
@@ -223,7 +229,7 @@ describe("a keyed write answers a verdict", () => {
     };
     const svc = sitesService(bare, "sites_bare", undefined, null, {
       journal,
-      verifyPausesMs: PAUSES,
+      verifyWaitMs: WAIT,
     }) as unknown as { service: Record<string, (ctx: never, req: unknown) => Promise<unknown>> };
     const ctx = {
       request: () => ({ id: "inv_x", headers: new Map<string, string>() }),
@@ -316,7 +322,7 @@ describe("before the submit step", () => {
     };
     const svc = sitesService(flaky, "sites_flaky", undefined, null, {
       journal,
-      verifyPausesMs: PAUSES,
+      verifyWaitMs: WAIT,
       wait: { boundMs: 60_000, pausesMs: [1] },
     }) as unknown as { service: Record<string, (ctx: never, req: unknown) => Promise<unknown>> };
     const ctx = {
@@ -479,7 +485,7 @@ describe("the verdict handler", () => {
     expect(first).toMatchObject({ verdict: "unknown" });
     // One read, then no sleep before reads the gap forbids.
     expect(platform.reads).toBe(1);
-    expect(sleeps).toEqual([PAUSES[0]]);
+    expect(sleeps).toEqual([WAIT]);
     showVideos();
     expect(await verdict("k-gap")).toEqual(first);
     expect(await verdict("k-gap")).toEqual(first);
@@ -602,10 +608,66 @@ describe("the journal", () => {
     writeFileSync(join(at, name), '{"key":"k","si');
     expect(j.get("k")).toMatchObject({ submitted: true, verdict: { verdict: "unknown" } });
   });
+});
 
-  it("the verify backoff is about 30 s, 3 min and 10 min after the end", () => {
-    let t = 0;
-    const at = VERIFY_PAUSES_MS.map((p) => (t += p));
-    expect(at).toEqual([30_000, 180_000, 600_000]);
+describe("when to ask again (WA-1012)", () => {
+  /** A facade whose verify reads fail as `fail` says. */
+  function failing(fail: () => Error) {
+    const { facade } = build();
+    const f: SiteFacade = {
+      ...facade,
+      call: async (site, method, path, ...rest) => {
+        if (method === "GET" && path === "/comments") throw fail();
+        return facade.call(site, method, path, ...rest);
+      },
+    };
+    return f;
+  }
+  const serve = (f: SiteFacade) => {
+    const svc = sitesService(f, "sites_next", undefined, null, {
+      journal,
+      verifyWaitMs: WAIT,
+    }) as unknown as { service: Record<string, (ctx: never, req: unknown) => Promise<unknown>> };
+    const ctx = {
+      request: () => ({ id: "inv_n", headers: new Map<string, string>() }),
+      run: async <T>(_n: string, fn: () => Promise<T>) => fn(),
+      sleep: async () => {},
+    } as never;
+    return (req: unknown) => svc.service.call?.(ctx, req) as Promise<SendVerdict>;
+  };
+  const nextOf = (v: SendVerdict) => (v.verdict === "unknown" ? v.next : undefined);
+  const inMs = (v: SendVerdict) => Date.parse(nextOf(v)?.at ?? "") - Date.now();
+
+  it("a read that failed on a signed-out account asks again once it is healthy, in about an hour", async () => {
+    platform.mode = "close";
+    const call = serve(failing(() => new SiteError(401, "signed out", undefined, "need_login")));
+    const v = await call(say("signed out read", "k-login"));
+    expect(v).toMatchObject({ verdict: "unknown", reason: expect.stringMatching(/signed out/) });
+    expect(nextOf(v)?.when).toBe("healthy");
+    expect(inMs(v)).toBeGreaterThan(VERIFY_HELD_MS - 60_000);
+  });
+
+  it("a read that failed for no lasting reason asks again in about 10 minutes", async () => {
+    platform.mode = "close";
+    const call = serve(failing(() => new Error("socket hang up")));
+    const v = await call(say("flaky read", "k-flaky"));
+    expect(nextOf(v)?.when).toBe("healthy");
+    expect(inMs(v)).toBeGreaterThan(VERIFY_RETRY_MS - 60_000);
+    expect(inMs(v)).toBeLessThan(VERIFY_HELD_MS - 60_000);
+  });
+
+  it("an account with a refused token spends no read", async () => {
+    platform.mode = "close";
+    const { facade } = build();
+    const held: SiteFacade = {
+      ...facade,
+      refused: async () => [
+        { name: "SCRATCH_TOKEN", site: "scratch", account: null, since: "", words: "", tries: [] },
+      ],
+    };
+    const v = await serve(held)(say("held read", "k-held"));
+    expect(v).toMatchObject({ verdict: "unknown", reason: expect.stringMatching(/refused/) });
+    expect(nextOf(v)?.when).toBe("healthy");
+    expect(platform.reads).toBe(0);
   });
 });

@@ -48,7 +48,7 @@ beforeAll(async () => {
         sitesService(scratchFacade(join(dir, "started")), NAME, undefined, null, {
           journal,
           // Short, so a verify read does not wait half a minute.
-          verifyPausesMs: [200, 400, 600],
+          verifyWaitMs: 200,
         }),
       ],
       container,
@@ -138,9 +138,9 @@ describe("a keyed desk write killed after its submit step", () => {
     platform.lagging = true;
     await writeKilledAfterSubmit(video("killed video"), key);
 
-    // The list does not show the video yet: three reads, then unknown. Never `not_sent`.
+    // The list does not show the video yet: one read, unknown, ask again later. Never `not_sent`.
     const first = await svc().verdict({ sendKey: key });
-    expect(first).toMatchObject({ verdict: "unknown" });
+    expect(first).toMatchObject({ verdict: "unknown", next: { when: "time" } });
     expect(platform.writes).toEqual(["video killed video"]);
 
     // It shows now. A rerun with the key reads again and answers; it does not publish again.

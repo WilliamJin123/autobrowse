@@ -174,7 +174,12 @@ export function fileSendJournal(dir: string, now: () => number = Date.now): Send
             input: {},
             startedAt: since,
             submitted: true,
-            verdict: { verdict: "unknown", reason: "the journal record is unreadable", since },
+            verdict: {
+              verdict: "unknown",
+              reason: "the journal record is unreadable",
+              since,
+              next: null,
+            },
             tries: 0,
           };
         }

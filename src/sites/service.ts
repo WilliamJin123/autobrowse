@@ -54,7 +54,14 @@ import type { RefusedToken } from "./refused.js";
 import type { RenewReport } from "./renew.js";
 import { memorySendJournal, type SendJournal, type SendRecord } from "./send-journal.js";
 import { SiteError } from "./types.js";
-import { isFinal, type Seen, type SendVerdict, settle, type VerifyGet } from "./verdict.js";
+import {
+  isFinal,
+  type Seen,
+  type SendVerdict,
+  settle,
+  type VerdictNext,
+  type VerifyGet,
+} from "./verdict.js";
 
 export const SITES_SERVICE = "sites";
 /**
@@ -269,17 +276,29 @@ async function recorded<T>(
   }
 }
 
-/**
- * Pauses before each verify read of a keyed write that ended unclear: reads at about 30 s, 3 min
- * and 10 min after the end. Platform lists lag, so one read at once proves little.
- */
-export const VERIFY_PAUSES_MS: readonly number[] = [30_000, 150_000, 420_000];
+/** Wait before the one verify read of a write that just ended unclear: a list lags a little. */
+export const VERIFY_WAIT_MS = 30_000;
+/** A read that worked and cannot prove absence yet: ask again this much later, or after the gap. */
+export const VERIFY_AGAIN_MS = 30 * 60_000;
+/** A read that failed for no lasting reason (a timeout, the network): ask again after this. */
+export const VERIFY_RETRY_MS = 10 * 60_000;
+/** A signed-out account or a refused token: its re-make or a person's login takes about this. */
+export const VERIFY_HELD_MS = 60 * 60_000;
 
 /**
  * Least time between two verify reads of one key, per site. LinkedIn: one an hour, so repeated
  * asks never burst its post page (William, 10-30). A read too soon answers unknown, no read.
  */
 export const VERIFY_GAP_MS: Readonly<Record<string, number>> = { linkedin: 3_600_000 };
+
+/** How long a failed verify read waits, by its cause: a held login waits for its fix. */
+function retryMsOf(err: unknown): number {
+  if (err instanceof SiteError && (err.code === "need_login" || err.code === "platform_blocked"))
+    return VERIFY_HELD_MS;
+  if (err instanceof SiteError && err.retryAfter)
+    return Math.max(err.retryAfter * 1000, VERIFY_RETRY_MS);
+  return VERIFY_RETRY_MS;
+}
 
 /** What a keyed call's leg step settles to: the verdict, or only the verify reads are left. */
 type Gate =
@@ -346,8 +365,8 @@ export function sitesService(
     wait?: ProfileWait;
     /** What each keyed write left on this machine; in memory when absent (it forgets a restart). */
     journal?: SendJournal;
-    /** Pauses before each verify read; `VERIFY_PAUSES_MS` when absent. */
-    verifyPausesMs?: readonly number[];
+    /** Wait before the verify read of a write that just ended unclear; `VERIFY_WAIT_MS` when absent. */
+    verifyWaitMs?: number;
     /** Least time between verify reads of one key, per site; `VERIFY_GAP_MS` when absent. */
     verifyGapMs?: Readonly<Record<string, number>>;
     /** The owner's API keys, for `keys`, `keySpend`, `keyRevoke` and `keyRotate`; 501 when absent. */
@@ -355,7 +374,7 @@ export function sitesService(
   } = {},
 ) {
   const journal = o.journal ?? memorySendJournal();
-  const pauses = o.verifyPausesMs ?? VERIFY_PAUSES_MS;
+  const verifyWait = o.verifyWaitMs ?? VERIFY_WAIT_MS;
   const gaps = o.verifyGapMs ?? VERIFY_GAP_MS;
   const keysHere = (): KeyAdmin => {
     if (!o.keys) throw new restate.TerminalError("no key vault here", { errorCode: 501 });
@@ -392,7 +411,12 @@ export function sitesService(
     if (rec.verdict && isFinal(rec.verdict)) return { end: rec.verdict };
     if (journal.live(rec.key))
       return {
-        end: { verdict: "unknown", reason: "the send is still running", since: rec.startedAt },
+        end: {
+          verdict: "unknown",
+          reason: "the send is still running",
+          since: rec.startedAt,
+          next: { at: new Date(Date.now() + VERIFY_WAIT_MS).toISOString(), when: "time" },
+        },
       };
     if (rec.submitted || rec.verdict) return { verify: rec, fresh: false };
     // Started, never submitted, and no call here is running it: its process died before the act.
@@ -496,88 +520,105 @@ export function sitesService(
     }
   }
 
+  /** Why the sending account cannot read now (a refused token): no read is spent on it. */
+  const heldOf = async (rec: SendRecord): Promise<string | null> => {
+    const r = (await facade.refused?.())?.find(
+      (t) => t.site === rec.site && t.account === rec.account,
+    );
+    return r ? `${r.name} was refused; the read runs once it is made again` : null;
+  };
+
   /**
-   * The verify reads of a write that ended unclear: each one `ctx.run`, a durable pause before
-   * it. Found is `sent`, absent on a full read is `not_sent`, else `unknown`. The journal keeps it.
+   * The verify read of a write that ended unclear: one `ctx.run`, after `wait`. Found is `sent`,
+   * absent on a full read is `not_sent`, else `unknown` with when to ask again (`next`): the
+   * caller schedules it, so no read waits on a fixed timer. The journal keeps it.
    */
-  async function verifyReads(
+  async function verifyRead(
     ctx: restate.Context,
     rec: SendRecord,
     spec: SendSpec,
-    waits: readonly number[],
+    wait: number,
     from: object,
   ): Promise<SendVerdict> {
     const key = rec.key;
+    const gap = gaps[rec.site] ?? 0;
     const keep = (make: () => SendVerdict) =>
       ctx.run(`send ${key} verdict`, async () => journal.settle(key, make()));
-    const unknown = (reason: string): SendVerdict => ({
+    const unknown = (reason: string, next: VerdictNext | null): SendVerdict => ({
       verdict: "unknown",
       reason: reason.slice(0, 300),
       since: rec.startedAt,
+      next,
     });
     const v = spec.verify;
-    if (!v) return keep(() => unknown("this route has no verify read"));
-    if ("none" in v) return keep(() => unknown(v.none));
-    let why = "no verify read ran";
-    for (const [n, pause] of waits.entries()) {
-      // A gap outlasts the pauses: one read per call at most.
-      if (n > 0 && gaps[rec.site]) break;
-      if (pause > 0) await ctx.sleep(pause);
-      const seen = await ctx.run(
-        `send ${key} verify read ${n + 1}`,
-        async (): Promise<Seen | null> => {
-          const gap = gaps[rec.site] ?? 0;
-          const last = journal.get(key)?.readAt;
-          if (gap && last && Date.now() - Date.parse(last) < gap) return null;
-          journal.tried(key);
-          try {
-            const input = spec.parse(rec.path, rec.input);
-            // The same account on the same site; another site (a signed-out one) has no account.
-            const get: VerifyGet = (path, inp = {}, at) =>
-              facade.call(
-                at?.site ?? rec.site,
-                at?.method ?? "GET",
-                path,
-                inp,
-                at?.site && at.site !== rec.site ? null : rec.account,
-                from,
-              );
-            const got = await v.read(input, get);
-            return settle(got, {
-              words: v.words(input),
-              since: rec.startedAt,
-              lags: v.lags?.(input) ?? null,
-            });
-          } catch (err) {
-            return { seen: "unclear", why: `the verify read failed: ${messageOf(err)}` };
-          }
-        },
+    if (!v) return keep(() => unknown("this route has no verify read", null));
+    if ("none" in v) return keep(() => unknown(v.none, null));
+    if (wait > 0) await ctx.sleep(wait);
+    type Read = { soon: string } | { seen: Seen; again: { ms: number; when: VerdictNext["when"] } };
+    const got = await ctx.run(`send ${key} verify read`, async (): Promise<Read> => {
+      const last = journal.get(key)?.readAt;
+      const lastMs = last ? Date.parse(last) : 0;
+      if (gap && last && Date.now() - lastMs < gap)
+        return { soon: new Date(lastMs + gap).toISOString() };
+      const held = await heldOf(rec);
+      if (held)
+        return {
+          seen: { seen: "unclear", why: held },
+          again: { ms: VERIFY_HELD_MS, when: "healthy" },
+        };
+      journal.tried(key);
+      try {
+        const input = spec.parse(rec.path, rec.input);
+        // The same account on the same site; another site (a signed-out one) has no account.
+        const get: VerifyGet = (path, inp = {}, at) =>
+          facade.call(
+            at?.site ?? rec.site,
+            at?.method ?? "GET",
+            path,
+            inp,
+            at?.site && at.site !== rec.site ? null : rec.account,
+            from,
+          );
+        const read = await v.read(input, get);
+        const seen = settle(read, {
+          words: v.words(input),
+          since: rec.startedAt,
+          lags: v.lags?.(input) ?? null,
+        });
+        return { seen, again: { ms: Math.max(gap, VERIFY_AGAIN_MS), when: "time" } };
+      } catch (err) {
+        return {
+          seen: { seen: "unclear", why: `the verify read failed: ${messageOf(err)}` },
+          again: { ms: Math.max(gap, retryMsOf(err)), when: "healthy" },
+        };
+      }
+    });
+    // Too soon: answer what is stored, no read.
+    if ("soon" in got) {
+      const at = got.soon;
+      return ctx.run(
+        `send ${key} stored`,
+        async () =>
+          journal.get(key)?.verdict ??
+          unknown(`${rec.site} reads a send at most once an hour`, { at, when: "time" }),
       );
-      // Too soon: answer what is stored, no read.
-      if (!seen)
-        return ctx.run(
-          `send ${key} stored`,
-          async () =>
-            journal.get(key)?.verdict ?? unknown(`${rec.site} reads a send at most once an hour`),
-        );
-      if (seen.seen === "found")
-        return keep(() => ({
-          verdict: "sent",
-          id: seen.id,
-          url: seen.url,
-          at: seen.at ?? new Date().toISOString(),
-          how: "verified",
-        }));
-      if (seen.seen === "absent")
-        return keep(() =>
-          notSent(
-            "a full read of the account's recent items shows nothing sent",
-            "verified_absent",
-          ),
-        );
-      why = seen.why;
     }
-    return keep(() => unknown(why));
+    const { seen, again } = got;
+    if (seen.seen === "found")
+      return keep(() => ({
+        verdict: "sent",
+        id: seen.id,
+        url: seen.url,
+        at: seen.at ?? new Date().toISOString(),
+        how: "verified",
+      }));
+    if (seen.seen === "absent")
+      return keep(() =>
+        notSent("a full read of the account's recent items shows nothing sent", "verified_absent"),
+      );
+    return keep(() =>
+      unknown(seen.why, { at: new Date(Date.now() + again.ms).toISOString(), when: again.when }),
+    );
   }
 
   /** A keyed write: the verdict is its result. */
@@ -614,7 +655,7 @@ export function sitesService(
       throw err;
     }
     if ("end" in gate) return gate.end;
-    return verifyReads(ctx, gate.verify, spec, gate.fresh ? pauses : [0, ...pauses.slice(1)], from);
+    return verifyRead(ctx, gate.verify, spec, gate.fresh ? verifyWait : 0, from);
   }
 
   return restate.service({
@@ -728,7 +769,7 @@ export function sitesService(
       }),
       /**
        * What became of a keyed write, without calling it again: the journal's verdict. A write
-       * that ended unclear is read again (at once, then the backoff). No record is `not_sent`.
+       * that ended unclear is read again at once, unless held. No record is `not_sent`.
        */
       verdict: restate.handlers.handler(CALL_OPTS, async (ctx: restate.Context, raw: unknown) => {
         const { sendKey } = parse(verdictReq, raw);
@@ -748,7 +789,7 @@ export function sitesService(
           path: gate.verify.path,
           input: gate.verify.input,
         });
-        return verifyReads(ctx, gate.verify, spec, [0, ...pauses.slice(1)], from);
+        return verifyRead(ctx, gate.verify, spec, 0, from);
       }),
       /** The call's browser leg up to its last safe step, nothing sent: `{armed: id | null, until}`. */
       arm: async (ctx: restate.Context, raw: unknown) => {

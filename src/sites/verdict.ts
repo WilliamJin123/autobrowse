@@ -35,7 +35,21 @@ export type SendVerdict =
       reason: string;
       /** When the send started. */
       since: string;
+      /**
+       * When to ask `verdict` again (WA-1012). `healthy`: the read failed or the account is held;
+       * the read runs once that is fixed, and `at` is the soonest worth asking. `time`: the read
+       * worked and cannot prove absence yet (a lagging, cut or ranked list). Null: no read can
+       * tell; a person decides. Absent: a record from before WA-1012.
+       */
+      next?: VerdictNext | null;
     };
+
+/** When an `unknown` verdict is worth asking again. */
+export interface VerdictNext {
+  /** ISO. */
+  at: string;
+  when: "healthy" | "time";
+}
 
 export type Verdict = SendVerdict["verdict"];
 
