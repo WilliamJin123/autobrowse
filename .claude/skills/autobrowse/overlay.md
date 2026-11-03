@@ -1,6 +1,7 @@
-# Overlay: the terminal panel over the page
+# Overlay: the panel over the page
 
-A visual for a person who watches a headed page: a panel and pulsing purple boxes.
+A visual for a person who watches a headed page: a panel and purple boxes.
+Two looks: a floating panel (light or dark) and the old terminal. The bar button switches them.
 It is in a closed shadow root outside `body`. Your acts and the aria tree never see it.
 It is off for every screenshot and every film frame. Nothing depends on it, so remove it freely.
 
@@ -17,17 +18,17 @@ It is off for every screenshot and every film frame. Nothing depends on it, so r
 ## What it shows
 
 - The bar: the goal (explore: what you set; a flow: `site/flow`) and the run's seed.
-- A busy line while a command runs: phase words (locating, aiming, clicking) and a spinner.
+- A busy line while a command runs: phase words (locating, aiming, clicking), with a light passing through them.
   Between commands, with a goal set: "thinking".
-- The trace: one row per command or flow step. Each row has the aim, ✓/✗, ms and a dim note
+- The trace: one row per command or flow step. Each row has the aim, ms and a dim note (a failed act is red; the terminal look adds ✓/✗)
   (where the page went, controls added and gone, chars read). It never shows a typed value or a query string.
-- The act's control pulses purple before the hands reach it.
+- The act's control locks on in purple before the hands reach it; a ring leaves it while the act runs.
 
 ## Buttons
 
 - Your clicks land on the panel. The page never sees them. The agent's acts go through it.
 - Drag the bar to move it. Drag any corner to size it; the text scales with its width.
-- `[◆]`/`[◇]` shows or hides the boxes. `[_]` minimizes it to a tab on the left edge. Click the tab to show it again.
+- Bar buttons: the look (panel or terminal), the boxes (show or hide), light or dark (panel only), minimize to a tab on the left edge. Click the tab to show it again.
 - Wheel over the trace to scroll it, live. Each choice carries to the next page.
 
 ## Drive it (explore)

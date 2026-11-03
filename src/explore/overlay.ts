@@ -174,8 +174,23 @@ const THEMES = {
     "--raise:0 0 0 1px var(--hair),0 6px 18px -8px rgb(0 0 0/.6);--lift:0 24px 56px -16px rgb(0 0 0/.55)",
 };
 
+/** The terminal look's tokens: Wren dark, as the TUI had them before the panel (2026-10-28). */
+const T = {
+  canvas: "#0d0d0c",
+  paper: "#171716",
+  ink: "#f2f0ea",
+  ink2: "#a9a79f",
+  ink3: "#8f8d86",
+  accent: "#a596d6",
+  onAccent: "#15121f",
+  good: "#4cc27a",
+  bad: "#ff6b5e",
+};
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 /** Lucide paths (ISC), 24-unit box, drawn at one size and stroke. */
 const ICONS = {
+  term: "m4 17 6-6-6-6M12 19h8",
   boxes:
     "M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M21 19a2 2 0 0 1-2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h1M14 3h1M14 21h1M3 9v1M21 9v1M3 14v1M21 14v1",
   moon: "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401",
@@ -183,6 +198,185 @@ const ICONS = {
   min: "M5 12h14",
   chevron: "m6 9 6 6 6-6",
 };
+
+/** Prefix each rule's selectors; one rule a string, at-rules as they are. */
+const scope = (prefix: string, rules: string[]) =>
+  rules.map((r) =>
+    r.startsWith("@")
+      ? r
+      : r.replace(/^[^{]+/, (sel) =>
+          sel
+            .split(",")
+            .map((x) => `${prefix} ${x.trim()}`)
+            .join(","),
+        ),
+  );
+
+/** Both looks: the page's boxes, the layer's frame, the motion rules. Only transform and opacity move. */
+const SHARED_CSS = [
+  "*{box-sizing:border-box}",
+  ".wrap{--hair:color-mix(in srgb,var(--ink) 11%,transparent);--fill:color-mix(in srgb,var(--ink) 5%,transparent);--tint:color-mix(in srgb,var(--accent) 12%,transparent);--ease:cubic-bezier(.16,1,.3,1);--spring:cubic-bezier(.34,1.4,.64,1)}",
+  `.wrap.light{${THEMES.light}}`,
+  `.wrap.dark{${THEMES.dark}}`,
+  `.wrap.term{--accent:${T.accent}}`,
+  // As the marks shot draws them (marks.ts layerScript).
+  ".box{position:fixed;border:2px solid}",
+  ".tag{position:absolute;left:-2px;font:bold 11px/14px monospace;color:#fff;padding:0 3px}",
+  // The target locks on (from 8px out), then a ring leaves it; --sx/--sy: 8px of scale per side.
+  ".target{position:fixed;border:2px solid var(--accent);border-radius:6px;animation:aim .32s var(--spring) both}",
+  '.target::after{content:"";position:absolute;inset:-2px;border:2px solid var(--accent);border-radius:8px;opacity:0;animation:ring 1.3s var(--ease) .15s infinite}',
+  "@keyframes aim{from{opacity:0;transform:scale(var(--sx),var(--sy))}}",
+  "@keyframes ring{from{opacity:.6;transform:none}to{opacity:0;transform:scale(var(--sx),var(--sy))}}",
+  "svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}",
+  ".tui{position:fixed;display:flex;flex-direction:column;max-width:calc(100vw - 12px);cursor:default;user-select:none;-webkit-user-select:none;container-type:inline-size}",
+  ".tui:not(.inert){pointer-events:auto}",
+  ".tui.inert{opacity:.6}",
+  ".tab{position:fixed;left:0;top:50%;transform:translateY(-50%);height:56px;cursor:pointer}",
+  ".tab:not(.inert){pointer-events:auto}",
+  ".bar{display:flex;align-items:center;white-space:nowrap}",
+  ".bar .fill{flex:1}",
+  ".grip{position:absolute}",
+  '.phase::after{content:"";animation:ph var(--d) steps(1) forwards;animation-delay:var(--t)}',
+  '.dots::after{content:"";animation:dots 1.8s steps(1) infinite}',
+  contentKeys("dots", ["", ".", "..", "..."]),
+  ".rule .btn{pointer-events:auto}",
+  ".tui.inert .rule .btn{pointer-events:none}",
+  ".rows{display:grid;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin}",
+  ".tui.sized .rows{flex:1;min-height:0;max-height:none}",
+  ".row{display:grid;grid-column:1/-1;grid-template-columns:subgrid}",
+  // Each look places the cells by column in its own order; a definite row keeps them on one line.
+  ".row>:not(.note){grid-row:1}",
+  ".row .note{grid-row:2;overflow-wrap:anywhere}",
+  "@media (prefers-reduced-motion:reduce){.target,.target::after,.in,.enter,.row.new{animation:none!important}.shim{animation:none!important;background:none!important;color:inherit!important}*{transition:none!important}}",
+];
+
+/** The panel: a floating macOS-style sheet, light or dark, purple accents (2026-11-03). */
+const PANEL_CSS = [
+  '.tui{background:color-mix(in srgb,var(--paper) 86%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8);font:12px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",Figtree,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;border-radius:14px;box-shadow:var(--raise),var(--lift);transform-origin:0 100%}',
+  ".tab{background:color-mix(in srgb,var(--paper) 86%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8);width:14px;border-radius:0 10px 10px 0;box-shadow:var(--raise),var(--lift);transition:width .2s var(--ease)}",
+  // Width scales the type and the inset: 12px wide open, 10.5px at the narrowest.
+  ".tui>*{--g:clamp(6px,2.4cqi,10px);font-size:clamp(10.5px,calc(8.5px + .9cqi),12px)}",
+  '.num{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;font-variant-numeric:tabular-nums}',
+  ".tab:hover{width:20px}",
+  '.tab::after{content:"";position:absolute;left:5px;top:18px;width:3px;height:20px;border-radius:2px;background:var(--hair)}',
+  ".tab.busy::after{background:var(--accent);animation:breathe 1.4s var(--ease) infinite}",
+  "@keyframes breathe{50%{opacity:.35}}",
+  ".tab.enter{animation:peek .28s var(--ease)}",
+  "@keyframes peek{from{transform:translate(-100%,-50%)}}",
+  ".tui.enter{animation:pop .36s var(--spring)}",
+  "@keyframes pop{from{opacity:0;transform:translateX(-10px) scale(.96)}}",
+  ".bar{gap:6px;padding:5px 4px 2px var(--g);cursor:grab}",
+  ".bar .name{font-weight:650;letter-spacing:-.01em}",
+  ".bar .state,.bar .k,.bar .meta{min-width:0;color:var(--ink-3);overflow:hidden}",
+  ".bar .state.run{color:var(--accent);font-weight:600}",
+  ".btn{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:999px;color:var(--ink-2);cursor:pointer;transition:background-color .15s var(--ease),color .15s var(--ease)}",
+  ".btn svg{width:14px;height:14px;transition:transform .22s var(--ease)}",
+  ".btn:hover{background:var(--fill);color:var(--ink)}",
+  ".btn.on{color:var(--accent)}",
+  ".btn.on:hover{background:var(--tint)}",
+  ".btn.folded svg{transform:rotate(-90deg)}",
+  // Corners size the panel; no mark, and they straddle the rounded edge, as a macOS window's.
+  ".grip{width:18px;height:18px}",
+  ".grip.se{right:-4px;bottom:-4px;cursor:nwse-resize}",
+  ".grip.sw{left:-4px;bottom:-4px;cursor:nesw-resize}",
+  ".grip.ne{right:-4px;top:-4px;cursor:nesw-resize}",
+  ".grip.nw{left:-4px;top:-4px;cursor:nwse-resize}",
+  ".body{display:flex;flex-direction:column;gap:1px;padding:2px var(--g) 6px}",
+  ".goal{font-weight:650;line-height:1.3;letter-spacing:-.01em;overflow-wrap:anywhere}",
+  ".thought{color:var(--ink-2);overflow-wrap:anywhere}",
+  ".doing{display:flex;align-items:baseline;gap:5px;overflow-wrap:anywhere}",
+  ".verb{flex:none;color:var(--accent);background:var(--tint);border-radius:5px;padding:0 5px;font-weight:600;font-size:.92em;line-height:1.45}",
+  // A line whose words changed rises in; the same words redrawn stay still.
+  ".in{animation:rise .24s var(--ease)}",
+  "@keyframes rise{from{opacity:0;transform:translateY(3px)}}",
+  ".live{color:var(--ink-3);font-size:.92em}",
+  // The busy words: a light passing through them, on one clock across redraws.
+  ".shim{background:linear-gradient(90deg,var(--ink-3) 35%,var(--accent) 50%,var(--ink-3) 65%) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 1.8s linear infinite}",
+  "@keyframes shim{from{background-position:100% 0}to{background-position:0 0}}",
+  ".rule{display:flex;align-items:center;gap:5px;padding:2px 4px 0 var(--g);border-top:1px solid var(--hair);color:var(--ink-2);font-weight:600;font-size:.92em}",
+  ".rule .t{color:var(--ink-3);font-weight:500}",
+  ".rule .btn{width:20px;height:20px}",
+  // n, act, what, clock, ms. Newest row first. A failed act is red; no status mark.
+  ".rows{grid-template-columns:auto auto minmax(0,1fr) auto auto;scrollbar-color:var(--hair) transparent;padding:1px 0 4px;max-height:280px}",
+  ".row{align-items:baseline;padding:1px var(--g);transition:background-color .15s var(--ease)}",
+  ".row:hover{background:var(--fill)}",
+  ".row .n{grid-column:1;color:var(--ink-3);text-align:right}",
+  ".row .mk{display:none}",
+  ".row .cmd{grid-column:2;font-weight:600}",
+  ".row.failed .cmd{color:var(--bad)}",
+  ".row .what{grid-column:3;color:var(--ink-2);overflow-wrap:anywhere}",
+  ".row .at{grid-column:4}",
+  ".row .ms{grid-column:5}",
+  ".row>:not(:first-child):not(.note){padding-left:6px}",
+  ".row .at,.row .ms{color:var(--ink-3);text-align:right}",
+  ".row .note{grid-column:3/-1;padding-left:6px;color:var(--ink-3);font-size:.92em;line-height:1.25}",
+  ".row .note.no{color:var(--bad)}",
+  ".row.new{animation:fresh 1.2s var(--ease)}",
+  "@keyframes fresh{from{background-color:var(--tint)}}",
+  // Narrow: the clock and the bar's words go; the act, its target and ms stay, the note takes the width.
+  "@container (max-width:360px){.wrap.panel .row .at,.wrap.panel .bar .meta,.wrap.panel .bar .k,.wrap.panel .bar .state{display:none}.wrap.panel .rows .row .note{grid-column:2/-1}}",
+];
+
+/** The terminal look: the TUI as it was before the panel, kept as a mode (William, 2026-11-03). */
+const TERM_CSS = [
+  `.tui{font:12px/1.4 "JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;color:${T.ink};background:${T.canvas} repeating-linear-gradient(0deg,rgba(255,255,255,.028) 0 1px,transparent 1px 3px);border:1px solid ${T.accent};box-shadow:0 0 0 1px #000,0 10px 32px rgba(0,0,0,.55),0 0 22px rgba(165,150,214,.14);text-shadow:0 0 6px rgba(165,150,214,.22)}`,
+  ".tui>*{--g:clamp(3px,1.6cqi,8px);font-size:clamp(10px,calc(8px + .9cqi),12px)}",
+  `.tab{width:10px;background:${T.canvas};border:1px solid ${T.accent};border-left:0;border-radius:0 5px 5px 0;box-shadow:0 4px 14px rgba(0,0,0,.4);transition:width .15s}`,
+  `.tab:hover{width:16px;background:${T.accent}}`,
+  `.tab.busy::after{content:"";position:absolute;left:2px;top:25px;width:4px;height:4px;border-radius:50%;background:${T.accent};animation:tblink 1s steps(2) infinite}`,
+  `.bar{gap:var(--g);padding:2px var(--g);background:${T.paper};border-bottom:1px solid ${T.accent};cursor:move}`,
+  `.bar .name{font-weight:700;color:${T.accent};letter-spacing:.04em}`,
+  `.bar .state{color:${T.ink3}}`,
+  `.bar .state.run{color:${T.accent};animation:tblink 1s steps(2) infinite}`,
+  `.bar .meta{color:${T.ink3};font-size:.88em}`,
+  `.grip{width:12px;height:12px;border:0 solid ${T.accent};opacity:.45}`,
+  ".tui:hover .grip{opacity:1}",
+  ".grip.se{right:-1px;bottom:-1px;cursor:nwse-resize;border-width:0 2px 2px 0;opacity:1}",
+  ".grip.sw{left:-1px;bottom:-1px;cursor:nesw-resize;border-width:0 0 2px 2px}",
+  ".grip.ne{right:-1px;top:-1px;cursor:nesw-resize;border-width:2px 2px 0 0}",
+  ".grip.nw{left:-1px;top:-1px;cursor:nwse-resize;border-width:2px 0 0 2px}",
+  `.live{color:${T.ink3}}`,
+  `.spin::before{content:"${SPIN[0]}";color:${T.accent};animation:tspin .8s steps(1) infinite}`,
+  `.spin.slow::before{animation-duration:1.6s;color:${T.ink3}}`,
+  contentKeys("tspin", SPIN),
+  `.btn{color:${T.ink3};cursor:pointer;padding:0 2px}`,
+  `.btn:hover{color:${T.onAccent};background:${T.accent};text-shadow:none}`,
+  `.btn.on{color:${T.accent}}`,
+  ".body{padding:4px var(--g) 5px}",
+  `.k{color:${T.ink3}}`,
+  `.goal{color:${T.ink};font-weight:700}`,
+  `.thought{color:${T.ink2}}`,
+  `.doing{color:${T.accent}}`,
+  `.cursor{display:inline-block;width:.6em;height:1.05em;margin-left:2px;vertical-align:-2px;background:${T.accent};animation:tblink 1s steps(2) infinite}`,
+  "@keyframes tblink{50%{opacity:0}}",
+  `.rule{display:flex;gap:var(--g);color:${T.ink3};padding:0 var(--g);border-top:1px solid ${T.paper}}`,
+  `.rule .t{color:${T.ink3}}`,
+  // n, clock, act, what, ✓/✗, ms.
+  `.rows{grid-template-columns:auto auto auto minmax(0,1fr) auto auto;scrollbar-color:${T.ink3} transparent;padding:1px 0 3px;max-height:220px}`,
+  ".row{padding:0 var(--g)}",
+  `.row .n{grid-column:1;color:${T.ink3};text-align:right}`,
+  `.row .at{grid-column:2;color:${T.ink3}}`,
+  `.row .cmd{grid-column:3;color:${T.accent}}`,
+  `.row .what{grid-column:4;color:${T.ink}}`,
+  ".row .mk{grid-column:5}",
+  `.row .ms{grid-column:6;color:${T.ink3};text-align:right}`,
+  ".row>:not(:first-child):not(.note){padding-left:var(--g)}",
+  `.row .note{grid-column:4/-1;padding-left:var(--g);color:${T.ink3};font-size:.92em;line-height:1.3}`,
+  `.row .note.no{color:${T.bad};opacity:.85}`,
+  `.row .mk.ok{color:${T.good}}`,
+  `.row .mk.no{color:${T.bad}}`,
+  ".row.new{animation:tfresh 1.2s ease-out}",
+  "@keyframes tfresh{from{background:rgba(165,150,214,.28)}to{background:transparent}}",
+  // Mono and four buttons: the seed goes before it would be cut.
+  "@container (max-width:480px){.wrap.term .bar .meta{display:none}}",
+  "@container (max-width:360px){.wrap.term .row .at{display:none}.wrap.term .rows .row .note{grid-column:3/-1}}",
+];
+
+const CSS = [
+  ...SHARED_CSS,
+  ...scope(".wrap.panel", PANEL_CSS),
+  ...scope(".wrap.term", TERM_CSS),
+].join("");
 
 /** How a person left the panel: carried into each new document. */
 interface Prefs {
@@ -193,6 +387,8 @@ interface Prefs {
   marks: boolean;
   /** null: the system's. */
   theme: "light" | "dark" | null;
+  /** The floating panel, or the old terminal look. */
+  look: "panel" | "term";
   /** Top-left corner, px; null = bottom left. */
   x: number | null;
   y: number | null;
@@ -207,7 +403,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const K = '__${attr}';
   if (window[K] && window[K].draw) return;
   const ui = window[K] = { ...${JSON.stringify(prefs)}, lastN: -1, host: null };
-  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
+  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, look: ui.look, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
   const el = (tag, cls, text, css) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; };
   const COLOURS = ${JSON.stringify(MARK_COLOURS)};
   const at = (b) => 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;';
@@ -220,84 +416,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const host = el('div', null, null, 'position:fixed;inset:0;z-index:2147483647;pointer-events:none');
   host.setAttribute('${attr}', '');
   const root = host.attachShadow({ mode: 'closed' });
-  const style = el('style', null, [
-        '*{box-sizing:border-box}',
-        '.wrap{--hair:color-mix(in srgb,var(--ink) 11%,transparent);--fill:color-mix(in srgb,var(--ink) 5%,transparent);--tint:color-mix(in srgb,var(--accent) 12%,transparent);--ease:cubic-bezier(.16,1,.3,1)}',
-        '.wrap.light{${THEMES.light}}',
-        '.wrap.dark{${THEMES.dark}}',
-        // As the marks shot draws them (marks.ts layerScript).
-        '.box{position:fixed;border:2px solid}',
-        '.tag{position:absolute;left:-2px;font:bold 11px/14px monospace;color:#fff;padding:0 3px}',
-        '.target{position:fixed;border:2px solid var(--accent);border-radius:6px;animation:pulse 1.1s var(--ease) infinite}',
-        '@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}100%{box-shadow:0 0 0 12px transparent}}',
-        'svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}',
-        // A floating panel: frosted paper, hairline, lifted. The whole panel takes the pointer.
-        '.tui,.tab{background:color-mix(in srgb,var(--paper) 86%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8)}',
-        '.tui{position:fixed;display:flex;flex-direction:column;max-width:calc(100vw - 12px);cursor:default;user-select:none;-webkit-user-select:none;',
-        'font:12px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",Figtree,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;',
-        'border-radius:14px;box-shadow:var(--raise),var(--lift)}',
-        // Width scales the type and the inset: 12px wide open, 10.5px at the narrowest. Dense as the old TUI: no row padding, numbers in mono.
-        '.tui{container-type:inline-size}',
-        '.tui>*{--g:clamp(6px,2.4cqi,10px);font-size:clamp(10.5px,calc(8.5px + .9cqi),12px)}',
-        '.num{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;font-variant-numeric:tabular-nums}',
-        '.tui:not(.inert){pointer-events:auto}',
-        '.tui.inert{opacity:.6}',
-        '.tab{position:fixed;left:0;top:50%;transform:translateY(-50%);width:14px;height:56px;cursor:pointer;border-radius:0 10px 10px 0;box-shadow:var(--raise),var(--lift);transition:width .2s var(--ease)}',
-        '.tab:not(.inert){pointer-events:auto}',
-        '.tab:hover{width:20px}',
-        '.tab::after{content:"";position:absolute;left:5px;top:18px;width:3px;height:20px;border-radius:2px;background:var(--hair)}',
-        '.tab.busy::after{top:25px;width:6px;height:6px;left:4px;border-radius:50%;background:var(--accent);animation:beat 1.2s var(--ease) infinite}',
-        '@keyframes beat{50%{opacity:.45}}',
-        '.bar{display:flex;align-items:center;gap:6px;padding:4px 4px 2px var(--g);cursor:grab;white-space:nowrap}',
-        '.bar .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--ink-3);opacity:.5}',
-        '.bar .dot.run{background:var(--accent);opacity:1;animation:beat 1.2s var(--ease) infinite}',
-        '.bar .name{font-weight:650;letter-spacing:-.01em}',
-        '.bar .state,.bar .k,.bar .meta{min-width:0;color:var(--ink-3);overflow:hidden}',
-        '.bar .fill{flex:1}',
-        '.btn{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:999px;color:var(--ink-2);cursor:pointer;transition:background .15s var(--ease),color .15s var(--ease)}',
-        '.btn svg{width:14px;height:14px}',
-        '.btn:hover{background:var(--fill);color:var(--ink)}',
-        '.btn.on{color:var(--accent)}',
-        '.btn.on:hover{background:var(--tint)}',
-        '.btn.folded svg{transform:rotate(-90deg)}',
-        // Corners size the panel; no mark, and they straddle the rounded edge, as a macOS window's.
-        '.grip{position:absolute;width:18px;height:18px}',
-        '.grip.se{right:-4px;bottom:-4px;cursor:nwse-resize}.grip.sw{left:-4px;bottom:-4px;cursor:nesw-resize}',
-        '.grip.ne{right:-4px;top:-4px;cursor:nesw-resize}.grip.nw{left:-4px;top:-4px;cursor:nwse-resize}',
-        '.body{display:flex;flex-direction:column;gap:1px;padding:2px var(--g) 6px}',
-        '.goal{font-weight:650;line-height:1.3;letter-spacing:-.01em;overflow-wrap:anywhere}',
-        '.thought{color:var(--ink-2);overflow-wrap:anywhere}',
-        '.doing{display:flex;align-items:baseline;gap:5px;overflow-wrap:anywhere}',
-        '.verb{flex:none;color:var(--accent);background:var(--tint);border-radius:5px;padding:0 5px;font-weight:600;font-size:.92em;line-height:1.45}',
-        '.live{display:flex;align-items:center;gap:5px;color:var(--ink-3);font-size:.92em}',
-        '.spin{flex:none;width:11px;height:11px;border-radius:50%;border:1.5px solid var(--hair);border-top-color:var(--accent);animation:spin .8s linear infinite}',
-        '.spin.slow{animation-duration:1.6s;border-top-color:var(--ink-3)}',
-        '@keyframes spin{to{transform:rotate(1turn)}}',
-        '.phase::after{content:"";animation:ph var(--d) steps(1) forwards;animation-delay:var(--t)}',
-        '.dots::after{content:"";animation:dots 1.8s steps(1) infinite}',
-        '${contentKeys("dots", ["", ".", "..", "..."])}',
-        '.rule{display:flex;align-items:center;gap:5px;padding:2px 4px 0 var(--g);border-top:1px solid var(--hair);color:var(--ink-2);font-weight:600;font-size:.92em}',
-        '.rule .t{color:var(--ink-3);font-weight:500}',
-        '.rule .btn{pointer-events:auto;width:20px;height:20px}',
-        '.tui.inert .rule .btn{pointer-events:none}',
-        // n, mark, cmd, what, clock, ms. Newest row first.
-        '.rows{display:grid;grid-template-columns:auto auto auto minmax(0,1fr) auto auto;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--hair) transparent;padding:1px 0 4px;max-height:280px}',
-        '.tui.sized .rows{flex:1;min-height:0;max-height:none}',
-        '.row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:baseline;padding:1px var(--g);transition:background .15s var(--ease)}',
-        '.row:hover{background:var(--fill)}',
-        '.row .n{grid-column:1;color:var(--ink-3);text-align:right}',
-        '.row .st{grid-column:2;align-self:center;width:7px;height:7px;margin-left:5px;padding:0;border-radius:50%}',
-        '.row .st.ok{background:var(--good)}.row .st.no{background:var(--bad)}',
-        '.row .cmd{grid-column:3;font-weight:600}.row .what{grid-column:4;color:var(--ink-2);overflow-wrap:anywhere}.row .at{grid-column:5}.row .ms{grid-column:6}',
-        '.row>:not(:first-child):not(.note){padding-left:6px}',
-        '.row .at,.row .ms{color:var(--ink-3);text-align:right}',
-        '.row .note{grid-column:4/-1;padding-left:6px;color:var(--ink-3);font-size:.92em;line-height:1.25;overflow-wrap:anywhere}',
-        '.row .note.no{color:var(--bad)}',
-        // Narrow: the clock and the seed go; n, the mark, the act, its target and ms stay, the note takes the width.
-        '@container (max-width:360px){.row .at,.bar .meta,.bar .k,.bar .state{display:none}.rows .row .note{grid-column:3/-1}}',
-        '.row.new{animation:fresh 1.2s var(--ease)}',
-        '@keyframes fresh{from{background:var(--tint)}}',
-  ].join(''));
+  const style = el('style', null, ${JSON.stringify(CSS)});
   // The running command's phase words: one keyframes rule, swapped per command.
   const phase = el('style');
   const marks = el('div');
@@ -375,7 +494,9 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     const a = hit && hit.closest('[data-a]');
     if (!a) return;
     const act = a.getAttribute('data-a');
-    if (act === 'min') ui.min = !ui.min;
+    // Opening springs the panel out of the tab; folding slides the tab in.
+    if (act === 'min') { ui.min = !ui.min; ui.enter = ui.min ? 'tab' : 'tui'; }
+    else if (act === 'look') ui.look = ui.look === 'term' ? 'panel' : 'term';
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
     else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
@@ -395,11 +516,10 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     rows.scrollTop = ui.top || 0;
   };
   const rowOf = (r) => {
-    const row = el('div', 'row');
+    const row = el('div', 'row' + (r.ok ? '' : ' failed'));
     row.appendChild(el('span', 'n num', String(r.n)));
-    const st = el('span', 'st ' + (r.ok ? 'ok' : 'no'));
-    st.title = r.ok ? 'done' : 'failed';
-    row.appendChild(st);
+    // ✓/✗: the terminal look's column; the panel shows a failure by its colour.
+    row.appendChild(el('span', 'mk ' + (r.ok ? 'ok' : 'no'), r.ok ? '✓' : '✗'));
     row.appendChild(el('span', 'cmd', r.cmd));
     row.appendChild(el('span', 'what', r.what));
     row.appendChild(el('span', 'at num', r.at));
@@ -407,6 +527,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     if (r.note) row.appendChild(el('span', 'note' + (r.ok ? '' : ' no'), r.note));
     return row;
   };
+  const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Newest first. Scrolled down, the rows in view stay put; at the top, the newest shows.
   const add = (list, reset) => {
     if (reset) rows.textContent = '';
@@ -421,80 +542,135 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     rows.insertBefore(fresh, rows.firstChild);
     while (rows.childElementCount > ${TRACE_KEEP}) rows.lastChild.remove();
     rows.scrollTop = was > 0 ? was + rows.scrollHeight - h : 0;
+    // At the top, the new rows push the list down: one transform per row in view, no layout.
+    const dh = rows.scrollHeight - h;
+    if (!reset && was === 0 && dh > 0 && ui.look !== 'term' && !still()) {
+      const kids = [...rows.children].slice(0, 24), o = { duration: 320, easing: 'cubic-bezier(.16,1,.3,1)' };
+      kids.forEach((k, i) => k.animate(i < list.length
+        ? [{ transform: 'translateY(-' + dh + 'px)', opacity: 0 }, { transform: 'none', opacity: 1 }]
+        : [{ transform: 'translateY(-' + dh + 'px)' }, { transform: 'none' }], o));
+    }
   };
   ui.paint = () => {
     const s = ui.s;
     show();
+    const term = ui.look === 'term';
     // A command's phase words run on from when it began, across redraws.
     if (s.busy && !ui.wasBusy) ui.since = Date.now();
     ui.wasBusy = s.busy;
     const since = ((Date.now() - (ui.since || Date.now())) / 1000).toFixed(2);
     if (phase.textContent !== s.ph.keys) phase.textContent = s.ph.keys;
-    wrap.className = 'wrap ' + (dark() ? 'dark' : 'light');
-    marks.textContent = '';
-    if (ui.marks) {
-      for (const { n, box } of s.boxes) {
-        const c = COLOURS[n % COLOURS.length];
-        const b = el('div', 'box', null, at(box) + 'border-color:' + c);
-        b.appendChild(el('div', 'tag', String(n), (box.y < 16 ? 'top:0' : 'top:-16px') + ';background:' + c));
-        marks.appendChild(b);
+    wrap.className = 'wrap ' + (term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
+    // Boxes redrawn only when they change: a redraw never restarts the target's lock-on.
+    const mk = JSON.stringify([ui.marks, s.boxes, s.target]);
+    if (mk !== ui.marksKey) {
+      ui.marksKey = mk;
+      marks.textContent = '';
+      if (ui.marks) {
+        for (const { n, box } of s.boxes) {
+          const c = COLOURS[n % COLOURS.length];
+          const b = el('div', 'box', null, at(box) + 'border-color:' + c);
+          b.appendChild(el('div', 'tag', String(n), (box.y < 16 ? 'top:0' : 'top:-16px') + ';background:' + c));
+          marks.appendChild(b);
+        }
+        const t = s.target;
+        if (t) marks.appendChild(el('div', 'target', null, at(t) + '--sx:' + (1 + 16 / Math.max(t.w, 1)).toFixed(3) + ';--sy:' + (1 + 16 / Math.max(t.h, 1)).toFixed(3)));
       }
-      if (s.target) marks.appendChild(el('div', 'target', null, at(s.target)));
     }
+    const enter = ui.enter;
+    ui.enter = null;
     let panel = tab;
     if (ui.min) {
       tui.style.display = 'none';
       tab.style.display = '';
-      tab.className = 'tab' + (s.busy ? ' busy' : '');
+      tab.className = 'tab' + (s.busy ? ' busy' : '') + (enter === 'tab' ? ' enter' : '');
       ui.tuiEl = null;
     } else {
       tab.style.display = 'none';
       clamp();
       const place = ui.x == null ? 'left:12px;bottom:12px' : 'left:' + ui.x + 'px;top:' + ui.y + 'px';
-      tui.className = 'tui' + (s.busy ? ' busy' : '') + (ui.sized ? ' sized' : '');
+      tui.className = 'tui' + (s.busy ? ' busy' : '') + (ui.sized ? ' sized' : '') + (enter === 'tui' ? ' enter' : '');
       tui.style.cssText = place + ';width:' + ui.w + 'px' + (ui.sized ? ';height:' + ui.h + 'px' : '');
       ui.tuiEl = panel = tui;
       bar.textContent = '';
-      bar.appendChild(el('span', 'dot' + (s.busy ? ' run' : '')));
-      bar.appendChild(el('span', 'name', 'autobrowse'));
-      bar.appendChild(el('span', 'state', s.busy ? 'Running' : 'Idle'));
-      if (s.step) bar.appendChild(el('span', 'k', 'Step ' + s.step));
-      if (s.meta) bar.appendChild(el('span', 'meta num', s.meta));
-      bar.appendChild(el('span', 'fill'));
-      const btn = (a, d, tip, cls) => { const b = el('span', 'btn' + (cls ? ' ' + cls : '')); b.appendChild(icon(d)); b.setAttribute('data-a', a); b.title = tip; return b; };
-      bar.appendChild(btn('marks', ICONS.boxes, ui.marks ? 'Hide the boxes' : 'Show the boxes', ui.marks ? 'on' : ''));
-      bar.appendChild(btn('theme', dark() ? ICONS.sun : ICONS.moon, dark() ? 'Light' : 'Dark'));
-      bar.appendChild(btn('min', ICONS.min, 'Minimize'));
       body.textContent = '';
-      if (s.goal) body.appendChild(el('div', 'goal', s.goal));
-      if (s.thought) body.appendChild(el('div', 'thought', s.thought));
-      if (s.doing) {
-        // "click: open the pricing page": the verb as a chip.
-        const i = s.doing.indexOf(': ');
-        const d = el('div', 'doing');
-        if (i > 0) d.appendChild(el('span', 'verb', s.doing.slice(0, i)));
-        d.appendChild(el('span', '', i > 0 ? s.doing.slice(i + 2) : s.doing));
-        body.appendChild(d);
-      }
-      // The busy line: the hands' phase while a command runs; between commands, the agent's turn.
-      const live = el('div', 'live');
-      if (s.busy) {
-        live.appendChild(el('span', 'spin'));
-        const w = el('span');
-        w.append(el('span', 'phase', '', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'), el('span', 'dots'));
-        live.appendChild(w);
-      } else if (s.goal) {
-        live.appendChild(el('span', 'spin slow'));
-        const w = el('span', '', 'Thinking');
-        w.appendChild(el('span', 'dots'));
-        live.appendChild(w);
-      } else live.appendChild(el('span', '', 'Waiting for the agent'));
-      body.appendChild(live);
       rule.textContent = '';
-      rule.appendChild(el('span', '', 'Activity'));
-      rule.appendChild(el('span', 't num', String(s.count)));
-      rule.appendChild(el('span', 'fill', null, 'flex:1'));
-      rule.appendChild(btn('trace', ICONS.chevron, ui.trace ? 'Fold the activity' : 'Show the activity', ui.trace ? '' : 'folded'));
+      const tbtn = (a, t, tip, cls) => { const b = el('span', 'btn' + (cls ? ' ' + cls : ''), t); b.setAttribute('data-a', a); b.title = tip; return b; };
+      const btn = (a, d, tip, cls) => { const b = el('span', 'btn' + (cls ? ' ' + cls : '')); b.appendChild(icon(d)); b.setAttribute('data-a', a); b.title = tip; return b; };
+      if (term) {
+        bar.appendChild(el('span', 'name', '▌autobrowse'));
+        bar.appendChild(el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? '● run' : '○ idle'));
+        if (s.step) bar.appendChild(el('span', 'k', 'step ' + s.step));
+        bar.appendChild(el('span', 'fill'));
+        if (s.meta) bar.appendChild(el('span', 'meta', s.meta));
+        bar.appendChild(tbtn('look', '[▤]', 'panel look'));
+        bar.appendChild(tbtn('marks', ui.marks ? '[◆]' : '[◇]', ui.marks ? 'hide the boxes' : 'show the boxes', ui.marks ? 'on' : ''));
+        bar.appendChild(tbtn('min', '[_]', 'minimize'));
+        const line = (k, cls, t) => { const d = el('div'); d.appendChild(el('span', 'k', k)); d.appendChild(el('span', cls, t)); return d; };
+        if (s.goal) body.appendChild(line('goal ', 'goal', s.goal));
+        if (s.thought) body.appendChild(line('» ', 'thought', s.thought));
+        if (s.doing) body.appendChild(line('$ ', 'doing', s.doing));
+        const live = el('div', 'live');
+        if (s.busy) {
+          live.appendChild(el('span', 'spin'));
+          live.appendChild(el('span', 'phase', ' ', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'));
+          live.appendChild(el('span', 'dots'));
+        } else if (s.goal) {
+          live.appendChild(el('span', 'spin slow'));
+          live.appendChild(el('span', '', ' thinking'));
+          live.appendChild(el('span', 'dots'));
+        } else {
+          live.appendChild(el('span', 'k', '$ waiting for the agent'));
+          live.appendChild(el('span', 'cursor'));
+        }
+        body.appendChild(live);
+        rule.appendChild(el('span', 't', '─ trace'));
+        rule.appendChild(el('span', 't', String(s.count)));
+        rule.appendChild(el('span', 'fill', null, 'flex:1'));
+        rule.appendChild(tbtn('trace', ui.trace ? '[▾]' : '[▸]', ui.trace ? 'fold the trace' : 'show the trace'));
+      } else {
+        bar.appendChild(el('span', 'name', 'autobrowse'));
+        bar.appendChild(el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? 'Running' : 'Idle'));
+        if (s.step) bar.appendChild(el('span', 'k', 'Step ' + s.step));
+        if (s.meta) bar.appendChild(el('span', 'meta num', s.meta));
+        bar.appendChild(el('span', 'fill'));
+        bar.appendChild(btn('look', ICONS.term, 'Terminal look'));
+        bar.appendChild(btn('marks', ICONS.boxes, ui.marks ? 'Hide the boxes' : 'Show the boxes', ui.marks ? 'on' : ''));
+        bar.appendChild(btn('theme', dark() ? ICONS.sun : ICONS.moon, dark() ? 'Light' : 'Dark'));
+        bar.appendChild(btn('min', ICONS.min, 'Minimize'));
+        // Words that changed since the last draw rise in; the rest hold still.
+        const seen = ui.seen || {};
+        ui.seen = { goal: s.goal, thought: s.thought, doing: s.doing };
+        const fade = (k) => (seen[k] !== s[k] ? ' in' : '');
+        if (s.goal) body.appendChild(el('div', 'goal' + fade('goal'), s.goal));
+        if (s.thought) body.appendChild(el('div', 'thought' + fade('thought'), s.thought));
+        if (s.doing) {
+          // "click: open the pricing page": the verb as a chip.
+          const i = s.doing.indexOf(': ');
+          const d = el('div', 'doing' + fade('doing'));
+          if (i > 0) d.appendChild(el('span', 'verb', s.doing.slice(0, i)));
+          d.appendChild(el('span', '', i > 0 ? s.doing.slice(i + 2) : s.doing));
+          body.appendChild(d);
+        }
+        // The busy line: the hands' phase while a command runs; between commands, the agent's turn.
+        // The shimmer runs on the wall clock, so a redraw continues it instead of restarting it.
+        const live = el('div', 'live');
+        const shim = (t) => el('span', 'shim', t, 'animation-delay:-' + ((Date.now() % 1800) / 1000).toFixed(2) + 's');
+        if (s.busy) {
+          const w = shim();
+          w.append(el('span', 'phase', '', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'), el('span', 'dots'));
+          live.appendChild(w);
+        } else if (s.goal) {
+          const w = shim('Thinking');
+          w.appendChild(el('span', 'dots'));
+          live.appendChild(w);
+        } else live.appendChild(el('span', '', 'Waiting for the agent'));
+        body.appendChild(live);
+        rule.appendChild(el('span', '', 'Activity'));
+        rule.appendChild(el('span', 't num', String(s.count)));
+        rule.appendChild(el('span', 'fill', null, 'flex:1'));
+        rule.appendChild(btn('trace', ICONS.chevron, ui.trace ? 'Fold the activity' : 'Show the activity', ui.trace ? '' : 'folded'));
+      }
       rows.style.display = ui.trace && s.count ? '' : 'none';
     }
     // Inert only when the agent's press could land on the panel; 16px of room around it.
@@ -539,6 +715,7 @@ export function overlayFor(startOn: boolean) {
     trace: true,
     marks: true,
     theme: null,
+    look: "panel",
     x: null,
     y: null,
     w: 460,

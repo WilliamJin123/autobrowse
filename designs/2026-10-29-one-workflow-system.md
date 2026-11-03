@@ -136,6 +136,7 @@ Until then, the agent sends `flow` and `code` as separate commands, and the jour
 - One step, `sign-in`, irreversible: a dry run stops before the password. Plan: `account` for a second account at the site; nothing else, the store has the rest.
 - The step runs the runner's own `signIn(site, account)`: the site's login spec types the credential inside the runner, on the site's own hosts, audited. The agent never holds it and `place` is not involved.
 - In explore, a sign-in page, a signed-out state or an expired session is `{"cmd":"flow","name":"<site>-login"}`. `--login` stays for the one case the tool cannot do: another site's login typed into a popup on this page.
+- Already signed in (the site's `loggedIn`), it types nothing. An OAuth sign-in whose page load signs in (One Tap, a live cookie) ends there.
 - A miss is the run's error, with the fix in it: no stored credential (`autobrowse creds set <site>`), a `--signup` session (no sign-in), no spec for the site.
 - `open` still signs in by itself on a wall it recognises (text or URL). Whether it should is open (Options, "Who signs in on `open`").
 

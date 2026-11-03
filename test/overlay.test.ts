@@ -137,6 +137,42 @@ describe("headed overlay", () => {
     }
   });
 
+  it("the look button switches panel and terminal, kept across documents; a failed row has no mark in the panel", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+      await page.setContent(BIG);
+      const o = overlayFor(true);
+      await o.set(page, { goal: "save the form" });
+      await o.end(page, { ...row, ok: false, note: "not visible" });
+      const look = () => page.evaluate<string>(`${ui}.tuiEl.parentNode.className`);
+      const mark = () =>
+        page.evaluate<string>(`getComputedStyle(${ui}.tuiEl.querySelector('.row .mk')).display`);
+      expect(await look()).toMatch(/^wrap panel (light|dark)$/);
+      expect(await mark()).toBe("none");
+      expect(
+        await page.evaluate(`getComputedStyle(${ui}.tuiEl.querySelector('.row .cmd')).color`),
+      ).not.toBe(
+        await page.evaluate(`getComputedStyle(${ui}.tuiEl.querySelector('.row .what')).color`),
+      );
+      const b = await btnAt(page, "look");
+      await page.mouse.click(b.x, b.y);
+      expect(await look()).toBe("wrap term");
+      expect(await mark()).not.toBe("none");
+      expect(await hits(page)).toBe(0);
+      // The choice rides into the next document (a real one: setContent keeps the window, drops its listeners).
+      await o.end(page, row);
+      await page.goto(`data:text/html,${encodeURIComponent(PAGE)}`);
+      await o.loaded(page);
+      expect(await look()).toBe("wrap term");
+      const back = await btnAt(page, "look");
+      await page.mouse.click(back.x, back.y);
+      expect(await look()).toMatch(/^wrap panel/);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("the bar drags the panel anywhere and any corner sizes it; the page sees no move", async () => {
     const browser = await chromium.launch();
     try {
