@@ -396,8 +396,9 @@ describe("Google sign-in walk", () => {
       },
       "r",
     );
+    // a person's step, so no refusal and no 12 h hold
     await expect(signInToGoogle(ctxOf(recovery.fp, ["totp"]))).rejects.toThrow(
-      /second step this tool cannot answer/,
+      /second step only a person can answer/,
     );
   });
 

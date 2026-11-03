@@ -288,7 +288,8 @@ export function googleWalk(ctx: SignInContext): Walk<SignInContext> {
         // Twice is a real sign-in (before the password, then after it); a third is a loop:
         // the step we pick leads to one we can't answer and back (LinkedIn, 2026-10-05).
         if (++listed > 2)
-          fail(only("Google keeps asking for a second step this tool cannot answer"));
+          // a person's step, not a refusal: no 12 h hold (WA-1028)
+          fp.human(only("Google keeps asking for a second step only a person can answer"));
         // Before the password, the list offers it (an account with a passkey is asked for that first).
         const password = choice("Enter your password");
         if (!passwordTyped && (await fp.has(password, 3_000))) {
@@ -382,8 +383,9 @@ export function googleWalk(ctx: SignInContext): Walk<SignInContext> {
             await fp.text(),
           )),
       async act({ fp }) {
+        // a person's step (a phone tap, "Verify it's you"), not a refusal: no 12 h hold (WA-1028)
         if (!(await fp.has(OTHER_WAY)))
-          fail("Google asked for a second step this tool cannot answer");
+          fp.human("Google asks a second step only a person can answer: a phone tap or a check");
         await otherWay(fp);
       },
     },
