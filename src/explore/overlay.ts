@@ -182,8 +182,6 @@ const ICONS = {
   sun: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41",
   min: "M5 12h14",
   chevron: "m6 9 6 6 6-6",
-  ok: "M20 6 9 17l-5-5",
-  no: "M18 6 6 18M6 6l12 12",
 };
 
 /** How a person left the panel: carried into each new document. */
@@ -236,11 +234,12 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
         // A floating panel: frosted paper, hairline, lifted. The whole panel takes the pointer.
         '.tui,.tab{background:color-mix(in srgb,var(--paper) 86%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8)}',
         '.tui{position:fixed;display:flex;flex-direction:column;max-width:calc(100vw - 12px);cursor:default;user-select:none;-webkit-user-select:none;',
-        'font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",Figtree,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;',
+        'font:12px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",Figtree,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;',
         'border-radius:14px;box-shadow:var(--raise),var(--lift)}',
-        // Width scales the type and the inset: 13px wide open, 11px at the narrowest.
+        // Width scales the type and the inset: 12px wide open, 10.5px at the narrowest. Dense as the old TUI: no row padding, numbers in mono.
         '.tui{container-type:inline-size}',
-        '.tui>*{--g:clamp(8px,3cqi,12px);font-size:clamp(11px,calc(9px + .9cqi),13px)}',
+        '.tui>*{--g:clamp(6px,2.4cqi,10px);font-size:clamp(10.5px,calc(8.5px + .9cqi),12px)}',
+        '.num{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;font-variant-numeric:tabular-nums}',
         '.tui:not(.inert){pointer-events:auto}',
         '.tui.inert{opacity:.6}',
         '.tab{position:fixed;left:0;top:50%;transform:translateY(-50%);width:14px;height:56px;cursor:pointer;border-radius:0 10px 10px 0;box-shadow:var(--raise),var(--lift);transition:width .2s var(--ease)}',
@@ -249,14 +248,14 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
         '.tab::after{content:"";position:absolute;left:5px;top:18px;width:3px;height:20px;border-radius:2px;background:var(--hair)}',
         '.tab.busy::after{top:25px;width:6px;height:6px;left:4px;border-radius:50%;background:var(--accent);animation:beat 1.2s var(--ease) infinite}',
         '@keyframes beat{50%{opacity:.45}}',
-        '.bar{display:flex;align-items:center;gap:8px;padding:8px 6px 4px var(--g);cursor:grab;white-space:nowrap}',
-        '.bar .dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--ink-3);opacity:.5}',
+        '.bar{display:flex;align-items:center;gap:6px;padding:4px 4px 2px var(--g);cursor:grab;white-space:nowrap}',
+        '.bar .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--ink-3);opacity:.5}',
         '.bar .dot.run{background:var(--accent);opacity:1;animation:beat 1.2s var(--ease) infinite}',
         '.bar .name{font-weight:650;letter-spacing:-.01em}',
-        '.bar .state,.bar .k{min-width:0;color:var(--ink-3);overflow:hidden}',
+        '.bar .state,.bar .k,.bar .meta{min-width:0;color:var(--ink-3);overflow:hidden}',
         '.bar .fill{flex:1}',
-        '.rule .meta{color:var(--ink-3);font-weight:400;font-size:.92em;font-variant-numeric:tabular-nums}',
-        '.btn{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:999px;color:var(--ink-2);cursor:pointer;transition:background .15s var(--ease),color .15s var(--ease)}',
+        '.btn{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:999px;color:var(--ink-2);cursor:pointer;transition:background .15s var(--ease),color .15s var(--ease)}',
+        '.btn svg{width:14px;height:14px}',
         '.btn:hover{background:var(--fill);color:var(--ink)}',
         '.btn.on{color:var(--accent)}',
         '.btn.on:hover{background:var(--tint)}',
@@ -265,37 +264,37 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
         '.grip{position:absolute;width:18px;height:18px}',
         '.grip.se{right:-4px;bottom:-4px;cursor:nwse-resize}.grip.sw{left:-4px;bottom:-4px;cursor:nesw-resize}',
         '.grip.ne{right:-4px;top:-4px;cursor:nesw-resize}.grip.nw{left:-4px;top:-4px;cursor:nwse-resize}',
-        '.body{display:flex;flex-direction:column;gap:4px;padding:4px var(--g) 12px}',
-        '.goal{font-weight:650;font-size:1.08em;line-height:1.3;letter-spacing:-.01em;overflow-wrap:anywhere}',
+        '.body{display:flex;flex-direction:column;gap:1px;padding:2px var(--g) 6px}',
+        '.goal{font-weight:650;line-height:1.3;letter-spacing:-.01em;overflow-wrap:anywhere}',
         '.thought{color:var(--ink-2);overflow-wrap:anywhere}',
-        '.doing{display:flex;align-items:baseline;gap:6px;overflow-wrap:anywhere}',
-        '.verb{flex:none;color:var(--accent);background:var(--tint);border-radius:6px;padding:0 6px;font-weight:600;font-size:.92em;line-height:1.5}',
-        '.live{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:.92em;margin-top:2px}',
+        '.doing{display:flex;align-items:baseline;gap:5px;overflow-wrap:anywhere}',
+        '.verb{flex:none;color:var(--accent);background:var(--tint);border-radius:5px;padding:0 5px;font-weight:600;font-size:.92em;line-height:1.45}',
+        '.live{display:flex;align-items:center;gap:5px;color:var(--ink-3);font-size:.92em}',
         '.spin{flex:none;width:11px;height:11px;border-radius:50%;border:1.5px solid var(--hair);border-top-color:var(--accent);animation:spin .8s linear infinite}',
         '.spin.slow{animation-duration:1.6s;border-top-color:var(--ink-3)}',
         '@keyframes spin{to{transform:rotate(1turn)}}',
         '.phase::after{content:"";animation:ph var(--d) steps(1) forwards;animation-delay:var(--t)}',
         '.dots::after{content:"";animation:dots 1.8s steps(1) infinite}',
         '${contentKeys("dots", ["", ".", "..", "..."])}',
-        '.rule{display:flex;align-items:center;gap:6px;padding:4px 6px 2px var(--g);border-top:1px solid var(--hair);color:var(--ink-2);font-weight:600;font-size:.92em}',
-        '.rule .t{color:var(--ink-3);font-weight:500;font-variant-numeric:tabular-nums}',
-        '.rule .btn{pointer-events:auto;width:24px;height:24px}',
+        '.rule{display:flex;align-items:center;gap:5px;padding:2px 4px 0 var(--g);border-top:1px solid var(--hair);color:var(--ink-2);font-weight:600;font-size:.92em}',
+        '.rule .t{color:var(--ink-3);font-weight:500}',
+        '.rule .btn{pointer-events:auto;width:20px;height:20px}',
         '.tui.inert .rule .btn{pointer-events:none}',
-        '.rows{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--hair) transparent;padding:0 0 6px;max-height:220px}',
+        // n, mark, cmd, what, clock, ms. Newest row first.
+        '.rows{display:grid;grid-template-columns:auto auto auto minmax(0,1fr) auto auto;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--hair) transparent;padding:1px 0 4px;max-height:280px}',
         '.tui.sized .rows{flex:1;min-height:0;max-height:none}',
-        // Hover fill inset and rounded; the words keep the panel's inset.
-        '.row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:baseline;margin:0 6px;padding:5px calc(var(--g) - 6px);border-radius:8px;transition:background .15s var(--ease)}',
+        '.row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:baseline;padding:1px var(--g);transition:background .15s var(--ease)}',
         '.row:hover{background:var(--fill)}',
-        '.row .st{grid-column:1;align-self:center;display:grid;place-items:center;width:14px;height:14px;border-radius:50%;color:var(--paper)}',
-        '.row .st svg{width:10px;height:10px;stroke-width:3}',
+        '.row .n{grid-column:1;color:var(--ink-3);text-align:right}',
+        '.row .st{grid-column:2;align-self:center;width:7px;height:7px;margin-left:5px;padding:0;border-radius:50%}',
         '.row .st.ok{background:var(--good)}.row .st.no{background:var(--bad)}',
-        '.row .cmd{grid-column:2;font-weight:600}.row .what{grid-column:3;color:var(--ink-2);overflow-wrap:anywhere}.row .at{grid-column:4}.row .ms{grid-column:5}',
-        '.row>:not(:first-child):not(.note){padding-left:8px}',
-        '.row .at,.row .ms{color:var(--ink-3);font-size:.88em;font-variant-numeric:tabular-nums;text-align:right}',
-        '.row .note{grid-column:3/-1;padding-left:8px;color:var(--ink-3);font-size:.88em;line-height:1.3;overflow-wrap:anywhere}',
+        '.row .cmd{grid-column:3;font-weight:600}.row .what{grid-column:4;color:var(--ink-2);overflow-wrap:anywhere}.row .at{grid-column:5}.row .ms{grid-column:6}',
+        '.row>:not(:first-child):not(.note){padding-left:6px}',
+        '.row .at,.row .ms{color:var(--ink-3);text-align:right}',
+        '.row .note{grid-column:4/-1;padding-left:6px;color:var(--ink-3);font-size:.92em;line-height:1.25;overflow-wrap:anywhere}',
         '.row .note.no{color:var(--bad)}',
-        // Narrow: the clock and the seed go; the act, its target, the mark and ms stay, the note takes the width.
-        '@container (max-width:360px){.row .at,.rule .meta,.bar .k,.bar .state{display:none}.rows .row .note{grid-column:2/-1}}',
+        // Narrow: the clock and the seed go; n, the mark, the act, its target and ms stay, the note takes the width.
+        '@container (max-width:360px){.row .at,.bar .meta,.bar .k,.bar .state{display:none}.rows .row .note{grid-column:3/-1}}',
         '.row.new{animation:fresh 1.2s var(--ease)}',
         '@keyframes fresh{from{background:var(--tint)}}',
   ].join(''));
@@ -397,14 +396,14 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   };
   const rowOf = (r) => {
     const row = el('div', 'row');
+    row.appendChild(el('span', 'n num', String(r.n)));
     const st = el('span', 'st ' + (r.ok ? 'ok' : 'no'));
-    st.appendChild(icon(r.ok ? ICONS.ok : ICONS.no));
     st.title = r.ok ? 'done' : 'failed';
     row.appendChild(st);
     row.appendChild(el('span', 'cmd', r.cmd));
     row.appendChild(el('span', 'what', r.what));
-    row.appendChild(el('span', 'at', r.at));
-    row.appendChild(el('span', 'ms', r.ms < 1000 ? r.ms + ' ms' : (r.ms / 1000).toFixed(1) + ' s'));
+    row.appendChild(el('span', 'at num', r.at));
+    row.appendChild(el('span', 'ms num', r.ms < 1000 ? r.ms + ' ms' : (r.ms / 1000).toFixed(1) + ' s'));
     if (r.note) row.appendChild(el('span', 'note' + (r.ok ? '' : ' no'), r.note));
     return row;
   };
@@ -460,6 +459,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
       bar.appendChild(el('span', 'name', 'autobrowse'));
       bar.appendChild(el('span', 'state', s.busy ? 'Running' : 'Idle'));
       if (s.step) bar.appendChild(el('span', 'k', 'Step ' + s.step));
+      if (s.meta) bar.appendChild(el('span', 'meta num', s.meta));
       bar.appendChild(el('span', 'fill'));
       const btn = (a, d, tip, cls) => { const b = el('span', 'btn' + (cls ? ' ' + cls : '')); b.appendChild(icon(d)); b.setAttribute('data-a', a); b.title = tip; return b; };
       bar.appendChild(btn('marks', ICONS.boxes, ui.marks ? 'Hide the boxes' : 'Show the boxes', ui.marks ? 'on' : ''));
@@ -492,9 +492,8 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
       body.appendChild(live);
       rule.textContent = '';
       rule.appendChild(el('span', '', 'Activity'));
-      rule.appendChild(el('span', 't', String(s.count)));
+      rule.appendChild(el('span', 't num', String(s.count)));
       rule.appendChild(el('span', 'fill', null, 'flex:1'));
-      if (s.meta) rule.appendChild(el('span', 'meta', s.meta));
       rule.appendChild(btn('trace', ICONS.chevron, ui.trace ? 'Fold the activity' : 'Show the activity', ui.trace ? '' : 'folded'));
       rows.style.display = ui.trace && s.count ? '' : 'none';
     }
