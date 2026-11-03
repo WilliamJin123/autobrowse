@@ -549,3 +549,60 @@ describe("compile", () => {
     60_000,
   );
 });
+
+describe("field kinds", () => {
+  it("types a plan field by the input it fills; a field in two kinds stays text", async () => {
+    const { z } = await import("zod");
+    const fill = (field: string, inputType: string | null) => ({
+      kind: "fill" as const,
+      goal: `fill ${field}`,
+      hints: h({ role: "textbox", name: field, inputType }),
+      value: { from: "plan" as const, field },
+    });
+    const o = outlineSchema.parse({
+      name: "kinds",
+      site: "x",
+      description: "Fill typed inputs",
+      fields: ["mail", "site", "day", "count", "note", "mixed"].map((key) => ({
+        key,
+        label: key,
+        example: null,
+      })),
+      secrets: [],
+      steps: [
+        {
+          name: "form",
+          description: "the form",
+          irreversible: false,
+          proof: null,
+          kind: "browser",
+          url: "https://x.test/form",
+          ops: [
+            fill("mail", "email"),
+            fill("site", "url"),
+            fill("day", "date"),
+            fill("count", "number"),
+            fill("note", "text"),
+            fill("mixed", "email"),
+            fill("mixed", null),
+          ],
+        },
+      ],
+    });
+    const files = render(o).files;
+    const src = files["index.ts"] ?? "";
+    const zodOf = (key: string) =>
+      src.match(new RegExp(`^  ${key}: (.+)\\.describe`, "m"))?.[1] ?? "";
+    expect(zodOf("mail")).toBe("z.email()");
+    expect(zodOf("site")).toBe("z.url()");
+    expect(zodOf("day")).toBe("z.iso.date()");
+    expect(zodOf("note")).toBe("z.string().min(1)");
+    expect(zodOf("mixed")).toBe("z.string().min(1)");
+    const num = new Function("z", `return ${zodOf("count")}`)(z) as import("zod").ZodType;
+    expect(num.safeParse("12").success).toBe(true);
+    expect(num.safeParse("twelve").success).toBe(false);
+    // The rendered test's example plan parses: each typed field gets a valid sample.
+    expect(files["index.test.ts"]).toContain('mail: "you@example.com"');
+    expect(files["index.test.ts"]).toContain('day: "2026-01-31"');
+  });
+});

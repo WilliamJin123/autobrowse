@@ -78,6 +78,36 @@ function renderRecordsOp(op: Extract<OutlineOp, { kind: "records" }>): string {
 }
 
 /** One op as one statement, indented for a flow's body. */
+/** Plan field types the recording shows; values stay strings, as a fill types them. */
+const KINDS = {
+  text: { zod: "z.string().min(1)", sample: null },
+  email: { zod: "z.email()", sample: "you@example.com" },
+  url: { zod: "z.url()", sample: "https://example.com" },
+  date: { zod: "z.iso.date()", sample: "2026-01-31" },
+  number: { zod: 'z.string().regex(/^-?\\d+(\\.\\d+)?$/, "a number")', sample: "1" },
+} as const;
+type Kind = keyof typeof KINDS;
+
+/** A field's type from the inputs it fills: a field filled into two kinds stays text. */
+export function fieldKinds(o: Outline): Map<string, Kind> {
+  const seen = new Map<string, Set<Kind>>();
+  for (const step of o.steps) {
+    if (step.kind !== "browser") continue;
+    for (const op of step.ops) {
+      if (op.kind !== "fill" || op.value.from !== "plan") continue;
+      const t = op.hints.inputType;
+      const kind: Kind =
+        t === "email" || t === "url" || t === "date" || t === "number" ? t : "text";
+      const set = seen.get(op.value.field) ?? new Set<Kind>();
+      set.add(kind);
+      seen.set(op.value.field, set);
+    }
+  }
+  return new Map(
+    [...seen].map(([k, set]) => [k, set.size === 1 ? ([...set][0] ?? "text") : "text"]),
+  );
+}
+
 export function renderOp(op: OutlineOp): string {
   if (op.kind === "human") return `    fp.human(${q(op.reason)});`;
   if (op.kind === "ai")
@@ -358,9 +388,10 @@ export function render(o: Outline, opts: RenderOptions = {}): Rendered {
     "type StepDef",
   ].sort((a, b) => a.replace("type ", "").localeCompare(b.replace("type ", "")));
 
+  const kinds = fieldKinds(o);
   const planFields = o.fields.map(
     (f) =>
-      `  ${f.key}: z.string().min(1).describe(${q(f.label)}),${f.example ? ` // e.g. ${q(f.example)}` : ""}`,
+      `  ${f.key}: ${KINDS[kinds.get(f.key) ?? "text"].zod}.describe(${q(f.label)}),${f.example ? ` // e.g. ${q(f.example)}` : ""}`,
   );
   const depFields = [
     "  browser: FlowRunner;",
@@ -409,7 +440,12 @@ export const workflow = defineWorkflow<Deps, Memo>()({
 });
 `;
 
-  const example = o.fields.map((f) => `${f.key}: ${q(f.example ?? f.label)}`).join(", ");
+  const example = o.fields
+    .map((f) => {
+      const kind = KINDS[kinds.get(f.key) ?? "text"];
+      return `${f.key}: ${q(f.example ?? kind.sample ?? f.label)}`;
+    })
+    .join(", ");
   const depsSrc = [
     "browser: { run: async () => undefined as never }",
     ...(anySecret

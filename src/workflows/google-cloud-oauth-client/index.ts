@@ -16,15 +16,26 @@ import {
 
 export const planSchema = z.object({
   dryRun: z.boolean().default(false),
-  project: z.string().min(1).describe("Google Cloud project id"), // e.g. "my-project-123456"
-  api: z.string().min(1).describe("API to enable (service name)"), // e.g. "youtube.googleapis.com"
+  project: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, "a project id")
+    .describe("Google Cloud project id"), // e.g. "my-project-123456"
+  api: z
+    .string()
+    .regex(/^[a-z0-9-]+\.googleapis\.com$/, "a service name")
+    .describe("API to enable (service name)"), // e.g. "youtube.googleapis.com"
   appName: z.string().min(1).describe("App name on the consent screen"), // e.g. "Acme Co"
-  email: z.string().min(1).describe("The account's email (support contact and test user)"), // e.g. "you@example.com"
+  email: z.email().describe("The account's email (support contact and test user)"), // e.g. "you@example.com"
   clientName: z.string().min(1).describe("OAuth client name"), // e.g. "autobrowse"
-  redirectUri: z.string().min(1).describe("Authorized redirect URI"), // e.g. "http://127.0.0.1:9400/oauth/callback"
-  idEnv: z.string().default("GOOGLE_OAUTH_CLIENT_ID").describe("Env name the client id is kept as"),
+  redirectUri: z.url().describe("Authorized redirect URI"), // e.g. "http://127.0.0.1:9400/oauth/callback"
+  idEnv: z
+    .string()
+    .regex(/^[A-Z_][A-Z0-9_]*$/, "an env name")
+    .default("GOOGLE_OAUTH_CLIENT_ID")
+    .describe("Env name the client id is kept as"),
   secretEnv: z
     .string()
+    .regex(/^[A-Z_][A-Z0-9_]*$/, "an env name")
     .default("GOOGLE_OAUTH_CLIENT_SECRET")
     .describe("Env name the client secret is kept as"),
 });
