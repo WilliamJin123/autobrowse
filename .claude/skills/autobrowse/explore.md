@@ -1,6 +1,7 @@
 # Explore: drive a browser or the desktop
 
-One browser stays open on a site, signed in through the site's stored login.
+One browser stays open on a site. A wall on `open` signs in through the site's
+stored login; mid-session, `{"cmd":"flow","name":"<site>-login"}` does.
 You send one JSON command at a time over loopback. Every act that works is
 journaled; `save` writes a recording; `compile` makes it a workflow.
 
@@ -78,6 +79,7 @@ Act (journaled):
 - `{"cmd":"flow","name":"amazon-cart","plan":{"searchFor":"Dune"}}` — runs a workflow on this page: a compiled one (`autobrowse workflows`) or a hand-written leg as `<site>-<name>` (`linkedin-create-post`; its input fields are the plan). Its saved plan goes under yours.
   Answer: `{status, steps, gate?, url}`. The page stays where it ended: go on by hand. Mix freely: sign in, explore, `flow`, explore again.
   - Its legs must be on this session's site. Another site's workflow needs its own session.
+  - `<site>-login` signs in with the stored credential (through its Google/Microsoft button when the site has one; `"plan":{"account":"…"}` for a second account). The runner types it; you never hold it. Use it on a sign-in page, a signed-out state or an expired session instead of `--login` and `place`.
   - Every money act asks the person, as yours do. A workflow's `purchase`/`password`/`send` gate asks too. Send with `?wait=1` to hold for the answer.
   - `waiting` with `gate.name` `human`: fix it, then send the same command. The step runs again from its first `open`, so a fix the site keeps (a sign-in, a setting) holds; a fix on the page only (a closed dialog) does not. `choose`: send it again with `"choice":"…"`.
   - `failed`: the same command goes on from the failed step. `"fresh":true` starts over.

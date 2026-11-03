@@ -924,8 +924,10 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             return timeout;
           }
           let handled = 0;
+          let seen = false;
           while (Date.now() - start < timeout) {
-            if (await target.isVisible().catch(() => false)) break;
+            seen = await target.isVisible().catch(() => false);
+            if (seen) break;
             const s = handled < MAX_DETOURS ? await interruptHere(false) : null;
             if (s) {
               handled += 1;
@@ -934,6 +936,12 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             }
             await active.waitForTimeout(POLL_MS);
           }
+          // Never shown: say so, with the page, instead of a 1 s act that fails with Playwright's words.
+          // A script may run on a hidden element, so it still gets its try.
+          if (!seen && op.kind !== "script")
+            throw new Error(
+              `${goal}: ${JSON.stringify(hints)} not visible after ${Math.round(timeout / 1000)} s (${describePage(url, await bodyText(active, 600))})`,
+            );
           return Math.max(timeout - (Date.now() - start), 1_000);
         }
         /** One act: the recorded locator, else the repairer's; "repaired" when the second found it. */

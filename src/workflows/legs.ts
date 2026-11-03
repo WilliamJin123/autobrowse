@@ -9,6 +9,7 @@ import { FLOW_INPUTS } from "../browser/flows/inputs.gen.js";
 import { legName } from "../engine/leg.js";
 import { done, type Workflow } from "../engine/workflow.js";
 import type { CompiledCatalog } from "./compiled.js";
+import { LOGIN_WORKFLOWS, type LoginWorkflow } from "./logins.js";
 
 export interface LegDeps {
   browser: FlowRunner;
@@ -63,17 +64,24 @@ export const LEG_WORKFLOWS: ReadonlyMap<string, LegWorkflow> = new Map(
   }),
 );
 
-/** The catalog's workflows, then every leg none of them shadows by name. */
-export function withLegs<W extends { name: string }>(workflows: readonly W[]): (W | LegWorkflow)[] {
+/** A workflow built into the binary: a leg, or a site's sign-in (`<site>-login`). */
+export const builtinWorkflow = (name: string): LegWorkflow | LoginWorkflow | undefined =>
+  LEG_WORKFLOWS.get(name) ?? LOGIN_WORKFLOWS.get(name);
+
+/** The catalog's workflows, then every leg and sign-in none of them shadows by name. */
+export function withLegs<W extends { name: string }>(
+  workflows: readonly W[],
+): (W | LegWorkflow | LoginWorkflow)[] {
   const taken = new Set(workflows.map((w) => w.name));
-  return [...workflows, ...[...LEG_WORKFLOWS.values()].filter((w) => !taken.has(w.name))];
+  const builtin = [...LEG_WORKFLOWS.values(), ...LOGIN_WORKFLOWS.values()];
+  return [...workflows, ...builtin.filter((w) => !taken.has(w.name))];
 }
 
-/** One catalog: compiled workflows first (a recording may take a leg's name on purpose), then the legs. */
+/** One catalog: compiled workflows first (a recording may take a leg's name on purpose), then the built-in ones. */
 export function workflowCatalog(compiled: CompiledCatalog) {
   return {
     async get(name: string) {
-      return (await compiled.get(name))?.workflow ?? LEG_WORKFLOWS.get(name) ?? null;
+      return (await compiled.get(name))?.workflow ?? builtinWorkflow(name) ?? null;
     },
   };
 }

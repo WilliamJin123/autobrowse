@@ -445,6 +445,9 @@ export function oauthLogin(site: string, spec: OauthLoginSpec): SiteLogin["signI
     const { fp } = ctx;
     const main = fp.page;
     await fp.open(spec.start, { allowWall: true });
+    // The load itself may sign in (One Tap's auto_select, a live cookie): no button to find then.
+    // A URL pattern can match `start` itself, so only a page check counts; signInWith checks again.
+    if (typeof spec.success === "function" && (await spec.success(fp).catch(() => false))) return;
     const opened = () => fp.pages().find((p) => p !== main && provider.host.test(p.url())) ?? null;
     // One Tap opens its own card as the page loads (`auto_select`), before
     // anything is pressed — and the button under that card can then be
@@ -453,8 +456,11 @@ export function oauthLogin(site: string, spec: OauthLoginSpec): SiteLogin["signI
     if (!page) {
       if (spec.reveal && (await fp.has(spec.reveal, 1_500)))
         await fp.act({ kind: "click" }, spec.reveal, { goal: "past the saved-account chooser" });
+      // Absent when the page already shows the method list (or is not the site's: a wall
+      // read too early). A 15 s wait on it stalled every open of Perplexity (WA-1022).
       for (const h of spec.before ?? [])
-        await fp.act({ kind: "click" }, h, { goal: `open ${site}'s sign-in` });
+        if (await fp.has(h, 3_000))
+          await fp.act({ kind: "click" }, h, { goal: `open ${site}'s sign-in` });
       if (spec.email && (await fp.has(spec.email.field, 3_000))) {
         await fp.act({ kind: "fill", value: ctx.cred.username }, spec.email.field, {
           goal: `${site}'s email first`,

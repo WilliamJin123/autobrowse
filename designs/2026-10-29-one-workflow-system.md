@@ -130,6 +130,17 @@ Not yet: large rows to the run's files with a reference in the trace and the eng
 `flow(name, plan)` inside code is not in the first build. It needs a design: a nested run's steps and trace under the caller's, its gates shown to the caller, and what `advance` does with a step that holds a run.
 Until then, the agent sends `flow` and `code` as separate commands, and the journal keeps them in order.
 
+## 4. Sign-in is a tool
+
+- Every site login (`auth/sites.ts`) is a workflow `<site>-login` (`workflows/logins.ts`): in the catalog, the toolkit by site, `tools`, the Runs page and `run <name>`, beside the legs. A compiled workflow may take its name.
+- One step, `sign-in`, irreversible: a dry run stops before the password. Plan: `account` for a second account at the site; nothing else, the store has the rest.
+- The step runs the runner's own `signIn(site, account)`: the site's login spec types the credential inside the runner, on the site's own hosts, audited. The agent never holds it and `place` is not involved.
+- In explore, a sign-in page, a signed-out state or an expired session is `{"cmd":"flow","name":"<site>-login"}`. `--login` stays for the one case the tool cannot do: another site's login typed into a popup on this page.
+- A miss is the run's error, with the fix in it: no stored credential (`autobrowse creds set <site>`), a `--signup` session (no sign-in), no spec for the site.
+- `open` still signs in by itself on a wall it recognises (text or URL). Whether it should is open (Options, "Who signs in on `open`").
+
+Built (WA-1019, 2026-11-03). With it (WA-1022): an act whose control never shows says `<goal>: <hints> not visible after 15 s (<page>)` in place of a 1 s act that failed in Playwright's words; Perplexity's "Sign In" button is clicked only when it is there (3 s), so an open of Perplexity no longer waits 15 s on it.
+
 ## The fold
 
 Survey, 2026-10-29: 108 flows in `browser/flows/`. 104 are in `BROWSER_FLOWS` (`engine/browser-service.ts`); not there: `cloudflareAccountId`, `cloudflareApiToken`, `awsCliLogin`, `wranglerLogin`.
@@ -212,6 +223,14 @@ Cost: one more in-process call per leg (`advance` on memory effects), under 1 ms
 | C. `once(id, fn)` around each item | No: one more thing the agent must use right; the page after a skip is still wrong |
 | D. One Restate step per act | No: positional, and `ctx` is not allowed inside a leg's `ctx.run` |
 
+### Who signs in on `open`
+
+| Option | Verdict |
+|---|---|
+| A. `open` never signs in; a wall is reported as `wall` and the agent runs `<site>-login` | Open. One path, the agent sees every sign-in in its trace; costs one more command on each walled open |
+| B. `open` signs in on any wall it recognises (today) | Open. Zero commands, but a text-matched wall on a page that is not a sign-in page starts a sign-in the agent did not ask for (Perplexity, WA-1022) |
+| C. `open` signs in only on a URL-matched wall (the login page itself); a text-matched one is reported | Open. The sure case stays automatic; the guess becomes the agent's call |
+
 ## Decision log
 
 - 2026-10-29: One system. The old flows become workflows; the direct path is deleted, no compat. Usage stays the same (William: "make sure the usage will stay the same").
@@ -239,3 +258,5 @@ Cost: one more in-process call per leg (`advance` on memory effects), under 1 ms
 - 2026-10-30: `hover` is an act (William): a view act in `code`.
 - 2026-10-30: A compiled `code` keeps its store per durable call on disk, beside `done-acts`, not in the run recorder: the call key is already the retry's identity, and the store is resume state, not history.
 - 2026-10-30: The hand-written legs stay as they are. They read the site's state and act only on the difference, and the engine runs one `fx.run` per item: that is option B done right by hand, stronger than a journal. Moving them into `code` would lose types and checks.
+- 2026-11-03: Sign-in is a workflow, `<site>-login` (William: "login should be a tool … i heavily prefer a) … use compiled workflows"). Options: (a) a tool that runs the stored login spec, the credential typed by the runner (picked); (b) the agent signs in itself with `place` per field (rejected: it must know each site's screens, and a code or passkey step is the spec's anyway); (c) `--login` at start only (rejected by William: "def should not be the main way"). Trade-off: a site with no spec has no tool; the agent still signs up or maps the login first.
+- 2026-11-03: `clearWay` throws when the control never shows, with the page's state; the 1 s act stays only for a page script (WA-1022). Rejected: give the act the full wait again (a second 15 s on a control that is not there).
