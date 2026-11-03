@@ -28,6 +28,13 @@ export function render(event: RunEvent, opts: { cli?: string } = {}): Rendered |
     }
     case "finished":
       return { subject: `${id}: ${event.status}`, text: event.summary };
+    case "undone":
+      return event.result.status === "undo-failed"
+        ? {
+            subject: `${id}: undo of ${event.step} failed`,
+            text: `${event.result.detail}\nWhat ${event.step} left is still there: clear it by hand.`,
+          }
+        : null;
     default:
       return null;
   }

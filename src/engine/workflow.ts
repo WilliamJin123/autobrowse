@@ -38,7 +38,15 @@ export interface StepDef<P, D, M, S extends string = string> {
   /** True when this run of an irreversible step will skip (owned already, handoff off): a dry run goes through it. */
   harmless?(plan: P, memo: M): boolean;
   run(ctx: StepCtx<P, D, M>): Promise<StepOutput>;
+  /**
+   * Clears what this done step left that nobody else sees (a draft, media not yet posted, a held
+   * slot) when the run ends without its goal (`undoRun`). Never on an irreversible step; never
+   * deletes or edits a public object. Idempotent, as `run` is. Answers what it cleared.
+   */
+  undo?(ctx: UndoCtx<P, D, M>): Promise<string>;
 }
+
+export type UndoCtx<P, D, M> = Omit<StepCtx<P, D, M>, "gate">;
 
 /** Every plan carries these; the CLI and the engine read them. */
 export interface PlanBase {
@@ -84,6 +92,8 @@ export function defineWorkflow<D, M>() {
     const seen = new Set<string>();
     for (const s of w.steps) {
       if (seen.has(s.name)) throw new Error(`workflow ${w.name}: step ${s.name} defined twice`);
+      if (s.irreversible && s.undo)
+        throw new Error(`workflow ${w.name}: step ${s.name} is irreversible and has an undo`);
       seen.add(s.name);
     }
     if (!/^[a-z][a-z0-9-]*$/.test(w.name))

@@ -27,6 +27,8 @@ export type RunEvent =
   | { type: "paused"; run: RunRef; at: string }
   | { type: "resumed"; run: RunRef; at: string }
   | { type: "finished"; run: RunRef; at: string; status: RunStatus; summary: string }
+  /** A done step's undo ran (`undoRun`): `undone`, or `undo-failed` for a person to clear. */
+  | { type: "undone"; run: RunRef; at: string; step: string; result: StepResult }
   | { type: "reset"; run: RunRef; at: string };
 
 export type RunEventType = RunEvent["type"];

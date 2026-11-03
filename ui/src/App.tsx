@@ -143,6 +143,7 @@ const WORDING: Record<RunEvent["type"], string> = {
   paused: "paused",
   resumed: "playing",
   finished: "finished",
+  undone: "undone",
   reset: "reset",
 };
 

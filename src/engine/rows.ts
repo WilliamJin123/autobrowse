@@ -49,6 +49,7 @@ export function applyRunEvent(row: RunRow | null, event: RunEvent): RunRow {
       break;
     case "paused":
     case "resumed":
+    case "undone":
       break;
     case "finished":
       next.status = event.status;

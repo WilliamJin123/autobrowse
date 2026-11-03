@@ -21,6 +21,7 @@ import {
 import { type DomainWorkflow, domainWorkflow } from "../src/workflows/domain/index.js";
 import { workflow as exampleTitle } from "../src/workflows/example-title/index.js";
 import { fakeBrowser, fakeDeps, fakeHost } from "./fakes.js";
+import { type Deps as UndoDeps, workflow as undoDemo } from "./undo-demo.js";
 
 const deps = fakeDeps();
 const host = fakeHost();
@@ -34,6 +35,9 @@ const catalog: CompiledCatalog = {
   get: async (name) => shelf.get(name) ?? null,
   proofs: async () => ({}),
 };
+/** A failed run's undos wait 1.5 s here, not a day. */
+const undoDeps: UndoDeps = { log: [], fail: {} };
+const undoHost = { ...fakeHost(), undoAfterMs: 1500 };
 const browserCalls: string[] = [];
 const browser = fakeBrowser(browserCalls);
 let env: RestateTestEnvironment;
@@ -57,6 +61,7 @@ beforeAll(async () => {
         makeCompiledRunObject({ catalog, browser, host }),
         runsRegistryFor("acme"),
         makeRunObject(domainWorkflow, acmeDeps, acmeHost),
+        makeRunObject(undoDemo, undoDeps, undoHost),
       ],
       container,
       serviceEndpointAccess: "docker-host", // no sshd port-forwarding container
@@ -299,6 +304,90 @@ describe("Compiled object", () => {
     await expect(compiled("example-title", "k2").run({ dryRun: false })).rejects.toThrow(
       /no compiled workflow/,
     );
+  });
+});
+
+describe("undo steps on Restate", () => {
+  const demo = (key: string) =>
+    clients
+      .connect({ url: env.baseUrl() })
+      .objectClient<RunObject<typeof undoDemo>>({ name: "undo-demo" }, key);
+  const undone = (key: string) =>
+    undoHost.events.flatMap((e) =>
+      e.type === "undone" && e.run.key === key ? [`${e.step} ${e.result.status}`] : [],
+    );
+  const atGate = (key: string) =>
+    until(
+      () => demo(key).status(),
+      (s) => s.gate !== null,
+    );
+
+  it("a reject undoes the private steps, last first, after the answer", async () => {
+    undoDeps.log.length = 0;
+    await demo("rejected").run({ text: "hi" });
+    await atGate("rejected");
+    await demo("rejected").reject({ name: "send" });
+    const s = await until(
+      () => demo("rejected").status(),
+      (v) => v.outcome?.results.draft?.status === "undone",
+    );
+    expect(s.outcome?.status).toBe("rejected");
+    expect(s.outcome?.results.media?.status).toBe("undone");
+    expect(undoDeps.log).toEqual(["draft", "media", "drop media", "drop d1"]);
+    expect(undone("rejected")).toEqual(["media undone", "draft undone"]);
+  });
+
+  it("a reset undoes what it forgets; a done run's reset keeps all", async () => {
+    undoDeps.log.length = 0;
+    await demo("reset").run({ text: "hi" });
+    await atGate("reset");
+    await demo("reset").reset();
+    expect(await demo("reset").status()).toMatchObject({ plan: null, outcome: null });
+    await until(
+      async () => undone("reset"),
+      (u) => u.length === 2,
+    );
+    expect(undoDeps.log).toEqual(["draft", "media", "drop media", "drop d1"]);
+
+    await demo("kept").run({ text: "hi" });
+    await atGate("kept");
+    await demo("kept").approve({ name: "send" });
+    await until(
+      () => demo("kept").status(),
+      (v) => v.outcome?.status === "done",
+    );
+    await demo("kept").reset();
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(undone("kept")).toEqual([]);
+  });
+
+  it("a failed run waits for a rerun; one never ran again is undone later", async () => {
+    undoDeps.log.length = 0;
+    undoDeps.fail = { media: "error" };
+    await demo("resumed").run({ text: "hi" });
+    await until(
+      () => demo("resumed").status(),
+      (v) => v.outcome?.status === "failed",
+    );
+    undoDeps.fail = {};
+    await demo("resumed").run(null);
+    await atGate("resumed");
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(undone("resumed")).toEqual([]);
+
+    undoDeps.fail = { media: "error" };
+    await demo("left").run({ text: "hi" });
+    await until(
+      () => demo("left").status(),
+      (v) => v.outcome?.status === "failed",
+    );
+    expect(undone("left")).toEqual([]);
+    const s = await until(
+      () => demo("left").status(),
+      (v) => v.outcome?.results.draft?.status === "undone",
+    );
+    expect(s.outcome?.status).toBe("failed");
+    undoDeps.fail = {};
   });
 });
 

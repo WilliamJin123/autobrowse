@@ -27,6 +27,7 @@ import {
   type Outcome,
   outcomeOf,
   summarize,
+  undoRun,
 } from "./run.js";
 import type { AnyWorkflow, DepsOf, PlanOf } from "./workflow.js";
 
@@ -60,7 +61,20 @@ export interface HostDeps {
   registry?: boolean;
   /** Whose runs these are: object and registry names carry it (designs/2026-09-30-owner-keys.md). */
   owner?: string;
+  /** How long a failed run waits for a rerun before its undos run; `UNDO_AFTER_MS` unless set. */
+  undoAfterMs?: number;
 }
+
+/** A failed run resumes from its failed step: its private leftovers stay this long for that. */
+export const UNDO_AFTER_MS = 24 * 3600_000;
+
+/**
+ * Undos run in their own invocation: one that retries never holds up a reject or a reset.
+ * `gen`: the stored run, if still that run and failed or rejected. `forgotten`: what a reset cleared.
+ */
+export type UndoMessage =
+  | { gen: number }
+  | { forgotten: { plan: unknown; results: Outcome["results"]; memo: unknown } };
 
 /** Restate retries a failed `ctx.run` forever by default; this is what a step gets instead. */
 /**
@@ -163,6 +177,7 @@ export interface RunHandlers<P> {
   approve(ctx: restate.ObjectContext, input: { name: GateName; note?: string }): Promise<OpenGate>;
   reject(ctx: restate.ObjectContext, input: { name: GateName; note?: string }): Promise<OpenGate>;
   reset(ctx: restate.ObjectContext): Promise<void>;
+  undo(ctx: restate.ObjectContext, input: UndoMessage): Promise<void>;
   status(ctx: restate.ObjectSharedContext): Promise<RunStatusView>;
 }
 
@@ -241,6 +256,12 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
   const next = (ctx: restate.ObjectContext, gen: number) =>
     ctx.objectSendClient<Self>(service, ctx.key).step({ gen });
 
+  const hasUndo = (w: AnyWorkflow) => w.steps.some((s) => s.undo);
+  const sendUndo = (ctx: restate.ObjectContext, m: UndoMessage, delay = 0) =>
+    ctx
+      .objectSendClient<Self>(service, ctx.key)
+      .undo(m, restate.rpc.sendOpts(delay ? { delay } : {}));
+
   const gateOpen = async (ctx: restate.ObjectContext, name: string): Promise<OpenGate> => {
     const gate = await ctx.get<OpenGate>(KEYS.gate);
     if (!gate) throw new restate.TerminalError(`no gate open for ${name}/${ctx.key}`);
@@ -271,7 +292,9 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
       note: a.note,
     });
     if (verdict === "rejected") {
-      const outcome = await outcomeOf(fx, (await resolve(ctx.key)).workflow, "rejected");
+      const found = await resolve(ctx.key);
+      if (hasUndo(found.workflow)) sendUndo(ctx, { gen: (await ctx.get<number>(GEN)) ?? 0 });
+      const outcome = await outcomeOf(fx, found.workflow, "rejected");
       ctx.set(OUTCOME, outcome);
       await emit(ctx, ref, { type: "finished", status: "rejected", summary: summarize(outcome) });
     } else next(ctx, (await ctx.get<number>(GEN)) ?? 0);
@@ -344,6 +367,9 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
         }
         if (a.step && a.result)
           await emit(ctx, ref, { type: "step", step: a.step, result: a.result });
+        if (hasUndo(workflow) && a.status === "rejected") sendUndo(ctx, { gen });
+        if (hasUndo(workflow) && a.status === "failed")
+          sendUndo(ctx, { gen }, host.undoAfterMs ?? UNDO_AFTER_MS);
         const outcome = await outcomeOf(fx, workflow, a.status);
         ctx.set(OUTCOME, outcome);
         await emit(ctx, ref, { type: "finished", status: a.status, summary: summarize(outcome) });
@@ -372,8 +398,51 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
       reject: (ctx: restate.ObjectContext, input: { name: GateName; note?: string }) =>
         answer(ctx, input, false),
 
-      /** Forget everything about this run. A step in flight finishes first; its follow-up is ignored. */
+      /**
+       * Internal: the done steps' undos (`undoRun`), each told to the run's watchers. A stored run
+       * that ran again since (`run` and `reset` move `gen`) is left alone.
+       */
+      undo: async (ctx: restate.ObjectContext, input: UndoMessage): Promise<void> => {
+        const found = await resolve(ctx.key).catch(gone);
+        if (!found) return;
+        const { workflow, deps, ref } = found;
+        let fx = effects(ctx);
+        let raw: unknown;
+        let outcome: Outcome | null = null;
+        if ("forgotten" in input) {
+          const f = input.forgotten;
+          fx = withState(fx, { [KEYS.results]: f.results, [KEYS.memo]: f.memo });
+          raw = f.plan;
+        } else {
+          outcome = await ctx.get<Outcome>(OUTCOME);
+          if (input.gen !== ((await ctx.get<number>(GEN)) ?? 0)) return;
+          if (outcome?.status !== "failed" && outcome?.status !== "rejected") return;
+          raw = await ctx.get(PLAN);
+        }
+        const plan = workflow.plan.safeParse(raw);
+        if (!plan.success) return;
+        for (const u of await undoRun(fx, workflow, deps, plan.data))
+          await emit(ctx, ref, { type: "undone", step: u.step, result: u.result });
+        if (outcome) ctx.set(OUTCOME, await outcomeOf(fx, workflow, outcome.status));
+      },
+
+      /**
+       * Forget everything about this run. A step in flight finishes first; its follow-up is ignored.
+       * A run that did not finish runs its undos first.
+       */
       reset: async (ctx: restate.ObjectContext): Promise<void> => {
+        const plan = await ctx.get(PLAN);
+        const results = await ctx.get<Outcome["results"]>(KEYS.results);
+        const status = (await ctx.get<Outcome>(OUTCOME))?.status;
+        const found = plan && results ? await resolve(ctx.key).catch(gone) : null;
+        if (
+          results &&
+          found &&
+          hasUndo(found.workflow) &&
+          status !== "done" &&
+          status !== "planned"
+        )
+          sendUndo(ctx, { forgotten: { plan, results, memo: await ctx.get(KEYS.memo) } });
         const gen = (await ctx.get<number>(GEN)) ?? 0;
         const feed = await ctx.get<FeedPoint>(FEED);
         ctx.clearAll();
@@ -401,6 +470,23 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
   });
   return object as unknown as RunObjectDefinition<W>;
 }
+
+/** `fx` over a snapshot's state: a reset run's undos read what it forgot. */
+function withState(fx: Effects, seed: Record<string, unknown>): Effects {
+  const state = new Map(Object.entries(seed));
+  return {
+    ...fx,
+    get: async <T>(key: string) => (state.get(key) as T | undefined) ?? null,
+    set: (key, value) => void state.set(key, value),
+    clear: (key) => void state.delete(key),
+  };
+}
+
+/** A workflow gone from disk: nothing to undo with. */
+const gone = (err: unknown): null => {
+  if (err instanceof restate.TerminalError) return null;
+  throw err;
+};
 
 /** Mid-run status: the results so far, without a final verdict. */
 /** A run still going: results so far; the memo is what the last step left, or null before any did. */

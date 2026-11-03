@@ -110,6 +110,24 @@ Rules:
 - On an `unknown` verdict no undo runs. The cap slot stays held until the verdict settles.
 - An undo that fails goes to the run's history and to a person. It never blocks the run's answer.
 
+### When undos run
+
+A failed run resumes from its failed step: `run` again and the done steps are not redone. An undo at failure would break that.
+
+| Option | Verdict |
+|---|---|
+| A. At every terminal error | No: kills resume after a fix |
+| B. Only on reject and reset | No: a failed run nobody resumes keeps its drafts for good |
+| C. Reject and reset at once; a failed run after a day with no rerun | **Chosen** |
+
+- A run that is done keeps all: what it made is the goal, not a leftover.
+- An irreversible step that may have acted (failed, needs a person, rejected at the human gate) stops every undo: the same rule as `unknown`.
+- `defineWorkflow` refuses an `undo` on an irreversible step.
+- Undos run in their own `undo` invocation. An undo that retries through an outage never holds a reject or a reset. A reset passes the state it clears.
+- An undone step runs again on a rerun. A failed undo is `undo-failed` in the results and a message to a person.
+
+Built (WA-1014): `StepDef.undo`, `undoRun` (`src/engine/run.ts`), the `undo` handler (`src/engine/object.ts`), the `undone` event. No workflow has an undo yet: the drafts and media of section 5 are site route legs today, not workflow steps.
+
 ## Decision log
 
 - 2026-11-02: Typed input fields come from the recording, as zod's own types (my call: zod has them; no helpers of ours).
@@ -121,3 +139,4 @@ Rules:
 - 2026-11-02: The ref stays a string, not `{key, sha256, type, bytes}` (my call): it already ships, a fill takes strings, and the hash in the key proves the bytes. Type and size are checked from the file.
 - 2026-11-02: The cache, not Restate's journal, holds the local path (my call): the path is a function of the ref, and a journaled path is wrong on another host.
 - 2026-11-02: Undo steps clean only private leftovers; a public object is never deleted (William).
+- 2026-11-02: Undos run on reject and reset at once, and a day after a failure with no rerun (my call): a failed run must stay resumable.

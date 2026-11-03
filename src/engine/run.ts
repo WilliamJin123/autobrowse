@@ -20,7 +20,15 @@ export const KEYS = {
   gate: "gate",
 } as const;
 
-export type StepStatus = "done" | "skipped" | "planned" | "needs-human" | "rejected" | "failed";
+export type StepStatus =
+  | "done"
+  | "skipped"
+  | "planned"
+  | "needs-human"
+  | "rejected"
+  | "failed"
+  | "undone"
+  | "undo-failed";
 
 export interface StepResult {
   status: StepStatus;
@@ -29,6 +37,8 @@ export interface StepResult {
   /** Where to look when a browser step went wrong. */
   screenshot?: string;
   trace?: string;
+  /** A rejection's gate: `human` means the step stopped part way and may have acted. */
+  gate?: GateName;
 }
 
 export type Results<S extends string = string> = Partial<Record<S, StepResult>>;
@@ -169,7 +179,7 @@ export async function advance<P extends PlanBase, D, M, S extends string>(
     const artifacts = err instanceof FlowFailed ? err.artifacts : {};
     results[name] = {
       status: "failed",
-      detail: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      detail: errorText(err),
       at,
       ...artifacts,
     };
@@ -192,7 +202,12 @@ export async function applyAnswer(
   const answers = (await fx.get<Answers>(KEYS.answers)) ?? {};
   fx.clear(KEYS.gate);
   if (!answer.approved) {
-    results[gate.step] = { status: "rejected", detail: answer.note ?? "declined", at: answer.at };
+    results[gate.step] = {
+      status: "rejected",
+      detail: answer.note ?? "declined",
+      at: answer.at,
+      gate: gate.name,
+    };
     fx.set(KEYS.results, results);
     return "rejected";
   }
@@ -205,6 +220,47 @@ export async function applyAnswer(
   }
   return "continue";
 }
+
+/**
+ * Runs each done step's `undo`, last first, for a run that ends without its goal: rejected,
+ * reset before done, or failed and never resumed. No undo runs while an irreversible step may
+ * have acted (failed, needs a person, or rejected at the human gate): a person decides.
+ * A failed undo is recorded as `undo-failed`, never thrown. Undone steps run again on a rerun.
+ */
+export async function undoRun<P extends PlanBase, D, M, S extends string>(
+  fx: Effects,
+  workflow: Workflow<P, D, M, S>,
+  deps: D,
+  plan: P,
+): Promise<{ step: S; result: StepResult }[]> {
+  const { results, memo } = await load<M, S>(fx, workflow);
+  if (workflow.steps.some((s) => s.irreversible && mayHaveActed(results[s.name]))) return [];
+  const settled = workflow.settle ? workflow.settle(plan, memo) : plan;
+  const out: { step: S; result: StepResult }[] = [];
+  for (const step of [...workflow.steps].reverse()) {
+    if (!step.undo || results[step.name]?.status !== "done") continue;
+    const at = (await fx.now()).toISOString();
+    let result: StepResult;
+    try {
+      result = { status: "undone", detail: await step.undo({ fx, deps, plan: settled, memo }), at };
+    } catch (err) {
+      result = { status: "undo-failed", detail: errorText(err), at };
+    }
+    results[step.name] = result;
+    out.push({ step: step.name, result });
+    fx.set(KEYS.results, results);
+    fx.set(KEYS.memo, memo);
+  }
+  return out;
+}
+
+const mayHaveActed = (r: StepResult | undefined) =>
+  r?.status === "failed" ||
+  r?.status === "needs-human" ||
+  (r?.status === "rejected" && r.gate === "human");
+
+const errorText = (err: unknown) =>
+  err instanceof Error ? `${err.name}: ${err.message}` : String(err);
 
 /** With no step left to run, the flow is done unless a person said no. */
 export function finalStatus(results: Results): "done" | "rejected" {
@@ -267,11 +323,15 @@ async function loop<P extends PlanBase, D, M, S extends string>(
   for (;;) {
     const a = await advance(fx, workflow, deps, plan, opts);
     if (a.kind === "continue") continue;
-    if (a.kind === "finished") return outcomeOf(fx, workflow, a.status);
-    const given = answer(a.gate);
-    if (!given) return outcomeOf(fx, workflow, "waiting");
-    if ((await applyAnswer(fx, a.gate, given)) === "rejected")
-      return outcomeOf(fx, workflow, "rejected");
+    if (a.kind === "finished" && a.status !== "rejected") return outcomeOf(fx, workflow, a.status);
+    if (a.kind === "waiting") {
+      const given = answer(a.gate);
+      if (!given) return outcomeOf(fx, workflow, "waiting");
+      if ((await applyAnswer(fx, a.gate, given)) === "continue") continue;
+    }
+    // A failed run stays as it is: the caller may resume it, or call `undoRun`.
+    await undoRun(fx, workflow, deps, plan);
+    return outcomeOf(fx, workflow, "rejected");
   }
 }
 

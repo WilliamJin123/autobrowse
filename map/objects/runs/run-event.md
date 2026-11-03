@@ -18,7 +18,7 @@ One stream feeds people (channels), the UI (bus) and the registry; rows are deri
 ## Shape
 
 - `RunRef { workflow, key }`; `runId` = `workflow/key` — `src/engine/events.ts:8-11,34`
-- Types: `started`, `step`, `gate-opened`, `gate-answered`, `paused`, `resumed`, `finished`, `reset` — `:13-30`
+- Types: `started`, `step`, `gate-opened`, `gate-answered`, `paused`, `resumed`, `finished`, `undone` (a step's undo; `undo-failed` renders for a person), `reset` — `src/engine/events.ts`
 - `RunRow` and `applyRunEvent(row, event)` — `src/engine/rows.ts:9-64`
 
 ## Connected to

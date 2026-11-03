@@ -17,7 +17,8 @@ Each handler is one host invocation and state is saved before it returns (`src/e
 
 ## Shape
 
-- Handlers: `run`, `step`, `pause`, `play`, `approve`, `reject`, `reset`, `status` — `src/engine/object.ts:158-167`
+- Handlers: `run`, `step`, `pause`, `play`, `approve`, `reject`, `reset`, `undo`, `status` — `src/engine/object.ts` (`RunHandlers`)
+- Undo (workflows with a step `undo`): a reject sends `undo {gen}` at once; a failed run sends it after `HostDeps.undoAfterMs` (`UNDO_AFTER_MS`, a day), dropped if `run` or `reset` moved `gen`; `reset` of an unfinished run sends `undo {forgotten}` with the state it clears. Its own invocation, so a retrying undo never holds a reject or a reset
 - State keys: results, memo, answers, the open gate — `src/engine/run.ts:14-19`
 - `HostDeps.emit(event, feed?)` journals every [[run-event]]; `registry: false` in tests — `src/engine/object.ts:52-63`
 - Feed: `run` with `x-feed-url`/`x-feed-tag`/`traceparent` keeps the caller's hook in state `feed` (a host off `HostDeps.feedHosts` is a 400 before anything runs); every emit hands it on with `seq` counted from 1; `reset` keeps it; a step with a `traceparent` runs under `HostDeps.traced` so model spans join the caller's trace — `src/engine/object.ts:226-240`, `:295`, `:333-334`, `src/engine/feed.ts:47-68`
