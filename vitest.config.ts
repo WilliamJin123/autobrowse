@@ -24,6 +24,9 @@ function pruneLeakedRuns(): void {
   }
 }
 pruneLeakedRuns();
+// Fetched plan files: a cache hit from the last run would skip a test's fetch.
+const FILE_CACHE_DIR = join(tmpdir(), "autobrowse-test-files");
+rmSync(FILE_CACHE_DIR, { recursive: true, force: true });
 export default defineConfig({
   test: {
     env: {
@@ -33,6 +36,7 @@ export default defineConfig({
       PLANS_DIR: join(tmpdir(), "autobrowse-test-plans"),
       SETTINGS_FILE: join(tmpdir(), "autobrowse-test-settings", "settings.json"),
       LIMITS_FILE: join(tmpdir(), "autobrowse-test-limits", "limits.json"),
+      FILE_CACHE_DIR,
     },
     testTimeout: 120_000,
     hookTimeout: 180_000,

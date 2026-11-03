@@ -15,6 +15,7 @@ import { readFile, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { z } from "zod";
 import { currentCall } from "../browser/attempt.js";
+import { resolveFile } from "../browser/run-files.js";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi, SiteError } from "./types.js";
@@ -143,31 +144,31 @@ interface ReportingReport {
   downloadUrl?: string;
 }
 
-/** Bytes from a local path or a URL the worker can reach. */
+/**
+ * Bytes from a plan's file: a path, an `s3://` ref or a URL, through the one resolver
+ * (`resolveFile`, cached by content). A route's own `fetcher` (a signed-in read) reads its URL.
+ */
 export async function bytesOf(
   source: string,
-  fetcher: typeof fetch = fetch,
+  fetcher?: typeof fetch,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  if (/^https?:\/\//.test(source)) {
+  if (fetcher && /^https?:\/\//.test(source)) {
     const res = await fetcher(source);
     if (!res.ok) throw new HttpError("GET", source, res.status);
     return new Uint8Array(await res.arrayBuffer());
   }
-  return new Uint8Array(await readFile(source));
+  return new Uint8Array(await readFile(await resolveFile(source)));
 }
 
-/** A video body: a local file streams from disk (videos run to GBs), a URL is read whole. */
+/** A video body: streamed from disk (videos run to GBs); a ref or URL is fetched to the cache first. */
 interface Video {
   length: number;
   /** The bytes from `from` on: a resumed upload sends only the rest. */
   open: (from: number) => Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array>;
 }
 
-async function videoOf(source: string): Promise<Video> {
-  if (/^https?:\/\//.test(source)) {
-    const bytes = await bytesOf(source);
-    return { length: bytes.byteLength, open: (from) => bytes.slice(from) };
-  }
+async function videoOf(file: string): Promise<Video> {
+  const source = await resolveFile(file);
   const { size } = await stat(source);
   return {
     length: size,

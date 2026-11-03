@@ -85,22 +85,25 @@ const KINDS = {
   url: { zod: "z.url()", sample: "https://example.com" },
   date: { zod: "z.iso.date()", sample: "2026-01-31" },
   number: { zod: 'z.string().regex(/^-?\\d+(\\.\\d+)?$/, "a number")', sample: "1" },
+  file: { zod: "fileField()", sample: null },
 } as const;
 type Kind = keyof typeof KINDS;
 
-/** A field's type from the inputs it fills: a field filled into two kinds stays text. */
+/** A field's type from the inputs it fills or uploads: a field used as two kinds stays text. */
 export function fieldKinds(o: Outline): Map<string, Kind> {
   const seen = new Map<string, Set<Kind>>();
+  const add = (field: string, kind: Kind) =>
+    seen.set(field, (seen.get(field) ?? new Set<Kind>()).add(kind));
   for (const step of o.steps) {
     if (step.kind !== "browser") continue;
     for (const op of step.ops) {
+      if (op.kind === "upload" && op.file.from === "plan") add(op.file.field, "file");
       if (op.kind !== "fill" || op.value.from !== "plan") continue;
       const t = op.hints.inputType;
-      const kind: Kind =
-        t === "email" || t === "url" || t === "date" || t === "number" ? t : "text";
-      const set = seen.get(op.value.field) ?? new Set<Kind>();
-      set.add(kind);
-      seen.set(op.value.field, set);
+      add(
+        op.value.field,
+        t === "email" || t === "url" || t === "date" || t === "number" ? t : "text",
+      );
     }
   }
   return new Map(
@@ -372,7 +375,9 @@ export function render(o: Outline, opts: RenderOptions = {}): Rendered {
   const anyCode = o.steps.some(
     (s) => s.kind === "browser" && s.ops.some((op) => op.kind === "code"),
   );
+  const kinds = fieldKinds(o);
   const imports = [
+    ...([...kinds.values()].includes("file") ? ["fileField"] : []),
     ...(anyRecords ? ["records"] : []),
     ...(anyCode ? ["runCode"] : []),
     "defineFlow",
@@ -388,7 +393,6 @@ export function render(o: Outline, opts: RenderOptions = {}): Rendered {
     "type StepDef",
   ].sort((a, b) => a.replace("type ", "").localeCompare(b.replace("type ", "")));
 
-  const kinds = fieldKinds(o);
   const planFields = o.fields.map(
     (f) =>
       `  ${f.key}: ${KINDS[kinds.get(f.key) ?? "text"].zod}.describe(${q(f.label)}),${f.example ? ` // e.g. ${q(f.example)}` : ""}`,

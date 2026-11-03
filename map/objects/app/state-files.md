@@ -46,11 +46,13 @@ Plain files a person can open, one concern each; secrets sealed; shared truth in
 | SSM `/wallet/cards`, `/wallet/profiles` | wallet backup (`src/money/wallet.ts:244`, `src/money/profile.ts:184`) | [[card]] |
 | S3 `PAPERS_BUCKET` `files/<name>`, `files.sets` | files backup (`src/files/store.ts:333`); the old `papers/` objects stay | [[file]] |
 | S3 shots bucket | shipped screenshots (`src/shots/ship.ts:109`); owner `<o>` under `owners/<o>/` (`src/owner.ts:26`) | [[owner]] |
+| S3 shots bucket `inputs/owners/<o>/<sha24>.<ext>` | a plan's files, shipped by `autobrowse run` (`shipPlanFiles`, `src/browser/run-files.ts`); expire after a week | [[owner]] |
+| `$TMPDIR/autobrowse-files/<o>/` | a plan's fetched files, cached by content (`resolveFile`); swept after a day unused or past 20 GB an owner | [[owner]] |
 | `traces-kept.tsv` + `TRACES_TO` | traces kept for good (`src/shots/traces.ts`), key `traces/<machine>/<dir>/…`; swept off disk after `TRACES_KEEP_DAYS` (3) once kept; a repeat failure shape keeps one trace a day (`.trace-shapes.json`); `TRACE_DIRS` adds callers' folders | [[owner]] |
 | Keychain `autobrowse`, `autobrowse-wallet` | seal keys (`src/auth/keep.ts:9-17`) | [[credential]], [[card]] |
 | Keychain `autobrowse-owner-<o>` | owner `<o>`'s seal key (`src/auth/keep.ts:14`) | [[owner]] |
 
-Temp dirs `run-files-*`, `upload-*`, `passwords-*` are reaped (`src/browser/reap.ts:72`).
+Temp dirs `run-files-*` (old), `upload-*`, `passwords-*` are reaped (`src/browser/reap.ts:72`).
 
 ## Connected to
 

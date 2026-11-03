@@ -20,8 +20,10 @@ import {
   done,
   type FlowPage,
   type FlowRunner,
+  fileField,
   type Hints,
   rejected,
+  resolveFile,
   type StepDef,
   skipped,
 } from "../../index.js";
@@ -29,7 +31,7 @@ import { type ImageRule, imageProblem } from "../image.js";
 
 export const planSchema = z.object({
   dryRun: z.boolean().default(false),
-  photoFile: z.string().min(1).describe("A square photo, 400px or more"), // e.g. "assets/me.png"
+  photoFile: fileField("A square photo, 400px or more"), // e.g. "assets/me.png"
 });
 export type Plan = z.infer<typeof planSchema>;
 
@@ -168,7 +170,8 @@ const sha = (f: string) => createHash("sha256").update(readFileSync(f)).digest("
 const check: Step<"check"> = {
   name: "check",
   async run({ fx, deps, plan }) {
-    const problem = imageProblem(plan.photoFile, RULE);
+    // Fetched before any act: a missing or bad file stops here (cached for `set`).
+    const problem = imageProblem(await resolveFile(plan.photoFile), RULE);
     if (problem) throw new Error(problem);
     const { photo } = await fx.run("browser read the profile photo", () =>
       deps.browser.run(profilePhotoFlow, { file: null }),
@@ -181,7 +184,7 @@ const set: Step<"set"> = {
   name: "set",
   irreversible: true,
   async run({ fx, deps, plan, memo, gate }) {
-    const mark = sha(plan.photoFile);
+    const mark = sha(await resolveFile(plan.photoFile));
     if (memo.saved === mark) return skipped("already set");
     const answer = gate("send", `Set the LinkedIn profile photo to ${plan.photoFile}?`);
     if (!answer.approved) return rejected(answer.note ?? "not changed");

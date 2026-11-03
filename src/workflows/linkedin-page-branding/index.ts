@@ -31,8 +31,10 @@ import {
   done,
   type FlowPage,
   type FlowRunner,
+  fileField,
   type Hints,
   rejected,
+  resolveFile,
   type StepDef,
   skipped,
 } from "../../index.js";
@@ -41,8 +43,8 @@ import { type ImageRule, imageProblem } from "../image.js";
 export const planSchema = z.object({
   dryRun: z.boolean().default(false),
   companyId: z.string().regex(/^\d+$/).describe("The Page's numeric id"), // e.g. "123456"
-  logoFile: z.string().min(1).optional().describe("Logo, square"), // e.g. "assets/logo.png"
-  bannerFile: z.string().min(1).optional().describe("Banner, 1584x396"), // e.g. "assets/banner.png"
+  logoFile: fileField("Logo, square").optional(), // e.g. "assets/logo.png"
+  bannerFile: fileField("Banner, 1584x396").optional(), // e.g. "assets/banner.png"
   website: z.string().url().optional().describe("Website URL"), // e.g. "https://example.com"
   name: z.string().trim().min(1).max(100).optional().describe("Page name"), // e.g. "Example Co"
 });
@@ -444,9 +446,10 @@ const describe = (c: Change) =>
 const check: Step<"check"> = {
   name: "check",
   async run({ fx, deps, plan, memo }) {
+    // Fetched before any act: a missing or bad file stops here (cached for `brand`).
     const problems = [
-      plan.logoFile && imageProblem(plan.logoFile, RULES.logo),
-      plan.bannerFile && imageProblem(plan.bannerFile, RULES.banner),
+      plan.logoFile && imageProblem(await resolveFile(plan.logoFile), RULES.logo),
+      plan.bannerFile && imageProblem(await resolveFile(plan.bannerFile), RULES.banner),
     ].filter((p): p is string => Boolean(p));
     if (problems.length) throw new Error(problems.join("; "));
     const { state } = await fx.run("browser read the Page editor", () =>

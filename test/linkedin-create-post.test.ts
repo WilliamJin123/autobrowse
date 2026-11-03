@@ -275,6 +275,11 @@ describe("linkedin upload", () => {
 
   it("a video LinkedIn never finishes is asked about 18 times in 5 minutes, not 61", async () => {
     let asked = 0;
+    // The media goes to the file cache first (real disk I/O): timers run once the bytes are sent.
+    let sent!: () => void;
+    const putDone = new Promise<void>((ok) => {
+      sent = ok;
+    });
     const api = fakeFetch((req) => {
       const at = `${req.method} ${req.url.pathname}${req.url.search}`;
       if (at === "POST /rest/videos?action=initializeUpload")
@@ -289,7 +294,10 @@ describe("linkedin upload", () => {
             },
           },
         };
-      if (req.method === "PUT") return { headers: { etag: "e-p1" } };
+      if (req.method === "PUT") {
+        sent();
+        return { headers: { etag: "e-p1" } };
+      }
       if (at === "POST /rest/videos?action=finalizeUpload") return {};
       asked += 1;
       return { body: { status: "PROCESSING" } };
@@ -318,6 +326,7 @@ describe("linkedin upload", () => {
           file: "https://media.test/clip.mp4",
         })
         .catch((e) => e);
+      await putDone;
       await vi.runAllTimersAsync();
       expect(await out).toMatchObject({ status: 504 });
       expect(asked).toBe(18);

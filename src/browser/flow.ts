@@ -481,14 +481,10 @@ async function doOp(
     case "upload": {
       if (op.files.some((f) => typeof f !== "string"))
         return uploadFiles(page, target, op.files as FilePayload[], timeout, hands);
-      // A ref from another machine (s3://, a signed URL) becomes a temp file for this act.
-      const { localCopies } = await import("./run-files.js");
-      const local = await localCopies(op.files as string[]);
-      try {
-        return await uploadFiles(page, target, local.paths, timeout, hands);
-      } finally {
-        await local.done();
-      }
+      // A ref from another machine (s3://, a signed URL) becomes a cached local file.
+      const { resolveFile } = await import("./run-files.js");
+      const paths = await Promise.all((op.files as string[]).map((f) => resolveFile(f)));
+      return uploadFiles(page, target, paths, timeout, hands);
     }
   }
 }

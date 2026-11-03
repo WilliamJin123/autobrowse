@@ -6,15 +6,17 @@
  * owner, src/owner.ts) and puts an `s3://` ref in its place. The box may
  * read only its prefix, and objects there expire after a week
  * (deploy/terraform/shots.tf): it sees the files a plan named, nothing else.
- * The upload act turns a ref (or a signed https URL) back into a temp file.
+ * `resolveFile` turns a ref (or a signed https URL) back into a local file, cached by
+ * content per owner: the one way every upload act and site route reads a plan's file.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat, utimes } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { extname, join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { z } from "zod";
 import { type AwsConfig, awsConfigFromEnv, operator, ownerKeys } from "../owner.js";
 
 export const INPUTS_PREFIX = ownerKeys(operator()).inputs;
@@ -77,6 +79,8 @@ export interface RemoteReaders {
   /** An `s3://bucket/key` ref as a byte stream. */
   s3?: (bucket: string, key: string) => Promise<ReadableStream<Uint8Array>>;
   fetch?: typeof fetch;
+  /** Where fetched files stay; `FILE_CACHE` unless a test gives its own. */
+  cache?: string;
 }
 
 const s3Read = async (bucket: string, key: string) => {
@@ -88,47 +92,121 @@ const s3Read = async (bucket: string, key: string) => {
   return got.Body.transformToWebStream() as ReadableStream<Uint8Array>;
 };
 
+/** A plan's file: an `s3://` ref, an https URL (a signed one is a bearer), or a path on this machine. */
+const isRemote = (f: string) => /^(s3|https?):\/\//i.test(f);
+
+/** One field type for every workflow's file input (designs/2026-11-02-typed-inputs-files-undo.md §2). */
+export const fileField = (what?: string) => {
+  const f = z
+    .string()
+    .min(1)
+    .refine((v) => isRemote(v) || !v.includes("://"), "an s3:// ref, an https URL or a path");
+  return what ? f.describe(what) : f;
+};
+
+/** Fetched inputs, per owner, named by content: a retry or a later step reads the same file. `FILE_CACHE_DIR` moves it. */
+export const FILE_CACHE = process.env.FILE_CACHE_DIR || join(tmpdir(), "autobrowse-files");
+/** A cached file unused this long goes; so does the oldest past the owner's cap. */
+export const CACHE_MAX_AGE_MS = 24 * 3600_000;
+export const CACHE_MAX_BYTES = 20e9;
+const SWEEP_EVERY_MS = 3600_000;
+let sweptAt = 0;
+
 /**
- * Local paths for the files an upload names: a path stays as is, an
- * `s3://` ref or an https URL is fetched to a temp dir that `done` removes.
- * A URL is never put in an error: a signed one is a bearer.
+ * The local path for a plan's file. A path stays as is. An `s3://` ref or a URL streams once
+ * into `<cache>/<owner>/<name>` and is read from there after; a key named by its content
+ * hash (`shipPlanFiles`) is checked against the bytes. A URL is keyed whole (a new signature is a
+ * new download: the bytes behind a path may change) and is never put in an error.
  */
-export async function localCopies(
-  files: readonly string[],
-  r: RemoteReaders = {},
-): Promise<{ paths: string[]; done: () => Promise<void> }> {
-  if (!files.some((f) => /^(s3|https?):\/\//i.test(f)))
-    return { paths: [...files], done: async () => {} };
-  const dir = await mkdtemp(join(tmpdir(), "run-files-"));
-  const done = () => rm(dir, { recursive: true, force: true });
+export async function resolveFile(f: string, r: RemoteReaders = {}): Promise<string> {
+  if (!isRemote(f)) return expand(f);
+  const cache = r.cache ?? FILE_CACHE;
+  const s3 = f.match(/^s3:\/\/([^/]+)\/(.+)$/i);
+  const owner = s3?.[2]?.match(/owners\/([^/]+)\//)?.[1] || (s3 ? "_" : "_url");
+  const name = s3
+    ? basename(s3[2] as string)
+    : `${createHash("sha256").update(f).digest("hex").slice(0, 24)}${extname(new URL(f).pathname).toLowerCase()}`;
+  const dest = join(cache, owner, name);
+  const now = new Date();
+  if (
+    await utimes(dest, now, now).then(
+      () => true,
+      () => false,
+    )
+  )
+    return dest;
+  await mkdir(join(cache, owner), { recursive: true });
+  let body: ReadableStream<Uint8Array>;
+  if (s3) body = await (r.s3 ?? s3Read)(s3[1] as string, s3[2] as string);
+  else {
+    const res = await (r.fetch ?? fetch)(f);
+    if (!res.ok || !res.body) throw new Error(`a file URL answered ${res.status}`);
+    body = res.body;
+  }
+  const part = `${dest}.part-${randomUUID().slice(0, 8)}`;
+  const hash = createHash("sha256");
   try {
-    const paths = await Promise.all(
-      files.map(async (f, i) => {
-        const s3 = f.match(/^s3:\/\/([^/]+)\/(.+)$/);
-        const http = /^https?:\/\//i.test(f);
-        if (!s3 && !http) return f;
-        let body: ReadableStream<Uint8Array>;
-        let ext: string;
-        if (s3) {
-          body = await (r.s3 ?? s3Read)(s3[1] as string, s3[2] as string);
-          ext = extname(s3[2] as string);
-        } else {
-          const res = await (r.fetch ?? fetch)(f);
-          if (!res.ok || !res.body)
-            throw new Error(`file ${i + 1}: the URL answered ${res.status}`);
-          body = res.body;
-          ext = extname(new URL(f).pathname);
+    await pipeline(
+      Readable.fromWeb(body as never),
+      async function* (chunks: AsyncIterable<Buffer>) {
+        for await (const c of chunks) {
+          hash.update(c);
+          yield c;
         }
-        const path = join(dir, `file-${i}${ext.toLowerCase()}`);
-        await pipeline(Readable.fromWeb(body as never), createWriteStream(path));
-        return path;
-      }),
+      },
+      createWriteStream(part),
     );
-    return { paths, done };
+    const named = name.match(/^([0-9a-f]{24})\./)?.[1];
+    if (s3 && named && !hash.digest("hex").startsWith(named))
+      throw new Error(`${s3[2]}: the bytes do not match the name's sha256`);
+    await rename(part, dest);
   } catch (err) {
-    await done();
+    await rm(part, { force: true });
     throw err;
   }
+  if (Date.now() - sweptAt > SWEEP_EVERY_MS) {
+    sweptAt = Date.now();
+    void sweepFileCache({ cache }).catch(() => {});
+  }
+  return dest;
+}
+
+/**
+ * Drops cached files unused for `maxAgeMs` (and stale partial downloads), then each owner's
+ * oldest past `maxBytes`. Answers how many went.
+ */
+export async function sweepFileCache(
+  o: { cache?: string; now?: number; maxAgeMs?: number; maxBytes?: number } = {},
+): Promise<number> {
+  const cache = o.cache ?? FILE_CACHE;
+  const now = o.now ?? Date.now();
+  const maxAge = o.maxAgeMs ?? CACHE_MAX_AGE_MS;
+  const maxBytes = o.maxBytes ?? CACHE_MAX_BYTES;
+  let gone = 0;
+  const owners = await readdir(cache).catch(() => [] as string[]);
+  for (const owner of owners) {
+    const dir = join(cache, owner);
+    const files = [];
+    for (const name of await readdir(dir).catch(() => [] as string[])) {
+      const st = await stat(join(dir, name)).catch(() => null);
+      if (st?.isFile()) files.push({ path: join(dir, name), at: st.mtimeMs, size: st.size });
+    }
+    files.sort((a, b) => b.at - a.at);
+    let kept = 0;
+    for (const f of files) {
+      const stale = now - f.at > maxAge || kept + f.size > maxBytes;
+      if (
+        stale &&
+        (await rm(f.path).then(
+          () => true,
+          () => false,
+        ))
+      )
+        gone++;
+      else if (!stale) kept += f.size;
+    }
+  }
+  return gone;
 }
 
 /** The shots bucket as the input store: refs are `s3://<bucket>/inputs/…`. */

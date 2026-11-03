@@ -551,7 +551,7 @@ describe("compile", () => {
 });
 
 describe("field kinds", () => {
-  it("types a plan field by the input it fills; a field in two kinds stays text", async () => {
+  it("types a plan field by the input it fills or uploads; a field in two kinds stays text", async () => {
     const { z } = await import("zod");
     const fill = (field: string, inputType: string | null) => ({
       kind: "fill" as const,
@@ -563,7 +563,7 @@ describe("field kinds", () => {
       name: "kinds",
       site: "x",
       description: "Fill typed inputs",
-      fields: ["mail", "site", "day", "count", "note", "mixed"].map((key) => ({
+      fields: ["mail", "site", "day", "count", "note", "mixed", "photo"].map((key) => ({
         key,
         label: key,
         example: null,
@@ -585,6 +585,12 @@ describe("field kinds", () => {
             fill("note", "text"),
             fill("mixed", "email"),
             fill("mixed", null),
+            {
+              kind: "upload" as const,
+              goal: "upload photo",
+              hints: h({ role: "button", name: "Upload" }),
+              file: { from: "plan" as const, field: "photo" },
+            },
           ],
         },
       ],
@@ -598,6 +604,8 @@ describe("field kinds", () => {
     expect(zodOf("day")).toBe("z.iso.date()");
     expect(zodOf("note")).toBe("z.string().min(1)");
     expect(zodOf("mixed")).toBe("z.string().min(1)");
+    expect(zodOf("photo")).toBe("fileField()");
+    expect(src).toMatch(/import \{[^}]*\bfileField\b/);
     const num = new Function("z", `return ${zodOf("count")}`)(z) as import("zod").ZodType;
     expect(num.safeParse("12").success).toBe(true);
     expect(num.safeParse("twelve").success).toBe(false);

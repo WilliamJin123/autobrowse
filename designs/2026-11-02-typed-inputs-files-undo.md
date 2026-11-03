@@ -26,22 +26,25 @@ The gap: the compiler types every field `z.string().min(1)` (`src/compiler/rende
 
 | Option | What the plan holds | Verdict |
 |---|---|---|
-| A. Object ref | `{key, sha256, type, bytes}` in the S3 bucket | **Chosen.** Never expires; works on any host; the fingerprint proves the bytes |
+| A. Object ref | `s3://<bucket>/inputs/owners/<owner>/<sha24>.<ext>`, a string | **Chosen.** Works on any host; the hash in the key proves the bytes |
 | B. Files-store id | an id in autobrowse's sealed store (`src/files`) | No: the store is one Mac's, sealed by its keychain |
 | C. Presigned URL from wren | a link (the X route today) | No: a retry after the link expires fails |
 | D. Local path | a path on this Mac (today) | No: dead on a server and for other users. Kept for local dev runs only |
 
 ### How a file reaches the page
 
-1. wren puts the file in S3 under the owner's prefix. The plan carries the object ref.
-2. Preflight, before any act: the ref parses, the object exists (HEAD), and its type and size pass the field's rule.
-3. A `ctx.run` step fetches it: autobrowse presigns at use, streams the body to `<cache>/<owner>/<sha256>`, and checks the sha256.
-   Restate journals the local path, so a retry reuses the file and never downloads again.
+1. The file goes to S3 under the owner's prefix, keyed by its content. `autobrowse run` does this today (`shipPlanFiles`); wren will do the same. The plan carries the ref.
+2. The plan's zod parse checks the shape (`fileField`: a ref, an https URL or a path). A workflow's `check` step resolves the file and checks its type and size before any act.
+3. `resolveFile` streams the object to `<cache>/<owner>/<sha24>.<ext>` with the owner's own AWS session, and checks the sha256.
+   The cache path is a pure function of the ref, so a retry or a later step finds the file without a download.
 4. Playwright gets the path. A local Chrome reads the path itself; nothing large sits in Node's memory.
-5. A sweep drops cache files older than a day, with a size cap per owner.
+5. A sweep drops cache files unused for a day, then the oldest past 20 GB per owner. It runs at most once an hour.
+
+Built (WA-1011): `resolveFile`, `sweepFileCache`, `fileField` (`src/browser/run-files.ts`); the upload op, X and YouTube (`bytesOf`) read through it; the compiler types an uploaded field `fileField()`.
+Not yet: wren ships its own files as refs (the X route still gets a presigned URL; it works until the link expires).
 
 - One resolver for every route: X and YouTube's `bytesOf` (`src/sites/youtube.ts:147`) read through it, not a second copy.
-- Server: the bucket policy (`deploy/terraform/papers.tf`) names William's AWS user. A server reads through its own IAM role, scoped to the owners' prefixes.
+- Server: today the owner's session reads the object. A server reads through its own IAM role, scoped to the owners' `inputs/` prefixes. That role is a terraform change, made when the server exists.
 - Remote browser (a Chrome on another host): Playwright then streams the file over the connection. The path still works; it costs one upload per run.
 
 ## 3. Verify timing
@@ -115,4 +118,6 @@ Rules:
 - 2026-11-02: No automatic repost, for posts and outreach (William: "duplicate posts might decrease trust").
 - 2026-11-02: wren stores each keyed write's key and service on the row, and asks `verdict` by it (my call). Rejected: a verify-only flag on every kind's send handler, rerun as the DM recheck does: more plumbing, and the reads before the write run again against the caps.
 - 2026-11-02: Health is judged in autobrowse's `verdict`, not by wren (my call): autobrowse has the refused tokens and the read's error code; wren has only per-loop holds.
+- 2026-11-02: The ref stays a string, not `{key, sha256, type, bytes}` (my call): it already ships, a fill takes strings, and the hash in the key proves the bytes. Type and size are checked from the file.
+- 2026-11-02: The cache, not Restate's journal, holds the local path (my call): the path is a function of the ref, and a journaled path is wrong on another host.
 - 2026-11-02: Undo steps clean only private leftovers; a public object is never deleted (William).

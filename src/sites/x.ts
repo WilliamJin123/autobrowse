@@ -191,7 +191,7 @@ async function uploadMedia(
   input: z.infer<typeof upload>,
   sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
 ): Promise<unknown> {
-  // A path on this machine or a URL (a presigned S3 object from wren); the query is not the name.
+  // A path, an s3:// ref or a URL (resolveFile); the query is not the name.
   const plain = input.file.replace(/[?#].*$/, "");
   const type = MIME[extname(plain).toLowerCase()] ?? "application/octet-stream";
   const category =
@@ -438,7 +438,7 @@ export const x: SiteApi = {
       method: "POST",
       path: "/2/media/upload",
       summary:
-        "Upload an image or video (`file`: path or URL) for a post; answers `data.id` (a video is chunked and waited on until processed)",
+        "Upload an image or video (`file`: path, s3:// ref or URL) for a post; answers `data.id` (a video is chunked and waited on until processed)",
       request: upload,
       api: (input, leg) => uploadMedia(leg, input),
     }),

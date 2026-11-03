@@ -55,6 +55,7 @@ export {
   type ResumeRecord,
   type Resumes,
 } from "./browser/resume.js";
+export { fileField, resolveFile } from "./browser/run-files.js";
 export { NeedsHuman } from "./browser/session.js";
 export * from "./channels/index.js";
 export { httpClient } from "./clients/http.js";
