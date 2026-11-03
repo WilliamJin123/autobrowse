@@ -210,7 +210,7 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
             k.address.padEnd(28),
             k.owner.padEnd(10),
             (k.purposes.join(",") || "-").padEnd(16),
-            statusOf(k).padEnd(24),
+            statusOf(k, now()).padEnd(24),
             k.id,
             u ? `${u.uses} uses, last ${u.lastUsedAt}` : "no uses",
             k.cap ? `cap ${k.cap.amount} ${k.cap.unit}` : "",
@@ -412,9 +412,9 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
 const mustGet = getKey;
 
 /** `live`, `spent until 2026-11-01` or `revoked`. */
-function statusOf(k: KeyInfo): string {
+function statusOf(k: KeyInfo, now: number): string {
   if (k.status === "revoked") return "revoked";
-  if (liveAt(k)) return "live";
+  if (liveAt(k, now)) return "live";
   return k.spentUntil ? `spent until ${day(k.spentUntil)}` : "spent";
 }
 
