@@ -1,7 +1,8 @@
 # Explore: drive a browser or the desktop
 
-One browser stays open on a site. A wall on `open` signs in through the site's
-stored login; mid-session, `{"cmd":"flow","name":"<site>-login"}` does.
+One browser stays open on a site. `open` on a login page (its URL says so) signs in
+through the site's stored login. A wall only the page's words suggest comes back as
+`wall` with `signIn: "<site>-login"`: if it is a wall, run `{"cmd":"flow","name":"<site>-login"}`.
 You send one JSON command at a time over loopback. Every act that works is
 journaled; `save` writes a recording; `compile` makes it a workflow.
 
@@ -64,7 +65,7 @@ Look:
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes.
 
 Act (journaled):
-- `{"cmd":"open","url":"https://…"}`
+- `{"cmd":"open","url":"https://…"}` — answers `wall` (`kind`, `by`: `url` or `text`) when one is there.
 - `{"cmd":"click","hints":{"role":"button","name":"Create"},"goal":"…"}`
 - `{"cmd":"fill","hints":{…},"value":"…"}`, `select`, `press` (`"key":"Enter"`), `hover` (a menu or a control that shows on hover, a tooltip to read), `upload` (`"files":["path"]` or a stored file, below).
 - `{"cmd":"type","text":"…"}`, `{"cmd":"key","key":"Escape"}` — into whatever is focused.

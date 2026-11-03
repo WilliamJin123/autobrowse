@@ -72,7 +72,13 @@ import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/rec
 import { snapshotPage } from "../browser/repair.js";
 import { lookAt, type PageLook, urlShape } from "../browser/screens.js";
 import { holdsSecret, secret } from "../browser/secrets.js";
-import { type BrowserOptions, bodyText, looksLikeWall, NeedsHuman } from "../browser/session.js";
+import {
+  type BrowserOptions,
+  bodyText,
+  looksLikeWall,
+  NeedsHuman,
+  type Wall,
+} from "../browser/session.js";
 import type { KeyKeeper } from "../deps/keys.js";
 import type { SecretSink } from "../deps/sink.js";
 import { macDesktop } from "../desktop/mac.js";
@@ -144,9 +150,11 @@ import { type Capture, captureFor } from "../runs/capture.js";
 import { machine, type RunLog, type RunOutcome, runLog } from "../runs/log.js";
 import { missCause, targetOf } from "../runs/success.js";
 import { compiledDeps } from "../workflows/compiled-deps.js";
+import { loginName } from "../workflows/logins.js";
 import {
   findable,
   find as findTools,
+  sitesOfHost,
   sitesTree,
   type Tool,
   toolkitFor,
@@ -258,6 +266,16 @@ export function pageChange(before: readonly string[], after: readonly string[]):
   };
 }
 
+/** A wall for the agent: a guessed sign-in wall names the site's `<site>-login` tool. */
+export function wallAnswer(wall: Wall | null, url: string) {
+  if (!wall || wall.kind === "captcha" || wall.by === "url") return wall;
+  const host = URL.canParse(url) ? new URL(url).host : "";
+  const site = sitesOfHost(host, SITE_LOGINS, []).find((s) =>
+    SITE_LOGINS.some((l) => l.site === s),
+  );
+  return site ? { ...wall, signIn: loginName(site) } : wall;
+}
+
 export interface ExploreOptions {
   site: string;
   browser: BrowserOptions;
@@ -265,6 +283,12 @@ export interface ExploreOptions {
   port: number;
   /** The runner's login hook: a wall on `open` is signed through with stored credentials. */
   login?: RunnerOptions["login"];
+  /**
+   * Which walls `open` signs through. `url` (default): only the login page; a wall the text
+   * suggests goes back to the driver, who runs `<site>-login`. `any`: a driver with no `flow`
+   * command (the headless agent).
+   */
+  signInOn?: "url" | "any";
   /** Delays around acts; null (the default) answers a console at once, an agent passes human pace. */
   pace?: RunnerOptions["pace"];
   /** Captcha walls: checkboxes by hand, pictures when the eyes see. */
@@ -1852,16 +1876,20 @@ async function serve(
         });
       }
       case "open": {
-        // Through the runner: a login wall is signed through. A captcha comes back as the
-        // wall, not an error: a checkbox one is clicked like any control, a puzzle goes to a person.
+        // Through the runner: a wall its URL shows (the login page) is signed through. One only
+        // the text suggests comes back as the wall, with the site's sign-in tool: the agent judges.
+        // A captcha comes back too: a checkbox one is clicked like any control, a puzzle goes to a person.
         try {
-          await fp.open(c.url, { allowWall: !opts.login });
+          await fp.open(c.url, {
+            allowWall: !opts.login,
+            ...(opts.signInOn === "any" ? {} : { signIn: "url" as const }),
+          });
         } catch (err) {
           if (!(err instanceof NeedsHuman) || (await looksLikeWall(page))?.kind !== "captcha")
             throw err;
         }
         journal({ kind: "navigate" });
-        return { url: page.url(), wall: await looksLikeWall(page) };
+        return { url: page.url(), wall: wallAnswer(await looksLikeWall(page), page.url()) };
       }
       case "click": {
         const spent = await gate("click", c, wait);

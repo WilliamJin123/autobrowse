@@ -425,58 +425,60 @@ export interface Wall {
   /** `login` and `challenge` can be solved with credentials and codes; `captcha` still needs a person (or Browserbase). */
   kind: "login" | "challenge" | "captcha";
   detail: string;
+  /** `url`: the URL alone says it (the login page). `text`: the page's words do, a guess. */
+  by: "url" | "text";
 }
 
 export async function looksLikeWall(page: Page): Promise<Wall | null> {
   const url = page.url();
   // A sign-in path segment, not a substring: myaccount's /signinoptions/ is a settings page.
   if (/accounts\.google\.com\/|signin\.aws\.amazon\.com\/|\/(login|sign-?in)(\/|\?|#|$)/i.test(url))
-    return { kind: "login", detail: `login page: ${url}` };
+    return { kind: "login", detail: `login page: ${url}`, by: "url" };
   return wallOf(url, await bodyText(page, 4000));
 }
 
 /** The wall a URL and page text show, if any; `looksLikeWall` over a page, this over what a flow already read. */
 export function wallOf(url: string, text: string): Wall | null {
   if (/accounts\.google\.com\/|signin\.aws\.amazon\.com\/|\/(login|sign-?in)(\/|\?|#|$)/i.test(url))
-    return { kind: "login", detail: `login page: ${url}` };
+    return { kind: "login", detail: `login page: ${url}`, by: "url" };
   // A SAML sign-in (AD FS, the university's) and Duo's prompt after it.
   if (/^https:\/\/[^/]+\/adfs\/ls\/|^https:\/\/api-[0-9a-f]+\.duosecurity\.com\//i.test(url))
-    return { kind: "login", detail: `single sign-on: ${url.split("?")[0]}` };
+    return { kind: "login", detail: `single sign-on: ${url.split("?")[0]}`, by: "url" };
   // LinkedIn signed out: every member page goes to /authwall ("Join LinkedIn", a Sign in link).
   if (/^https:\/\/www\.linkedin\.com\/authwall(\/|\?|$)/i.test(url))
-    return { kind: "login", detail: `signed out: ${url}` };
+    return { kind: "login", detail: `signed out: ${url}`, by: "url" };
   // LinkedIn signed out on a guest page (a member's /in/ profile, no /authwall): the top bar says
   // "Join now" and "Sign in"; the sign-in dialog sits past the text read here.
   if (
     /^https:\/\/www\.linkedin\.com\//i.test(url) &&
     /\bjoin now\s+sign in\b/i.test(text.slice(0, 600))
   )
-    return { kind: "login", detail: `signed out (guest page): ${url}` };
+    return { kind: "login", detail: `signed out (guest page): ${url}`, by: "text" };
   // TikTok signed out: pages still load, with a Log in button under the side menu and a
   // guest-only "What would you like to watch" picker on top. Mapped 2026-10-29.
   if (
     /^https:\/\/www\.tiktok\.com\//i.test(url) &&
     /what would you like to watch on tiktok\?|\bMore\s+Log in\b/i.test(text)
   )
-    return { kind: "login", detail: `signed out: ${url}` };
+    return { kind: "login", detail: `signed out: ${url}`, by: "text" };
   // Google Account signed out: myaccount sends every page to its /intro/ twin with a "Sign in" button.
   if (/^https:\/\/myaccount\.google\.com\/intro(\/|\?|$)/i.test(url))
-    return { kind: "login", detail: `signed out: ${url}` };
+    return { kind: "login", detail: `signed out: ${url}`, by: "url" };
   // "protected by reCAPTCHA" is the legal footer on every sign-up form, not a wall.
   if (
     /verify you are human|(?<!protected by re)captcha|i'm not a robot|unusual traffic|performing security verification|verifies you are not a bot|drag the slider to fit the puzzle/i.test(
       text,
     )
   )
-    return { kind: "captcha", detail: "captcha" };
+    return { kind: "captcha", detail: "captcha", by: "text" };
   if (/verify your phone|enter the code|2-step verification/i.test(text))
-    return { kind: "challenge", detail: "verification challenge" };
+    return { kind: "challenge", detail: "verification challenge", by: "text" };
   // A login form rendered under whatever URL was asked for (platform.claude.com does this).
   if (
     /\b(continue|sign ?in|log ?in|sign ?up) with (google|email|sso|github|microsoft|apple)\b/i.test(
       text,
     )
   )
-    return { kind: "login", detail: `login form on ${url}` };
+    return { kind: "login", detail: `login form on ${url}`, by: "text" };
   return null;
 }

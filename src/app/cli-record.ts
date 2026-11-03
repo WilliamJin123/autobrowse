@@ -884,6 +884,8 @@ async function runAgent(settings: Settings, r: AgentRun): Promise<{ achieved: bo
     r.port,
     {
       tokenFile: tokenFileFor(r.port),
+      // no `flow` command to hand a guessed wall to
+      signInOn: "any",
       ...(r.secrets ? { secrets: r.secrets.values, secretHosts: r.secrets.hosts } : {}),
       ...(r.signIn === false ? { signIn: false } : {}),
     },

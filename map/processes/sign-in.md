@@ -20,7 +20,7 @@ If flows signed in themselves, every flow would carry every site's quirks and ev
 
 ## Steps
 
-1. The runner sees a wall after navigation and calls `runner.login(fp, site, account)`; a second wall while signing in is not retried — `src/browser/flow.ts:97-100,512-523`
+1. The runner sees a wall after navigation and calls `runner.login(fp, site, account)`; a second wall while signing in is not retried. Explore's `open` passes `signIn: "url"`: a wall seen only in the text (`Wall.by`) returns to the agent, who runs `<site>-login` — `src/browser/flow.ts:97-100,512-523`
 2. `loginProvider` resolves the spec (`resolveLogin`), lists methods (`methodsOf`: password first, then each `via`) — `src/auth/login.ts:558-652,429,654`
 3. `signInContext` binds the credential, the code sources and the phone notifier — `src/auth/login.ts:504`; codes: `src/auth/codes.ts:68-142`, inbox lock `:177`
 4. The page is bound to the spec's origins (`boundPage`, `passwordDomains`) so a fill of the password on any other host is refused and recorded — `src/auth/guard.ts:88`, `src/auth/login.ts:423`

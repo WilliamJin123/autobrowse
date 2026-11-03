@@ -324,6 +324,7 @@ export function explorerOpener(
     | "driver"
     | "goal"
     | "fileSets"
+    | "signInOn"
   > & {
     /** false: a wall on `open` stays a wall (a signup page must not sign in as a stored account). */
     signIn?: boolean;
@@ -390,6 +391,8 @@ export function agentFor(
       open(site, port, {
         // `autobrowse browsers` sees it as agent:<port> and can close it.
         tokenFile: tokenFileFor(port),
+        // no `flow` command to hand a guessed wall to
+        signInOn: "any",
         ...(session
           ? { journalFile: journalFileFor(expandHome(settings.recordingsDir), site, session) }
           : {}),

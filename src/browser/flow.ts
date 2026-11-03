@@ -137,6 +137,8 @@ export interface ActOptions {
 export interface OpenOptions {
   /** Land on a login page on purpose (the sign-in flow itself). */
   allowWall?: boolean;
+  /** `url`: sign in only on a wall its URL shows; a wall only the text suggests is left for the caller (explore). */
+  signIn?: "url";
 }
 
 export interface FlowPage {
@@ -1046,7 +1048,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           }
           return got;
         }
-        async function openPage(asked: string, o: { allowWall?: boolean }): Promise<void> {
+        async function openPage(asked: string, o: OpenOptions): Promise<void> {
           active = session.page;
           firstOpen ??= asked;
           // The first open of a resumed try goes where the last try stopped, on the same site.
@@ -1086,6 +1088,14 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               }
               throw new NeedsHuman(`${flow.site}: captcha (${got.reason})${after}`, "captcha");
             }
+            // a guess on the first look: the caller judges it; after a sign-in, any wall is a miss
+            if (
+              o.signIn === "url" &&
+              wall.by === "text" &&
+              wall.kind !== "captcha" &&
+              attempt === 1
+            )
+              return;
             if (wall.kind === "captcha" || !runner.login || signingIn || attempt > 2)
               throw new NeedsHuman(`${flow.site}: ${wall.detail}${after}`, wall.kind);
             signingIn = true;

@@ -138,7 +138,8 @@ Until then, the agent sends `flow` and `code` as separate commands, and the jour
 - In explore, a sign-in page, a signed-out state or an expired session is `{"cmd":"flow","name":"<site>-login"}`. `--login` stays for the one case the tool cannot do: another site's login typed into a popup on this page.
 - Already signed in (the site's `loggedIn`), it types nothing. An OAuth sign-in whose page load signs in (One Tap, a live cookie) ends there.
 - A miss is the run's error, with the fix in it: no stored credential (`autobrowse creds set <site>`), a `--signup` session (no sign-in), no spec for the site.
-- `open` still signs in by itself on a wall it recognises (text or URL). Whether it should is open (Options, "Who signs in on `open`").
+- Explore's `open` signs in by itself only on a wall its URL shows (the login page, LinkedIn's /authwall, SSO). A wall only the text suggests ("Continue with Google", a code prompt) comes back as `wall` with `by: "text"` and `signIn: "<site>-login"`; the agent judges. Option C below.
+- Legs, compiled runs and the headless agent (`signInOn: "any"`) keep signing in on any wall: they run unwatched, and the agent has no `flow` command to take the guess.
 
 Built (WA-1019, 2026-11-03). With it (WA-1022): an act whose control never shows says `<goal>: <hints> not visible after 15 s (<page>)` in place of a 1 s act that failed in Playwright's words; Perplexity's "Sign In" button is clicked only when it is there (3 s), so an open of Perplexity no longer waits 15 s on it.
 
@@ -228,9 +229,9 @@ Cost: one more in-process call per leg (`advance` on memory effects), under 1 ms
 
 | Option | Verdict |
 |---|---|
-| A. `open` never signs in; a wall is reported as `wall` and the agent runs `<site>-login` | Open. One path, the agent sees every sign-in in its trace; costs one more command on each walled open |
-| B. `open` signs in on any wall it recognises (today) | Open. Zero commands, but a text-matched wall on a page that is not a sign-in page starts a sign-in the agent did not ask for (Perplexity, WA-1022) |
-| C. `open` signs in only on a URL-matched wall (the login page itself); a text-matched one is reported | Open. The sure case stays automatic; the guess becomes the agent's call |
+| A. `open` never signs in; a wall is reported as `wall` and the agent runs `<site>-login` | No. One path, the agent sees every sign-in in its trace; costs one more command on each walled open |
+| B. `open` signs in on any wall it recognises (until 11-03) | No. Zero commands, but a text-matched wall on a page that is not a sign-in page starts a sign-in the agent did not ask for (Perplexity, WA-1022) |
+| C. `open` signs in only on a URL-matched wall (the login page itself); a text-matched one is reported | **Chosen** (William, 11-03). The sure case stays automatic; the guess becomes the agent's call |
 
 ## Decision log
 
@@ -261,3 +262,4 @@ Cost: one more in-process call per leg (`advance` on memory effects), under 1 ms
 - 2026-10-30: The hand-written legs stay as they are. They read the site's state and act only on the difference, and the engine runs one `fx.run` per item: that is option B done right by hand, stronger than a journal. Moving them into `code` would lose types and checks.
 - 2026-11-03: Sign-in is a workflow, `<site>-login` (William: "login should be a tool … i heavily prefer a) … use compiled workflows"). Options: (a) a tool that runs the stored login spec, the credential typed by the runner (picked); (b) the agent signs in itself with `place` per field (rejected: it must know each site's screens, and a code or passkey step is the spec's anyway); (c) `--login` at start only (rejected by William: "def should not be the main way"). Trade-off: a site with no spec has no tool; the agent still signs up or maps the login first.
 - 2026-11-03: `clearWay` throws when the control never shows, with the page's state; the 1 s act stays only for a page script (WA-1022). Rejected: give the act the full wait again (a second 15 s on a control that is not there).
+- 2026-11-03: Explore's `open` signs in only on a URL-matched wall (option C; William: "C makes sense"). Rejected: A (one more command on every login page), B (a text guess starts a sign-in nobody asked for, WA-1022). Scope: explore driven from a chat; a leg and the headless agent have no one to hand the guess to.
