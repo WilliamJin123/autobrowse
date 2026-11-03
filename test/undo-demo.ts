@@ -6,7 +6,7 @@ import { defineWorkflow, done, type StepDef } from "../src/engine/workflow.js";
 /** A post in three steps: a draft and its media are private until `post`. */
 export interface Deps {
   log: string[];
-  fail: Partial<Record<"media" | "post" | "undo-media", "error" | "human">>;
+  fail: Partial<Record<"media" | "post" | "undo-media" | "pin", "error" | "human">>;
 }
 export interface Memo {
   draft: string | null;
@@ -14,7 +14,7 @@ export interface Memo {
 export const plan = z.object({ dryRun: z.boolean().default(false), text: z.string() });
 export type Plan = z.infer<typeof plan>;
 
-export const steps: StepDef<Plan, Deps, Memo, "draft" | "media" | "post">[] = [
+export const steps: StepDef<Plan, Deps, Memo, "draft" | "media" | "post" | "pin">[] = [
   {
     name: "draft",
     async run({ fx, deps, memo }) {
@@ -59,6 +59,20 @@ export const steps: StepDef<Plan, Deps, Memo, "draft" | "media" | "post">[] = [
         deps.log.push("post");
       });
       return done("posted");
+    },
+  },
+  {
+    name: "pin",
+    async run({ fx, deps }) {
+      await fx.run("pin", async () => {
+        if (deps.fail.pin === "error") throw new Unrecoverable("pin refused");
+        deps.log.push("pin");
+      });
+      return done("pinned");
+    },
+    async undo({ fx, deps }) {
+      await fx.run("unpin", async () => void deps.log.push("unpin"));
+      return "unpinned";
     },
   },
 ];

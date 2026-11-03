@@ -21,6 +21,7 @@ describe("undo steps", () => {
     expect(out.status).toBe("rejected");
     expect(deps.log).toEqual(["draft", "media", "drop media", "drop d1"]);
     expect(statuses(out.results)).toEqual({ draft: "undone", media: "undone", post: "rejected" });
+    expect(out.results.pin).toBeUndefined();
     expect(out.memo).toEqual({ draft: null });
     // Undone already: a second pass has nothing left to undo.
     expect(await undoRun(fx, workflow, deps, p)).toEqual([]);
@@ -29,7 +30,7 @@ describe("undo steps", () => {
   it("a done run keeps everything", async () => {
     const { deps, out } = await go({}, { send: [{ approved: true }] });
     expect(out.status).toBe("done");
-    expect(deps.log).toEqual(["draft", "media", "post"]);
+    expect(deps.log).toEqual(["draft", "media", "post", "pin"]);
   });
 
   it("a failed private step leaves the run to resume; undoRun then clears what is done", async () => {
@@ -50,6 +51,13 @@ describe("undo steps", () => {
     expect(human.out.status).toBe("rejected");
     expect(human.out.results.post).toMatchObject({ status: "rejected", gate: "human" });
     expect(human.deps.log).toEqual(["draft", "media"]);
+  });
+
+  it("keeps what a public act that went out uses", async () => {
+    const { fx, deps, p, out } = await go({ pin: "error" }, { send: [{ approved: true }] });
+    expect(out.status).toBe("failed");
+    expect(await undoRun(fx, workflow, deps, p)).toEqual([]);
+    expect(deps.log).toEqual(["draft", "media", "post"]);
   });
 
   it("a failed undo is recorded and told to a person; the others still run", async () => {

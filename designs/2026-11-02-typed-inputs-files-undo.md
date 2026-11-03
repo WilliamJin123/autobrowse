@@ -123,6 +123,7 @@ A failed run resumes from its failed step: `run` again and the done steps are no
 - A run that is done keeps all: what it made is the goal, not a leftover.
 - An irreversible step that may have acted (failed, needs a person, rejected at the human gate) stops every undo: the same rule as `unknown`.
 - `defineWorkflow` refuses an `undo` on an irreversible step.
+- A public act that went out keeps every step before it: the post uses that draft and media. Only steps after it are undone.
 - Undos run in their own `undo` invocation. An undo that retries through an outage never holds a reject or a reset. A reset passes the state it clears.
 - An undone step runs again on a rerun. A failed undo is `undo-failed` in the results and a message to a person.
 

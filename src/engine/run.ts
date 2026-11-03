@@ -224,7 +224,8 @@ export async function applyAnswer(
 /**
  * Runs each done step's `undo`, last first, for a run that ends without its goal: rejected,
  * reset before done, or failed and never resumed. No undo runs while an irreversible step may
- * have acted (failed, needs a person, or rejected at the human gate): a person decides.
+ * have acted (failed, needs a person, or rejected at the human gate): a person decides. Steps
+ * before a done irreversible step stay: the public act uses them.
  * A failed undo is recorded as `undo-failed`, never thrown. Undone steps run again on a rerun.
  */
 export async function undoRun<P extends PlanBase, D, M, S extends string>(
@@ -238,6 +239,8 @@ export async function undoRun<P extends PlanBase, D, M, S extends string>(
   const settled = workflow.settle ? workflow.settle(plan, memo) : plan;
   const out: { step: S; result: StepResult }[] = [];
   for (const step of [...workflow.steps].reverse()) {
+    // A public act went out: what came before it is now part of it.
+    if (step.irreversible && results[step.name]?.status === "done") break;
     if (!step.undo || results[step.name]?.status !== "done") continue;
     const at = (await fx.now()).toISOString();
     let result: StepResult;
