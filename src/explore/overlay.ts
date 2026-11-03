@@ -157,7 +157,6 @@ const PHASES: Record<string, string[]> = {
 };
 /** Seconds per phase word. */
 const PHASE_S = 0.55;
-const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /** A CSS `content` cycle: the page runs no timer of ours. */
 const contentKeys = (name: string, words: string[]) =>
@@ -165,17 +164,26 @@ const contentKeys = (name: string, words: string[]) =>
     .map((w, i) => `${Math.round((i / words.length) * 1000) / 10}%{content:${JSON.stringify(w)}}`)
     .join("")}}`;
 
-/** Wren dark tokens (wren/designs/2026-10-20-design-language). */
-const T = {
-  canvas: "#0d0d0c",
-  paper: "#171716",
-  ink: "#f2f0ea",
-  ink2: "#a9a79f",
-  ink3: "#8f8d86",
-  accent: "#a596d6",
-  onAccent: "#15121f",
-  good: "#4cc27a",
-  bad: "#ff6b5e",
+/** Wren design-language tokens, light and dark (wren/designs/2026-10-20-design-language). */
+const THEMES = {
+  light:
+    "--canvas:#f3f1ec;--paper:#fff;--ink:#0e0e0e;--ink-2:#56564f;--ink-3:#63645e;--accent:#6a5a93;--on-accent:#faf7f2;--good:#17803d;--bad:#c31c15;" +
+    "--raise:0 0 0 1px var(--hair),0 1px 2px rgb(14 14 14/.04),0 4px 14px -6px rgb(40 30 70/.10);--lift:0 24px 56px -18px rgb(40 30 70/.28)",
+  dark:
+    "--canvas:#0d0d0c;--paper:#171716;--ink:#f2f0ea;--ink-2:#a9a79f;--ink-3:#8f8d86;--accent:#a596d6;--on-accent:#15121f;--good:#4cc27a;--bad:#ff6b5e;" +
+    "--raise:0 0 0 1px var(--hair),0 6px 18px -8px rgb(0 0 0/.6);--lift:0 24px 56px -16px rgb(0 0 0/.55)",
+};
+
+/** Lucide paths (ISC), 24-unit box, drawn at one size and stroke. */
+const ICONS = {
+  boxes:
+    "M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M21 19a2 2 0 0 1-2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h1M14 3h1M14 21h1M3 9v1M21 9v1M3 14v1M21 14v1",
+  moon: "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401",
+  sun: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41",
+  min: "M5 12h14",
+  chevron: "m6 9 6 6 6-6",
+  ok: "M20 6 9 17l-5-5",
+  no: "M18 6 6 18M6 6l12 12",
 };
 
 /** How a person left the panel: carried into each new document. */
@@ -185,6 +193,8 @@ interface Prefs {
   trace: boolean;
   /** The boxes and the flashing target drawn; off, they are not looked up either. */
   marks: boolean;
+  /** null: the system's. */
+  theme: "light" | "dark" | null;
   /** Top-left corner, px; null = bottom left. */
   x: number | null;
   y: number | null;
@@ -199,7 +209,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const K = '__${attr}';
   if (window[K] && window[K].draw) return;
   const ui = window[K] = { ...${JSON.stringify(prefs)}, lastN: -1, host: null };
-  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
+  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
   const el = (tag, cls, text, css) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; };
   const COLOURS = ${JSON.stringify(MARK_COLOURS)};
   const at = (b) => 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;';
@@ -214,78 +224,80 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const root = host.attachShadow({ mode: 'closed' });
   const style = el('style', null, [
         '*{box-sizing:border-box}',
+        '.wrap{--hair:color-mix(in srgb,var(--ink) 11%,transparent);--fill:color-mix(in srgb,var(--ink) 5%,transparent);--tint:color-mix(in srgb,var(--accent) 12%,transparent);--ease:cubic-bezier(.16,1,.3,1)}',
+        '.wrap.light{${THEMES.light}}',
+        '.wrap.dark{${THEMES.dark}}',
         // As the marks shot draws them (marks.ts layerScript).
         '.box{position:fixed;border:2px solid}',
         '.tag{position:absolute;left:-2px;font:bold 11px/14px monospace;color:#fff;padding:0 3px}',
-        '.target{position:fixed;border:2px solid ${T.accent};animation:pulse .9s ease-out infinite}',
-        '@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(165,150,214,.75)}100%{box-shadow:0 0 0 12px rgba(165,150,214,0)}}',
-        // The whole panel takes the pointer, so a person's click never reaches the page under it.
-        '.tui{position:fixed;display:flex;flex-direction:column;max-width:calc(100vw - 12px);cursor:default;user-select:none;',
-        'font:12px/1.4 "JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;color:${T.ink};',
-        'background:${T.canvas} repeating-linear-gradient(0deg,rgba(255,255,255,.028) 0 1px,transparent 1px 3px);',
-        'border:1px solid ${T.accent};box-shadow:0 0 0 1px #000,0 10px 32px rgba(0,0,0,.55),0 0 22px rgba(165,150,214,.14);',
-        'text-shadow:0 0 6px rgba(165,150,214,.22)}',
-        // Width scales the type and the gaps: 12px wide open, 10px at the narrowest.
+        '.target{position:fixed;border:2px solid var(--accent);border-radius:6px;animation:pulse 1.1s var(--ease) infinite}',
+        '@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}100%{box-shadow:0 0 0 12px transparent}}',
+        'svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}',
+        // A floating panel: frosted paper, hairline, lifted. The whole panel takes the pointer.
+        '.tui,.tab{background:color-mix(in srgb,var(--paper) 86%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8)}',
+        '.tui{position:fixed;display:flex;flex-direction:column;max-width:calc(100vw - 12px);cursor:default;user-select:none;-webkit-user-select:none;',
+        'font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",Figtree,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;',
+        'border-radius:14px;box-shadow:var(--raise),var(--lift)}',
+        // Width scales the type and the inset: 13px wide open, 11px at the narrowest.
         '.tui{container-type:inline-size}',
-        '.tui>*{--g:clamp(3px,1.6cqi,8px);font-size:clamp(10px,calc(8px + .9cqi),12px)}',
+        '.tui>*{--g:clamp(8px,3cqi,12px);font-size:clamp(11px,calc(9px + .9cqi),13px)}',
         '.tui:not(.inert){pointer-events:auto}',
         '.tui.inert{opacity:.6}',
-        '.tab{position:fixed;left:0;top:50%;transform:translateY(-50%);width:10px;height:56px;cursor:pointer;',
-        'background:${T.canvas};border:1px solid ${T.accent};border-left:0;border-radius:0 5px 5px 0;box-shadow:0 4px 14px rgba(0,0,0,.4);transition:width .15s}',
+        '.tab{position:fixed;left:0;top:50%;transform:translateY(-50%);width:14px;height:56px;cursor:pointer;border-radius:0 10px 10px 0;box-shadow:var(--raise),var(--lift);transition:width .2s var(--ease)}',
         '.tab:not(.inert){pointer-events:auto}',
-        '.tab:hover{width:16px;background:${T.accent}}',
-        '.tab.busy::after{content:"";position:absolute;left:2px;top:25px;width:4px;height:4px;border-radius:50%;background:${T.accent};animation:blink 1s steps(2) infinite}',
-        '.bar{display:flex;align-items:center;gap:var(--g);padding:2px var(--g);background:${T.paper};border-bottom:1px solid ${T.accent};cursor:move}',
-        '.bar .name{font-weight:700;color:${T.accent};letter-spacing:.04em}',
-        '.bar .state{color:${T.ink3}}',
-        '.bar .state.run{color:${T.accent};animation:blink 1s steps(2) infinite}',
+        '.tab:hover{width:20px}',
+        '.tab::after{content:"";position:absolute;left:5px;top:18px;width:3px;height:20px;border-radius:2px;background:var(--hair)}',
+        '.tab.busy::after{top:25px;width:6px;height:6px;left:4px;border-radius:50%;background:var(--accent);animation:beat 1.2s var(--ease) infinite}',
+        '@keyframes beat{50%{opacity:.45}}',
+        '.bar{display:flex;align-items:center;gap:8px;padding:8px 6px 4px var(--g);cursor:grab;white-space:nowrap}',
+        '.bar .dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--ink-3);opacity:.5}',
+        '.bar .dot.run{background:var(--accent);opacity:1;animation:beat 1.2s var(--ease) infinite}',
+        '.bar .name{font-weight:650;letter-spacing:-.01em}',
+        '.bar .state,.bar .k{min-width:0;color:var(--ink-3);overflow:hidden}',
         '.bar .fill{flex:1}',
-        '.bar .meta{color:${T.ink3};font-size:.88em}',
-        '.grip{position:absolute;width:12px;height:12px;border:0 solid ${T.accent};opacity:.45}',
-        '.tui:hover .grip{opacity:1}',
-        '.grip.se{right:-1px;bottom:-1px;cursor:nwse-resize;border-width:0 2px 2px 0;opacity:1}',
-        '.grip.sw{left:-1px;bottom:-1px;cursor:nesw-resize;border-width:0 0 2px 2px}',
-        '.grip.ne{right:-1px;top:-1px;cursor:nesw-resize;border-width:2px 2px 0 0}',
-        '.grip.nw{left:-1px;top:-1px;cursor:nwse-resize;border-width:2px 0 0 2px}',
-        '.live{color:${T.ink3}}',
-        '.spin::before{content:"${SPIN[0]}";color:${T.accent};animation:spin .8s steps(1) infinite}',
-        '.spin.slow::before{animation-duration:1.6s;color:${T.ink3}}',
-        '${contentKeys("spin", SPIN)}',
+        '.rule .meta{color:var(--ink-3);font-weight:400;font-size:.92em;font-variant-numeric:tabular-nums}',
+        '.btn{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:999px;color:var(--ink-2);cursor:pointer;transition:background .15s var(--ease),color .15s var(--ease)}',
+        '.btn:hover{background:var(--fill);color:var(--ink)}',
+        '.btn.on{color:var(--accent)}',
+        '.btn.on:hover{background:var(--tint)}',
+        '.btn.folded svg{transform:rotate(-90deg)}',
+        // Corners size the panel; no mark, and they straddle the rounded edge, as a macOS window's.
+        '.grip{position:absolute;width:18px;height:18px}',
+        '.grip.se{right:-4px;bottom:-4px;cursor:nwse-resize}.grip.sw{left:-4px;bottom:-4px;cursor:nesw-resize}',
+        '.grip.ne{right:-4px;top:-4px;cursor:nesw-resize}.grip.nw{left:-4px;top:-4px;cursor:nwse-resize}',
+        '.body{display:flex;flex-direction:column;gap:4px;padding:4px var(--g) 12px}',
+        '.goal{font-weight:650;font-size:1.08em;line-height:1.3;letter-spacing:-.01em;overflow-wrap:anywhere}',
+        '.thought{color:var(--ink-2);overflow-wrap:anywhere}',
+        '.doing{display:flex;align-items:baseline;gap:6px;overflow-wrap:anywhere}',
+        '.verb{flex:none;color:var(--accent);background:var(--tint);border-radius:6px;padding:0 6px;font-weight:600;font-size:.92em;line-height:1.5}',
+        '.live{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:.92em;margin-top:2px}',
+        '.spin{flex:none;width:11px;height:11px;border-radius:50%;border:1.5px solid var(--hair);border-top-color:var(--accent);animation:spin .8s linear infinite}',
+        '.spin.slow{animation-duration:1.6s;border-top-color:var(--ink-3)}',
+        '@keyframes spin{to{transform:rotate(1turn)}}',
         '.phase::after{content:"";animation:ph var(--d) steps(1) forwards;animation-delay:var(--t)}',
         '.dots::after{content:"";animation:dots 1.8s steps(1) infinite}',
         '${contentKeys("dots", ["", ".", "..", "..."])}',
-        '.btn{color:${T.ink3};cursor:pointer;padding:0 2px}',
-        '.btn:hover{color:${T.onAccent};background:${T.accent};text-shadow:none}',
-        '.btn.on{color:${T.accent}}',
-        '.body{padding:4px var(--g) 5px}',
-        '.k{color:${T.ink3}}',
-        '.goal{color:${T.ink};font-weight:700}',
-        '.thought{color:${T.ink2}}',
-        '.doing{color:${T.accent}}',
-        '.cursor{display:inline-block;width:.6em;height:1.05em;margin-left:2px;vertical-align:-2px;background:${T.accent};animation:blink 1s steps(2) infinite}',
-        '@keyframes blink{50%{opacity:0}}',
-        '.rule{display:flex;gap:var(--g);color:${T.ink3};padding:0 var(--g);border-top:1px solid ${T.paper}}',
-        '.rule .t{color:${T.ink3}}',
-        '.rule .btn{pointer-events:auto}',
+        '.rule{display:flex;align-items:center;gap:6px;padding:4px 6px 2px var(--g);border-top:1px solid var(--hair);color:var(--ink-2);font-weight:600;font-size:.92em}',
+        '.rule .t{color:var(--ink-3);font-weight:500;font-variant-numeric:tabular-nums}',
+        '.rule .btn{pointer-events:auto;width:24px;height:24px}',
         '.tui.inert .rule .btn{pointer-events:none}',
-        '.rows{display:grid;grid-template-columns:auto auto auto minmax(0,1fr) auto auto;column-gap:0;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:${T.ink3} transparent;padding:1px 0 3px;max-height:220px}',
+        '.rows{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--hair) transparent;padding:0 0 6px;max-height:220px}',
         '.tui.sized .rows{flex:1;min-height:0;max-height:none}',
-        '.row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;padding:0 var(--g)}',
-        // Cells placed by column, gaps as padding: a hidden column takes no room and moves nothing.
-        '.row .n{grid-column:1}.row .at{grid-column:2}.row .cmd{grid-column:3}.row .what{grid-column:4}.row .ok,.row .no:not(.note){grid-column:5}.row .ms{grid-column:6}',
-        '.row>:not(:first-child):not(.note){padding-left:var(--g)}',
-        // Narrow: the clock and the seed go; the act, its target, ✓ and ms stay, the note takes the width.
-        '@container (max-width:360px){.row .at,.bar .meta{display:none}.rows .row .note{grid-column:3/-1}}',
-        '.row .note{grid-column:4/-1;padding-left:var(--g);color:${T.ink3};font-size:.92em;line-height:1.3;overflow-wrap:anywhere}',
-        '.row .note.no{color:${T.bad};opacity:.85}',
-        '.row.new{animation:fresh 1.2s ease-out}',
-        '@keyframes fresh{from{background:rgba(165,150,214,.28)}to{background:transparent}}',
-        '.row .n{color:${T.ink3};text-align:right}',
-        '.row .at,.row .ms{color:${T.ink3}}',
-        '.row .ms{text-align:right}',
-        '.row .cmd{color:${T.accent}}',
-        '.row .what{color:${T.ink};overflow-wrap:anywhere}',
-        '.ok{color:${T.good}}.no{color:${T.bad}}',
+        // Hover fill inset and rounded; the words keep the panel's inset.
+        '.row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:baseline;margin:0 6px;padding:5px calc(var(--g) - 6px);border-radius:8px;transition:background .15s var(--ease)}',
+        '.row:hover{background:var(--fill)}',
+        '.row .st{grid-column:1;align-self:center;display:grid;place-items:center;width:14px;height:14px;border-radius:50%;color:var(--paper)}',
+        '.row .st svg{width:10px;height:10px;stroke-width:3}',
+        '.row .st.ok{background:var(--good)}.row .st.no{background:var(--bad)}',
+        '.row .cmd{grid-column:2;font-weight:600}.row .what{grid-column:3;color:var(--ink-2);overflow-wrap:anywhere}.row .at{grid-column:4}.row .ms{grid-column:5}',
+        '.row>:not(:first-child):not(.note){padding-left:8px}',
+        '.row .at,.row .ms{color:var(--ink-3);font-size:.88em;font-variant-numeric:tabular-nums;text-align:right}',
+        '.row .note{grid-column:3/-1;padding-left:8px;color:var(--ink-3);font-size:.88em;line-height:1.3;overflow-wrap:anywhere}',
+        '.row .note.no{color:var(--bad)}',
+        // Narrow: the clock and the seed go; the act, its target, the mark and ms stay, the note takes the width.
+        '@container (max-width:360px){.row .at,.rule .meta,.bar .k,.bar .state{display:none}.rows .row .note{grid-column:2/-1}}',
+        '.row.new{animation:fresh 1.2s var(--ease)}',
+        '@keyframes fresh{from{background:var(--tint)}}',
   ].join(''));
   // The running command's phase words: one keyframes rule, swapped per command.
   const phase = el('style');
@@ -302,7 +314,12 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     g.dataset.c = c;
     tui.appendChild(g);
   }
-  root.append(style, phase, marks, tab, tui);
+  const wrap = el('div', 'wrap');
+  wrap.append(marks, tab, tui);
+  root.append(style, phase, wrap);
+  const ICONS = ${JSON.stringify(ICONS)};
+  const icon = (d) => { const e = el('span'); e.innerHTML = '<svg viewBox="0 0 24 24"><path d="' + d + '"/></svg>'; return e.firstChild; };
+  const dark = () => ui.theme ? ui.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   // Capture on window runs before the page's document listeners and the observer.
   const KINDS = ['pointerdown','pointerup','pointermove','pointerover','pointerout','pointerenter','pointerleave',
     'mousedown','mouseup','mousemove','mouseover','mouseout','mouseenter','mouseleave',
@@ -362,6 +379,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     if (act === 'min') ui.min = !ui.min;
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
+    else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
     ui.paint();
   }, { capture: true, passive: false });
   // Off for a shot: the node leaves the document; its rows and scroll come back with it.
@@ -379,12 +397,14 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   };
   const rowOf = (r) => {
     const row = el('div', 'row');
-    row.appendChild(el('span', 'n', String(r.n)));
-    row.appendChild(el('span', 'at', r.at));
+    const st = el('span', 'st ' + (r.ok ? 'ok' : 'no'));
+    st.appendChild(icon(r.ok ? ICONS.ok : ICONS.no));
+    st.title = r.ok ? 'done' : 'failed';
+    row.appendChild(st);
     row.appendChild(el('span', 'cmd', r.cmd));
     row.appendChild(el('span', 'what', r.what));
-    row.appendChild(el('span', r.ok ? 'ok' : 'no', r.ok ? '✓' : '✗'));
-    row.appendChild(el('span', 'ms', r.ms < 1000 ? r.ms + 'ms' : (r.ms / 1000).toFixed(1) + 's'));
+    row.appendChild(el('span', 'at', r.at));
+    row.appendChild(el('span', 'ms', r.ms < 1000 ? r.ms + ' ms' : (r.ms / 1000).toFixed(1) + ' s'));
     if (r.note) row.appendChild(el('span', 'note' + (r.ok ? '' : ' no'), r.note));
     return row;
   };
@@ -411,6 +431,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     ui.wasBusy = s.busy;
     const since = ((Date.now() - (ui.since || Date.now())) / 1000).toFixed(2);
     if (phase.textContent !== s.ph.keys) phase.textContent = s.ph.keys;
+    wrap.className = 'wrap ' + (dark() ? 'dark' : 'light');
     marks.textContent = '';
     if (ui.marks) {
       for (const { n, box } of s.boxes) {
@@ -435,41 +456,46 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
       tui.style.cssText = place + ';width:' + ui.w + 'px' + (ui.sized ? ';height:' + ui.h + 'px' : '');
       ui.tuiEl = panel = tui;
       bar.textContent = '';
-      bar.appendChild(el('span', 'name', '▌autobrowse'));
-      bar.appendChild(el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? '● run' : '○ idle'));
-      if (s.step) bar.appendChild(el('span', 'k', 'step ' + s.step));
+      bar.appendChild(el('span', 'dot' + (s.busy ? ' run' : '')));
+      bar.appendChild(el('span', 'name', 'autobrowse'));
+      bar.appendChild(el('span', 'state', s.busy ? 'Running' : 'Idle'));
+      if (s.step) bar.appendChild(el('span', 'k', 'Step ' + s.step));
       bar.appendChild(el('span', 'fill'));
-      if (s.meta) bar.appendChild(el('span', 'meta', s.meta));
-      const btn = (a, t, tip) => { const b = el('span', 'btn', t); b.setAttribute('data-a', a); b.title = tip; return b; };
-      const mk = btn('marks', ui.marks ? '[◆]' : '[◇]', ui.marks ? 'hide the boxes' : 'show the boxes');
-      if (ui.marks) mk.className += ' on';
-      bar.appendChild(mk);
-      bar.appendChild(btn('min', '[_]', 'minimize'));
+      const btn = (a, d, tip, cls) => { const b = el('span', 'btn' + (cls ? ' ' + cls : '')); b.appendChild(icon(d)); b.setAttribute('data-a', a); b.title = tip; return b; };
+      bar.appendChild(btn('marks', ICONS.boxes, ui.marks ? 'Hide the boxes' : 'Show the boxes', ui.marks ? 'on' : ''));
+      bar.appendChild(btn('theme', dark() ? ICONS.sun : ICONS.moon, dark() ? 'Light' : 'Dark'));
+      bar.appendChild(btn('min', ICONS.min, 'Minimize'));
       body.textContent = '';
-      const line = (k, cls, t) => { const d = el('div'); d.appendChild(el('span', 'k', k)); d.appendChild(el('span', cls, t)); return d; };
-      if (s.goal) body.appendChild(line('goal ', 'goal', s.goal));
-      if (s.thought) body.appendChild(line('» ', 'thought', s.thought));
-      if (s.doing) body.appendChild(line('$ ', 'doing', s.doing));
+      if (s.goal) body.appendChild(el('div', 'goal', s.goal));
+      if (s.thought) body.appendChild(el('div', 'thought', s.thought));
+      if (s.doing) {
+        // "click: open the pricing page": the verb as a chip.
+        const i = s.doing.indexOf(': ');
+        const d = el('div', 'doing');
+        if (i > 0) d.appendChild(el('span', 'verb', s.doing.slice(0, i)));
+        d.appendChild(el('span', '', i > 0 ? s.doing.slice(i + 2) : s.doing));
+        body.appendChild(d);
+      }
       // The busy line: the hands' phase while a command runs; between commands, the agent's turn.
       const live = el('div', 'live');
       if (s.busy) {
         live.appendChild(el('span', 'spin'));
-        live.appendChild(el('span', 'phase', ' ', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'));
-        live.appendChild(el('span', 'dots'));
+        const w = el('span');
+        w.append(el('span', 'phase', '', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'), el('span', 'dots'));
+        live.appendChild(w);
       } else if (s.goal) {
         live.appendChild(el('span', 'spin slow'));
-        live.appendChild(el('span', '', ' thinking'));
-        live.appendChild(el('span', 'dots'));
-      } else {
-        live.appendChild(el('span', 'k', '$ waiting for the agent'));
-        live.appendChild(el('span', 'cursor'));
-      }
+        const w = el('span', '', 'Thinking');
+        w.appendChild(el('span', 'dots'));
+        live.appendChild(w);
+      } else live.appendChild(el('span', '', 'Waiting for the agent'));
       body.appendChild(live);
       rule.textContent = '';
-      rule.appendChild(el('span', 't', '─ trace'));
+      rule.appendChild(el('span', '', 'Activity'));
       rule.appendChild(el('span', 't', String(s.count)));
       rule.appendChild(el('span', 'fill', null, 'flex:1'));
-      rule.appendChild(btn('trace', ui.trace ? '[▾]' : '[▸]', ui.trace ? 'fold the trace' : 'show the trace'));
+      if (s.meta) rule.appendChild(el('span', 'meta', s.meta));
+      rule.appendChild(btn('trace', ICONS.chevron, ui.trace ? 'Fold the activity' : 'Show the activity', ui.trace ? '' : 'folded'));
       rows.style.display = ui.trace && s.count ? '' : 'none';
     }
     // Inert only when the agent's press could land on the panel; 16px of room around it.
@@ -488,6 +514,9 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     return ui.paint();
   };
 })()`;
+
+/** Sentence case for a phase word. */
+const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
 
 const clipLine = (s: string | null | undefined, n: number) =>
   s ? (s.length > n ? `${s.slice(0, n - 1)}…` : s) : null;
@@ -510,6 +539,7 @@ export function overlayFor(startOn: boolean) {
     min: false,
     trace: true,
     marks: true,
+    theme: null,
     x: null,
     y: null,
     w: 460,
@@ -539,7 +569,7 @@ export function overlayFor(startOn: boolean) {
     const view = {
       ...rest,
       count: trace.length,
-      ph: { keys: contentKeys("ph", words ?? ["working"]), n: words?.length ?? 1 },
+      ph: { keys: contentKeys("ph", (words ?? ["working"]).map(cap)), n: words?.length ?? 1 },
     };
     const last = trace.at(-1)?.n ?? 0;
     const call = (from: number) => {
