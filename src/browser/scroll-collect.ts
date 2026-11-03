@@ -1,11 +1,12 @@
 /**
  * Read a feed the way a person does: read what is on screen, scroll most of
- * a screen, read again. Feeds (X, LinkedIn, Instagram) render only the rows
+ * a screen (never the same distance, now and then a look back up), read again. Feeds (X, LinkedIn, Instagram) render only the rows
  * near the viewport, so rows are kept by key as they pass. It stops at
  * `max` rows, at a row `stop` says is already known (a cursor: the newest
  * id the caller holds), or when a few scrolls in a row bring nothing new.
  */
 import type { FlowPage } from "./flow.js";
+import { chance, drawLog, drawMs, type Random } from "./human/draw.js";
 
 export interface ScrollCollect<T> {
   /** The rows on screen now, in page order. */
@@ -24,6 +25,8 @@ export interface ScrollCollect<T> {
   scroll?: () => Promise<void>;
   /** ms to let new rows load after a scroll. */
   settleMs?: number;
+  /** Tests: a fixed source for the step's draws. */
+  random?: Random;
 }
 
 export interface Collected<T> {
@@ -37,8 +40,18 @@ const SCREENS = 0.85;
 const SETTLE_MS = 1_200;
 /** No feed read goes on forever, whatever `max` says. */
 const MOST_SCROLLS = 200;
+/** One step's share of `screens`: a person never moves the same distance twice. */
+const STRIDE: [number, number] = [0.75, 1.2];
+/** A glance at what came in, ms, on top of the settle; now and then a post is read through. */
+const GLANCE: [number, number] = [400, 2_500];
+const READ: [number, number] = [3_000, 8_000];
+const READ_ODDS = 0.12;
+/** Now and then a look back up, then down again to where it was. */
+const BACK_ODDS = 0.07;
+const BACK: [number, number] = [0.3, 0.7];
 
 export async function scrollCollect<T>(fp: FlowPage, o: ScrollCollect<T>): Promise<Collected<T>> {
+  const random = o.random ?? Math.random;
   const rows = new Map<string, T>();
   let idle = 0;
   for (let i = 0; i < MOST_SCROLLS; i++) {
@@ -57,9 +70,16 @@ export async function scrollCollect<T>(fp: FlowPage, o: ScrollCollect<T>): Promi
     if (o.scroll) await o.scroll();
     else {
       const height = await fp.page.evaluate<number>("innerHeight").catch(() => 800);
-      await fp.scroll(Math.round(height * (o.screens ?? SCREENS)));
+      if (i > 1 && chance(BACK_ODDS, random)) {
+        const back = Math.round(height * drawLog(BACK, random));
+        await fp.scroll(-back);
+        await fp.wait(drawMs(GLANCE, random));
+        await fp.scroll(back);
+      }
+      await fp.scroll(Math.round(height * (o.screens ?? SCREENS) * drawLog(STRIDE, random)));
     }
-    await fp.wait(o.settleMs ?? SETTLE_MS);
+    const look = chance(READ_ODDS, random) ? READ : GLANCE;
+    await fp.wait((o.settleMs ?? SETTLE_MS) + drawMs(look, random));
   }
   return { rows: [...rows.values()], ended: "end" };
 }

@@ -14,6 +14,7 @@ import {
   xHome,
   xPosts,
 } from "../src/browser/flows/x-read.js";
+import { seeded } from "../src/browser/human/draw.js";
 import { scrollCollect } from "../src/browser/scroll-collect.js";
 import { fakePage } from "./auth-fakes.js";
 
@@ -130,7 +131,7 @@ function feedPage(rows: string[], view = 3) {
     page: { evaluate: async () => 900 },
     scroll: async (dy: number) => {
       scrolls.push(dy);
-      top++;
+      top += Math.sign(dy);
     },
     wait: async () => {},
   } as unknown as FlowPage;
@@ -142,7 +143,34 @@ describe("scrollCollect", () => {
     const f = feedPage(["a", "b", "c", "d", "e", "f"]);
     const got = await scrollCollect(f.fp, { read: f.read, key: (r) => r, max: 5, settleMs: 0 });
     expect(got).toEqual({ rows: ["a", "b", "c", "d", "e"], ended: "max" });
-    expect(f.scrolls.every((d) => d === Math.round(900 * 0.85))).toBe(true);
+    // each step a different distance near 0.85 screen
+    const down = f.scrolls.filter((d) => d > 0);
+    expect(down.every((d) => d >= 900 * 0.85 * 0.75 - 1 && d <= 900 * 0.85 * 1.2 + 1)).toBe(true);
+    expect(new Set(down).size).toBeGreaterThan(1);
+  });
+
+  it("looks back up now and then, and comes down to where it was", async () => {
+    const f = feedPage(
+      Array.from({ length: 300 }, (_, i) => `r${i}`),
+      1,
+    );
+    const waits: number[] = [];
+    f.fp.wait = async (ms: number) => {
+      waits.push(ms);
+    };
+    const got = await scrollCollect(f.fp, {
+      read: f.read,
+      key: (r) => r,
+      max: 150,
+      settleMs: 0,
+      random: seeded(7),
+    });
+    expect(got.rows).toHaveLength(150);
+    const ups = f.scrolls.filter((d) => d < 0);
+    expect(ups.length).toBeGreaterThan(0);
+    for (const [i, d] of f.scrolls.entries()) if (d < 0) expect(f.scrolls[i + 1]).toBe(-d);
+    expect(Math.min(...waits)).toBeGreaterThanOrEqual(400);
+    expect(Math.max(...waits)).toBeGreaterThan(2_500);
   });
 
   it("stops at the cursor, leaving it out, and never asks about skipped rows", async () => {

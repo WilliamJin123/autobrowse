@@ -506,7 +506,7 @@ describe("linkedin posts: the flows and the routes", () => {
       'list-posts {"author":"urn:li:person:abc","count":100,"start":0}',
     ]);
     await expect(
-      sites.call("linkedin", "GET", "/search/results/content", { keywords: "x", max: 51 }, as),
+      sites.call("linkedin", "GET", "/search/results/content", { keywords: "x", max: 101 }, as),
     ).rejects.toThrow();
     await expect(
       sites.call("linkedin", "GET", "/search/results/content", { keywords: "x", since: "y" }, as),
