@@ -150,13 +150,14 @@ import type { Action, LocatorHints, Recording } from "../recorder/types.js";
 import { type Capture, captureFor } from "../runs/capture.js";
 import { machine, type RunLog, type RunOutcome, runLog } from "../runs/log.js";
 import { missCause, targetOf } from "../runs/success.js";
-import { compiledDeps } from "../workflows/compiled-deps.js";
+import { accountIn, compiledDeps, platformOf } from "../workflows/compiled-deps.js";
 import { LOGIN_WORKFLOWS, loginName } from "../workflows/logins.js";
 import {
   findable,
   find as findTools,
   type LoginAccount,
   loginAccounts,
+  signature,
   sitesOfHost,
   sitesTree,
   type Tool,
@@ -185,7 +186,6 @@ export { journalFileFor, readJournal, tokenFileFor } from "./journal.js";
 
 /** How long one yes to pay on a host lasts. */
 /** A tool as an answer lists it: what to send `flow`. */
-const brief = ({ name, aim, inputs }: Tool) => ({ name, aim, inputs });
 
 const FLOW_MS = 30 * 60_000;
 /** A `code` command stops after this long: a loop that never ends. */
@@ -489,6 +489,9 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
     throw new Error("--files: no files here (they live on the Mac: autobrowse files add)");
   const files =
     opts.fileSets?.length && opts.files ? await filesInSets(opts.files, opts.fileSets) : [];
+  // A leg run here signs in as its own site (plan.account re-sites it); with `stop` set, not at all.
+  const leg: LegLogin = { site: null, stop: null };
+  const login = opts.login;
   const ready = new Promise<{ fp: FlowPage; finish: () => void }>((resolve, reject) => {
     const flow = defineFlow<undefined, void>({
       site: opts.site,
@@ -501,7 +504,16 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
     const runner = flowRunner(opts.browser, {
       pace: opts.pace ?? null,
       network: { maxRows: MAX_ROWS, maxBodyBytes: MAX_BODY_BYTES },
-      ...(opts.login ? { login: opts.login } : {}),
+      ...(login
+        ? {
+            // the session's site = no site named (a wall): the leg's; a named one (OAuth) stays
+            login: async (lfp: FlowPage, site: string, account?: string) => {
+              if (site !== opts.site) return login(lfp, site, account);
+              if (leg.stop) throw new Error(leg.stop);
+              return login(lfp, leg.site ?? site, account);
+            },
+          }
+        : {}),
       ...(opts.captcha ? { captcha: opts.captcha } : {}),
     });
     // A run that fails before the flow starts (the profile held elsewhere) is the opener's
@@ -509,7 +521,13 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
     void runner.run(flow, undefined).catch(reject);
   });
   const { fp, finish: finishFlow } = await ready;
-  return serve(opts, fp, finishFlow, files);
+  return serve(opts, fp, finishFlow, files, leg);
+}
+
+/** The leg running now: whose sign-in a wall gets, or why it gets none. */
+interface LegLogin {
+  site: string | null;
+  stop: string | null;
 }
 
 /** One `os` act against the desktop; the tree comes back as text like `aria` does. */
@@ -560,6 +578,7 @@ async function serve(
   fp: FlowPage,
   finishFlow: () => void,
   sessionFiles: FileRecord[],
+  leg: LegLogin = { site: null, stop: null },
 ): Promise<Explorer> {
   const now = opts.now ?? Date.now;
   const t0 = now();
@@ -1473,14 +1492,37 @@ async function serve(
     if (key === toolsSent) return null;
     toolsSent = key;
     if (!kit) return kit;
+    const byName = new Map(all.map((t) => [t.name, t]));
     const tools = await Promise.all(
-      kit.tools.map(async (t) => {
-        const site = t.name.endsWith("-login") ? t.name.slice(0, -"-login".length) : null;
-        const accounts = site ? await accountsOf(site) : null;
-        return accounts?.length ? { ...t, accounts } : t;
+      kit.tools.map((t) => {
+        const full = byName.get(t.name);
+        return full ? shown(full) : t;
       }),
     );
     return { ...kit, tools };
+  };
+  /**
+   * A tool as this session would run it, defaults shown as code shows them: the schema's, the
+   * saved plan's, the profile's own account. A login lists every account it can sign in as.
+   */
+  const shown = async (t: Tool) => {
+    const saved = await (opts.workflows?.plan(t.name, {}) ?? Promise.resolve({})).catch(() => ({}));
+    const login = t.name.endsWith("-login") && LOGIN_WORKFLOWS.has(t.name);
+    const takes = t.fields.some((f) => f.name === "account");
+    const platform = login
+      ? t.name.slice(0, -"-login".length)
+      : takes && t.site
+        ? platformOf(t.site)
+        : null;
+    const accounts = platform ? await accountsOf(platform) : [];
+    const own = accounts.find((a) => a.profile)?.account;
+    const given = { ...saved, ...(own && !accountIn(saved) ? { account: own } : {}) };
+    return {
+      name: t.name,
+      aim: t.aim,
+      inputs: redactText(signature(t.fields, given)),
+      ...(login && accounts.length ? { accounts } : {}),
+    };
   };
   // Each login's stored accounts, read once a session: what a wall and a login tool list.
   const accountCache = new Map<string, Promise<LoginAccount[]>>();
@@ -1495,16 +1537,27 @@ async function serve(
     accountCache.set(platform, got);
     return got;
   };
-  // A login with no account named: this profile's own, never the platform's main by default.
-  const loginDefault = async (c: Extract<Command, { cmd: "flow" }>) => {
-    if (!c.name.endsWith("-login") || c.plan?.account || !LOGIN_WORKFLOWS.has(c.name)) return {};
-    const accounts = await accountsOf(c.name.slice(0, -"-login".length));
-    if (!accounts.length) return {};
+  /**
+   * plan.account when none is given or saved: the profile's own account on the workflow's
+   * platform. A login with none must name one; another workflow runs bare (guarded at walls).
+   */
+  const accountDefault = async (
+    name: string,
+    site: string | undefined,
+    given: Record<string, unknown>,
+  ): Promise<{ account?: string }> => {
+    if (accountIn(given)) return {};
+    const login = name.endsWith("-login") && LOGIN_WORKFLOWS.has(name);
+    const platform = login ? name.slice(0, -"-login".length) : site ? platformOf(site) : null;
+    if (!platform) return {};
+    const accounts = await accountsOf(platform);
     const own = accounts.find((a) => a.profile);
     if (own) return { account: own.account };
-    throw new Error(
-      `flow ${c.name}: name an account in plan.account, one of: ${accounts.map((a) => `${a.account} (${a.roles.join(", ") || a.user})`).join("; ")}`,
-    );
+    if (login && accounts.length)
+      throw new Error(
+        `flow ${name}: name an account in plan.account, one of: ${accounts.map((a) => `${a.account} (${a.roles.join(", ") || a.user})`).join("; ")}`,
+      );
+    return {};
   };
   const withAccounts = async <W extends { signIn?: string } | null>(wall: W) => {
     if (!wall?.signIn) return wall;
@@ -1565,6 +1618,8 @@ async function serve(
   const flowRuns = new Map<string, { fx: Effects; gate: OpenGate | null }>();
   /** A secret flow runs: no pictures, rows or flat journal. */
   let secretFlow = false;
+  // legs of another site a workflow ran on this profile: said in its answer
+  const crossSite = new Set<string>();
   /** The payment refusal a flow's act met: the command answers with it, not with a failed step. */
   let flowGated: PaymentGate | null = null;
   const unpaused = () =>
@@ -1682,21 +1737,27 @@ async function serve(
         }),
     };
   };
-  /** Explore as the workflow's browser: its legs run here, on this site's profile only. */
+  /**
+   * Explore as the workflow's browser: its legs run here, any site's (a guide, not a lock). A wall
+   * signs in as the leg's site: labelled by plan.account or the profile's own account. A bare leg
+   * of another platform has neither: it stops at the wall, which names the login and its accounts.
+   */
   const onPage = (wait: boolean): FlowRunner => ({
     run: async <I, O>(flow: BrowserFlow<I, O>, input: I): Promise<O> => {
-      const here = opts.site.split("@")[0];
-      // The page's own provider runs here too: google-login on youtube.com (`properties`).
-      const host = URL.canParse(fp.page.url()) ? new URL(fp.page.url()).host : "";
-      if (flow.site !== here && !sitesOfHost(host, SITE_LOGINS, []).includes(flow.site))
-        throw new Error(
-          `flow: ${flow.site}/${flow.name} needs ${flow.site}'s profile; this session is ${here}: open explore on ${flow.site}`,
-        );
+      const platform = platformOf(flow.site);
+      const other = !flow.site.includes("@") && platform !== platformOf(opts.site);
+      if (other) crossSite.add(`${flow.site}/${flow.name}`);
+      leg.site = flow.site;
+      leg.stop = other
+        ? `${flow.site}/${flow.name} met a sign-in wall; this profile has no ${platform} account: run flow ${loginName(platform)} or this one with plan.account`
+        : null;
       secretFlow = flow.secret === true;
       const mark = fp.network?.last() ?? 0;
       try {
         return await flow.run(flowPage(flow as BrowserFlow<unknown, unknown>, wait), input);
       } finally {
+        leg.site = null;
+        leg.stop = null;
         if (secretFlow) {
           await settle(fp.page).catch(() => undefined);
           fp.network?.forget(mark);
@@ -1711,14 +1772,15 @@ async function serve(
     const workflow = await from.get(c.name);
     if (!workflow)
       throw new Error(`flow: no compiled workflow ${c.name}; see: autobrowse workflows`);
-    const plan = workflow.plan.parse({
-      dryRun: false,
-      ...(await from.plan(c.name, { ...(await loginDefault(c)), ...(c.plan ?? {}) })),
-    });
+    const given = await from.plan(c.name, c.plan ?? {});
+    const raw = { ...(await accountDefault(c.name, workflow.site, given)), ...given };
+    const plan = workflow.plan.parse({ dryRun: false, ...raw });
+    crossSite.clear();
     if (c.fresh) flowRuns.delete(c.name);
     const run = flowRuns.get(c.name) ?? { fx: memoryEffects().fx, gate: null };
     flowRuns.set(c.name, run);
     const deps = compiledDeps(onPage(wait), {
+      account: accountIn(raw),
       ...(opts.audit ? { audit: opts.audit } : {}),
       ...(opts.sink ? { sink: opts.sink } : {}),
       ...(from.keys ? { keys: from.keys } : {}),
@@ -1742,6 +1804,12 @@ async function serve(
       journal({ kind: "note", text: `flow ${c.name} ${status}` });
       page = fp.page;
       const g = run.gate;
+      const account = accountIn(raw);
+      // a guarded leg stopped at a sign-in: the wall, its login and accounts, as `open` answers
+      const wall =
+        status === "failed"
+          ? await withAccounts(wallAnswer(await looksLikeWall(page), page.url()))
+          : null;
       return JSON.parse(
         redactText(
           JSON.stringify({
@@ -1749,6 +1817,9 @@ async function serve(
             status,
             steps: o.results,
             ...(g ? { gate: { name: g.name, step: g.step, prompt: g.prompt } } : {}),
+            ...(account ? { account } : {}),
+            ...(crossSite.size ? { otherSite: [...crossSite] } : {}),
+            ...(wall ? { wall } : {}),
             url: page.url(),
           }),
         ),
@@ -2325,8 +2396,10 @@ async function serve(
       }
       case "tools": {
         const all = await toolsNow();
-        if (c.find) return { tools: findTools(all.map(findable), c.find).map(brief) };
-        if (c.site) return { tools: all.filter((t) => t.site === c.site).map(brief) };
+        if (c.find)
+          return { tools: await Promise.all(findTools(all.map(findable), c.find).map(shown)) };
+        if (c.site)
+          return { tools: await Promise.all(all.filter((t) => t.site === c.site).map(shown)) };
         return { sites: sitesTree(all) };
       }
       case "journal":

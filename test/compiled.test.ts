@@ -12,6 +12,7 @@ import {
   loadCompiledWorkflows,
   splitCompiledKey,
 } from "../src/workflows/compiled.js";
+import { accountIn, runnerForAccount } from "../src/workflows/compiled-deps.js";
 import { runnerAs } from "../src/workflows/proof.js";
 
 describe("loadCompiledWorkflows", () => {
@@ -116,5 +117,27 @@ describe("runnerAs", () => {
     await runnerAs(browser, { site: "google", profile: "google" }).run(flow("google"), undefined);
     await runnerAs(browser, undefined).run(flow("google"), undefined);
     expect(sites).toEqual(["google@pays", "x", "google", "google"]);
+  });
+
+  it("plan.account re-sites its platform's bare legs to its label; others and labelled ones stay", async () => {
+    sites.length = 0;
+    const as = runnerForAccount(browser, "google@wren");
+    for (const s of ["google", "gmail", "linkedin", "gmail@alt"]) await as.run(flow(s), undefined);
+    await runnerForAccount(browser, "google").run(flow("google"), undefined);
+    await runnerForAccount(browser, undefined).run(flow("gmail"), undefined);
+    expect(sites).toEqual([
+      "google@wren",
+      "gmail@wren",
+      "linkedin",
+      "gmail@alt",
+      "google",
+      "gmail",
+    ]);
+    // schemas drop keys they do not name: read it from the raw plan
+    expect([accountIn({ account: "x@y" }), accountIn({ account: "" }), accountIn(null)]).toEqual([
+      "x@y",
+      undefined,
+      undefined,
+    ]);
   });
 });

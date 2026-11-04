@@ -415,6 +415,7 @@ program
       },
     ) => {
       const { compiledDeps } = await import("../workflows/compiled.js");
+      const { accountIn, runnerForAccount } = await import("../workflows/compiled-deps.js");
       const { memoryEffects } = await import("../engine/memory.js");
       const { runFlow } = await import("../engine/run.js");
       if (o.film) {
@@ -442,6 +443,8 @@ program
         o.plan ? ((await readJson(o.plan)) as Record<string, unknown>) : {},
       );
       const plan = workflow.plan.parse({ ...raw, dryRun: o.dryRun ?? false });
+      // plan.account: this platform's legs run in that account's profile
+      const browser = runnerForAccount(parts.browser, accountIn(raw));
       if (o.prove) {
         // A proof is its own kind of run: gates declined, nothing bought, the outcome kept beside the flow.
         if (!backend.prove) throw new Error("no browser here to prove with");
@@ -455,14 +458,14 @@ program
         memoryEffects({ sleep: (ms) => new Promise((r) => setTimeout(r, ms)) }).fx,
         workflow as never,
         (workflow.name === "inbox-activity"
-          ? inboxActivityDepsFor(settings, parts.browser)
+          ? inboxActivityDepsFor(settings, browser)
           : workflow.name === "inbox-fleet"
             ? inboxFleetDepsFor(settings)
             : workflow.name === "workspace-inbox"
-              ? workspaceInboxDepsFor(settings, parts.browser, parts.sites, sinkFor(settings))
+              ? workspaceInboxDepsFor(settings, browser, parts.sites, sinkFor(settings))
               : handWritten
-                ? domainDepsFor(settings, parts.browser)
-                : compiledDeps(parts.browser, { keys: keyKeeperFor(settings) })) as never,
+                ? domainDepsFor(settings, browser)
+                : compiledDeps(browser, { keys: keyKeeperFor(settings) })) as never,
         plan,
         // A human gate means a person must act first; approving it here reruns the step, forever.
         (g) =>

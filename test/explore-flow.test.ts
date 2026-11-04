@@ -48,6 +48,8 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
   let fixed = false;
   /** Page 3 of the `code` loop has no title until the test fixes it. */
   let page3 = false;
+  /** Who the session's login hook signed in as; the login page lets them through after. */
+  const signIns: string[] = [];
 
   const wf = (name: string, run: (d: Deps, p: z.infer<typeof plan>) => Promise<string>) =>
     defineWorkflow<Deps, Record<string, never>>()({
@@ -95,6 +97,20 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
         undefined,
       ),
     ),
+    // Another site's leg meets a sign-in wall (a login URL).
+    walled: wf("walled", (d) =>
+      d.browser.run(
+        defineFlow<undefined, string>({
+          site: "amazon",
+          name: "walled",
+          async run(fp) {
+            await fp.open(`http://localhost:${webPort}/login`);
+            return new URL(fp.url()).pathname;
+          },
+        }),
+        undefined,
+      ),
+    ),
     stuck: wf("stuck", (d) =>
       d.browser.run(
         defineFlow<undefined, string>({
@@ -126,6 +142,10 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
     dir = await mkdtemp(join(tmpdir(), "explore-flow-"));
     web = createServer((req, res) => {
       res.setHeader("content-type", "text/html");
+      if (req.url === "/login") {
+        if (signIns.length) return res.writeHead(302, { location: "/" }).end();
+        return res.end("<h1>Sign in</h1><input type=password>");
+      }
       const p = req.url?.match(/^\/p\/(\d+)/)?.[1];
       if (p) return res.end(p === "3" && !page3 ? "<p>loading</p>" : `<h1>page ${p}</h1>`);
       res.end(
@@ -143,6 +163,10 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
       approve: async (a) => {
         asked.push(a);
         return yes;
+      },
+      login: async (_fp, site) => {
+        signIns.push(site);
+        return "signed-in";
       },
       workflows: {
         get: async (name) => flows[name as keyof typeof flows] ?? null,
@@ -207,7 +231,8 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
     const here = await send({ cmd: "open", url: `http://localhost:${webPort}/` });
     expect(here.body.tools).toMatchObject({
       sites: ["shop"],
-      tools: [{ name: "search", inputs: "q?" }],
+      // defaults as code shows them: the saved plan's over the schema's
+      tools: [{ name: "search", inputs: 'q = "saved"' }],
       more: 0,
     });
     const again = await send({ cmd: "open", url: `http://localhost:${webPort}/?p=2` });
@@ -250,10 +275,19 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
     expect(fresh.body).toMatchObject({ rows: 3, stored: 0 });
   }, 30_000);
 
-  it("refuses a leg for another site's profile", async () => {
+  it("runs another site's leg here and says so (a guide, not a lock)", async () => {
     const r = await send({ cmd: "flow", name: "elsewhere" });
-    expect(r.body.status).toBe("failed");
-    expect(JSON.stringify(r.body.steps)).toMatch(/open explore on amazon/);
+    expect(r.body).toMatchObject({ status: "done", otherSite: ["amazon/search"] });
+  }, 30_000);
+
+  it("another site's leg stops at a sign-in wall with no account; with one it signs in as it", async () => {
+    const bare = await send({ cmd: "flow", name: "walled" });
+    expect(bare.body).toMatchObject({ status: "failed", wall: { kind: "login" } });
+    expect(JSON.stringify(bare.body.steps)).toMatch(/no amazon account: run flow amazon-login/);
+    expect(signIns).toEqual([]);
+    const named = await send({ cmd: "flow", name: "walled", plan: { account: "amazon@two" } });
+    expect(named.body).toMatchObject({ status: "done", account: "amazon@two" });
+    expect(signIns).toEqual(["amazon@two"]);
   }, 30_000);
 
   it("a secret flow leaves only its notes in the journal", async () => {

@@ -8,6 +8,7 @@ import {
   find,
   findable,
   loginAccounts,
+  signature,
   sitesOfHost,
   sitesTree,
   type Tool,
@@ -61,6 +62,17 @@ describe("the toolkit", () => {
     expect(toolkitFor("studio.youtube.com", SITE_LOGINS, tools)?.tools[0]?.name).toBe(
       "google-login",
     );
+  });
+
+  it("shows inputs as code does: defaults, a given value over them, account on a site that signs in", () => {
+    const li = tools.find((t) => t.name === "linkedin-profile-basics") as Tool;
+    expect(li.inputs).toBe("q, max?, account?");
+    expect(signature(li.fields, { q: "dune", account: "linkedin@wren" })).toBe(
+      'q = "dune", max?, account = "linkedin@wren"',
+    );
+    expect(signature([{ name: "n", required: false, default: 20 }])).toBe("n = 20");
+    // search reads names, never values
+    expect(findable(li).words).not.toContain("=");
   });
 
   it("lists a login's accounts, this profile's own marked", () => {

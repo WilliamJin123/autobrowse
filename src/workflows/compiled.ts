@@ -20,7 +20,7 @@ import { type HostDeps, makeRunObjectFrom, type RunObjectDefinition } from "../e
 import type { AdvanceOptions } from "../engine/run.js";
 import type { AnyWorkflow } from "../engine/workflow.js";
 import { named } from "../owner.js";
-import { type CompiledDeps, compiledDeps } from "./compiled-deps.js";
+import { accountIn, type CompiledDeps, compiledDeps } from "./compiled-deps.js";
 import { builtinWorkflow } from "./legs.js";
 import { type Proof, readProof } from "./proof.js";
 
@@ -140,7 +140,7 @@ export function makeCompiledRunObject(o: {
 }): RunObjectDefinition<AnyWorkflow> {
   return makeRunObjectFrom(
     named(COMPILED_OBJECT.name, o.host.owner),
-    async (objectKey) => {
+    async (objectKey, plan) => {
       const ref = splitCompiledKey(objectKey);
       // A leg or a sign-in runs here too, under its catalog name; a compiled one may take its name.
       const workflow =
@@ -152,6 +152,7 @@ export function makeCompiledRunObject(o: {
       return {
         workflow,
         deps: compiledDeps(o.browser, {
+          account: accountIn(plan),
           ...(o.sink ? { sink: o.sink } : {}),
           ...(o.keys ? { keys: o.keys } : {}),
           ...(o.audit ? { audit: o.audit } : {}),

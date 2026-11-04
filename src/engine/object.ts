@@ -218,7 +218,8 @@ export function makeRunObject<W extends AnyWorkflow>(
  */
 export function makeRunObjectFrom<W extends AnyWorkflow>(
   name: string,
-  resolve: (key: string) => Promise<Resolved<W>>,
+  /** `plan`: the run's raw plan where one is at hand; its deps may depend on it (`plan.account`). */
+  resolve: (key: string, plan?: unknown) => Promise<Resolved<W>>,
   host: HostDeps,
   opts: AdvanceOptions = {},
   /** How a run is named from its key alone; controls and status need no workflow for that. */
@@ -333,7 +334,7 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
         const ref = refOf(ctx.key);
         let found: Resolved<W>;
         try {
-          found = await resolve(ctx.key);
+          found = await resolve(ctx.key, raw);
         } catch (err) {
           // The flow is gone from disk mid-run: the run ends as failed rather than hanging as "running".
           if (!(err instanceof restate.TerminalError)) throw err;
@@ -403,9 +404,6 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
        * that ran again since (`run` and `reset` move `gen`) is left alone.
        */
       undo: async (ctx: restate.ObjectContext, input: UndoMessage): Promise<void> => {
-        const found = await resolve(ctx.key).catch(gone);
-        if (!found) return;
-        const { workflow, deps, ref } = found;
         let fx = effects(ctx);
         let raw: unknown;
         let outcome: Outcome | null = null;
@@ -419,6 +417,9 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
           if (outcome?.status !== "failed" && outcome?.status !== "rejected") return;
           raw = await ctx.get(PLAN);
         }
+        const found = await resolve(ctx.key, raw).catch(gone);
+        if (!found) return;
+        const { workflow, deps, ref } = found;
         const plan = workflow.plan.safeParse(raw);
         if (!plan.success) return;
         for (const u of await undoRun(fx, workflow, deps, plan.data))

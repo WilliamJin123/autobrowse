@@ -383,14 +383,13 @@ export const linkedin: SiteApi = {
     // our own posts are the lowest-risk load, so 150 (William).
     comments: 150,
   },
-  // William's own profile (shown as "Will Jin"): research reads since 2026-10-06, when the alt was
-  // restricted ("just use my main ... unless alt still works"); the alt's pace, nothing sent, never
-  // anything that ties it to Wren. Before: all 0 from 2026-10-01 (ban risk).
+  // William's own profile: off since 2026-11-04 (William: research runs as the Wren founder
+  // account, linkedin@wren). Live limits.json already held it at 0 from 2026-10-30.
   accountCaps: {
     linkedin: {
-      profile: 20,
-      search: 5,
-      company: 10,
+      profile: 0,
+      search: 0,
+      company: 0,
       connect: 0,
       message: 0,
       inbox: 0,
@@ -398,21 +397,21 @@ export const linkedin: SiteApi = {
       withdraw: 0,
       notifications: 0,
       audience: 0,
-      activity: 10,
+      activity: 0,
       posts: 0,
+      feed: 0,
       analytics: 0,
       like: 0,
       follow: 0,
       comment: 0,
       comments: 0,
-      // Research reads in all, search first in wren (designs 2026-10-07-linkedin-search-first): 20 a day.
-      total: 20,
+      total: 0,
     },
-    // The research alt (2026-10-05): reads only. LinkedIn restricted it 2026-10-06 (asks for an ID).
+    // The research alt (2026-10-05): restricted by LinkedIn 2026-10-06 (asks for an ID); off.
     "linkedin@alt": {
-      profile: 20,
-      search: 5,
-      company: 10,
+      profile: 0,
+      search: 0,
+      company: 0,
       connect: 0,
       message: 0,
       inbox: 0,
@@ -420,15 +419,15 @@ export const linkedin: SiteApi = {
       withdraw: 0,
       notifications: 0,
       audience: 0,
-      // wren's signals (designs 2026-10-06-signal-collectors, S5): 10 people a day.
-      activity: 10,
+      activity: 0,
       posts: 0,
+      feed: 0,
       analytics: 0,
       like: 0,
       follow: 0,
       comment: 0,
       comments: 0,
-      total: 20,
+      total: 0,
     },
   },
   pace: { gapMs: 10_000, jitterMs: 20_000 },

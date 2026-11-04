@@ -222,9 +222,10 @@ describe("linkedin activity: the flow and the route", () => {
     expect(seen).toEqual(["linkedin provider", "linkedin@alt -"]);
   });
 
-  it("the activity cap: 10 a day as linkedin@alt and linkedin (his main), off as linkedin@wren", async () => {
+  it("the activity cap: off in code for every account; an account's own caps open it (10 a day)", async () => {
     const caps = memoryCaps(() => NOW.getTime());
-    const sites = siteFacade([{ ...linkedin, pace: { gapMs: 0 } }], {
+    const opened = { ...linkedin.accountCaps, "linkedin@alt": { activity: 10 } };
+    const sites = siteFacade([{ ...linkedin, pace: { gapMs: 0 }, accountCaps: opened }], {
       http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
       env: () => undefined,
       sink: memorySink(),
@@ -238,8 +239,7 @@ describe("linkedin activity: the flow and the route", () => {
       sites.call("linkedin", "GET", "/in/test-person/activity", {}, who);
     for (let i = 0; i < 10; i++) await read("linkedin@alt");
     await expect(read("linkedin@alt")).rejects.toMatchObject({ status: 429 });
-    for (let i = 0; i < 10; i++) await read("linkedin");
-    await expect(read("linkedin")).rejects.toMatchObject({ status: 429 });
+    await expect(read("linkedin")).rejects.toThrow(/activity reads are off/);
     await expect(read("linkedin@wren")).rejects.toThrow(/activity reads are off/);
     expect(caps.today()["linkedin|linkedin.alt@x.test|activity"]).toBe(10);
   });

@@ -21,6 +21,20 @@ Already built, and not re-decided here: the toolkit arrives in the first object 
 - Desk legs and the headless agent keep signing in on a wall: no agent picks there, and the run's site names the account.
 - Account and profile: one Chrome profile per account stays the rule. An agent may sign another account into a profile (the OAuth consent path already does); the list marks the profile's own and the skill says to start a session as the other account for more than a quick task. Rejected: refusing a cross-account sign-in (blocks the consent case).
 
+## Second pass, 11-04 (William)
+
+"Desk and compiled workflow is fine if the input payload determines which profiles to use." "They should be able to use other sites' compiled workflows … not a hard lock but rather just a guide." "Default values should be shown in the tool agent context … just like how code would show it."
+
+- Every workflow takes `plan.account`. Its platform's bare legs run in that account's profile (`google@wren`: `gmail` → `gmail@wren`). One mapper (`runnerForAccount`, `src/workflows/compiled-deps.ts`) on all four run paths: desk (the run object hands its raw plan to `resolve`), CLI, proof, explore. Before: 3 of 26 workflows took an account; the rest ran on the main profile.
+- Explore runs any site's workflow. A leg's wall signs in as the leg's site (labelled by `plan.account`, or the profile's own account as default), not the session's. A bare leg of another platform stops at the wall; the answer carries `wall` with `signIn` and `accounts`.
+- Tools show inputs as a signature: `q, max = 20, account = "google@wren"`. Defaults: the schema's, under the saved plan's, under the profile's own account. Search reads names only.
+- WA-1029: `linkedin` (William's own) and `linkedin@alt` are 0 in code, as live since 10-30; research runs as `linkedin@wren`. Founder caps unchanged (the live ramp governs).
+
+| Where `account` is read | Verdict |
+|---|---|
+| A. The raw plan at each run entry, one mapper | **Chosen**. No workflow edits; compiled files on disk work as they are |
+| B. An `account` field in every plan schema (compiler template, hand edits) | No: 23 edits, and compiled files on disk keep the old template until recompiled |
+
 ## Goal
 
 - A page on any product of a provider (YouTube under Google, Azure under Microsoft) gets the provider's login and tools, with no entry per product.
@@ -67,3 +81,4 @@ Ranked by: one source for routes, workflows, walls and the toolkit; no password-
 - 2026-11-04: The login provider, not the runner, reads a sign-in page's URL: it owns the logins; the runner keeps passing the session's site.
 - 2026-11-04: Product sessions keep their own profile (P1): concurrency over one fewer device sign-in.
 - 2026-11-04 (William): an agent's `open` never signs in; walls and login tools list the accounts; the agent picks. Desk legs keep signing in. A bare product site never maps to the provider's main account.
+- 2026-11-04 (William): every workflow takes `plan.account` (option A: raw plan, one mapper); explore's site lock becomes a guide, with a stop at walls for a bare leg of another platform; tools show defaults as code does; personal LinkedIn 0 in code.

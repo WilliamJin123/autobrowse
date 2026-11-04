@@ -119,45 +119,35 @@ describe("a named account", () => {
     expect(caps.today()["linkedin|r@x.com|company"]).toBe(3);
   });
 
-  it("linkedin's own profile reads at the alt's pace and sends nothing (2026-10-06)", () => {
-    expect(linkedin.accountCaps?.linkedin).toEqual({
-      profile: 20,
-      search: 5,
-      company: 10,
-      connect: 0,
-      message: 0,
-      inbox: 0,
-      network: 0,
-      withdraw: 0,
-      notifications: 0,
-      audience: 0,
-      activity: 10,
-      posts: 0,
-      analytics: 0,
-      like: 0,
-      follow: 0,
-      comment: 0,
-      comments: 0,
-      total: 20,
-    });
+  it("William's own LinkedIn and the alt are off in code (2026-11-04): research runs as linkedin@wren", () => {
+    for (const acct of ["linkedin", "linkedin@alt"] as const) {
+      const caps = linkedin.accountCaps?.[acct] ?? {};
+      expect(Object.values(caps).every((n) => n === 0)).toBe(true);
+      // every kind the site meters, so none falls through to the site's cap
+      for (const kind of Object.keys(linkedin.caps ?? {})) expect(caps).toHaveProperty(kind, 0);
+    }
     expect(linkedin.caps).toMatchObject({ company: 40 });
     expect(linkedin.caps).not.toHaveProperty("total");
   });
 
-  it("the personal account reads 20 a day across kinds; the work account has no total", async () => {
+  it("an account with a total reads that many a day across kinds; one without has none", async () => {
     const browser = fakeBrowser([]);
     browser.on(linkedinCompanyJobs, async () => ({ companyId: "1", jobs: [] }));
     const caps = memoryCaps(() => noon);
-    const sites = siteFacade([{ ...linkedin, pace: { gapMs: 0 } }], {
-      http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
-      env: () => undefined,
-      sink: memorySink(),
-      runner: browser,
-      flow: (n) => (n === "linkedin/company-jobs" ? (linkedinCompanyJobs as never) : null),
-      caps,
-      accountOf: async (_site, name) =>
-        ({ linkedin: "me@x.com", "linkedin@wren": "w@x.com" })[name] ?? null,
-    });
+    const personal = { company: 10, profile: 20, total: 20 };
+    const sites = siteFacade(
+      [{ ...linkedin, pace: { gapMs: 0 }, accountCaps: { linkedin: personal } }],
+      {
+        http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
+        env: () => undefined,
+        sink: memorySink(),
+        runner: browser,
+        flow: (n) => (n === "linkedin/company-jobs" ? (linkedinCompanyJobs as never) : null),
+        caps,
+        accountOf: async (_site, name) =>
+          ({ linkedin: "me@x.com", "linkedin@wren": "w@x.com" })[name] ?? null,
+      },
+    );
     const jobs = (who: string) => sites.call("linkedin", "GET", "/company/stripe/jobs", {}, who);
     // Company is 10 a day on its own; the total of 20 is shared with every other kind.
     for (let i = 0; i < 10; i++) await jobs("linkedin");
@@ -182,7 +172,8 @@ describe("limits.json", () => {
     limits.write({
       linkedin: { accounts: { linkedin: { company: 15 } }, pace: { gapMs: 0, jitterMs: 0 } },
     });
-    const sites = siteFacade([linkedin], {
+    const site = { ...linkedin, accountCaps: { linkedin: { profile: 20, company: 10 } } };
+    const sites = siteFacade([site], {
       http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
       env: () => undefined,
       sink: memorySink(),
@@ -193,12 +184,12 @@ describe("limits.json", () => {
       accountOf: async (_site, name) => ({ linkedin: "me@x.com" })[name] ?? null,
     });
     const jobs = () => sites.call("linkedin", "GET", "/company/stripe/jobs", {}, "linkedin");
-    // The personal account's company cap is 10 in code, 15 in the file.
+    // The account's company cap is 10 in code, 15 in the file.
     for (let i = 0; i < 15; i++) await jobs();
     await expect(jobs()).rejects.toMatchObject({ status: 429 });
     const [row] = sites.limits("linkedin");
     expect(row?.accountCaps?.linkedin?.company).toBe(15);
-    expect(row?.accountCaps?.linkedin?.profile).toBe(linkedin.accountCaps?.linkedin?.profile);
+    expect(row?.accountCaps?.linkedin?.profile).toBe(20);
     expect(row?.caps?.connect).toBe(linkedin.caps?.connect);
     expect(row?.pace).toEqual({ ...linkedin.pace, gapMs: 0, jitterMs: 0 });
     expect(row?.set).toEqual({
@@ -440,7 +431,8 @@ describe("who spent a cap", () => {
       if (fail) throw new Error("page changed");
       return { companyId: "1", jobs: [] };
     });
-    return siteFacade([{ ...linkedin, pace: { gapMs: 0 } }], {
+    const site = { ...linkedin, pace: { gapMs: 0 }, accountCaps: { linkedin: { company: 10 } } };
+    return siteFacade([site], {
       http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
       env: () => undefined,
       sink: memorySink(),
@@ -453,7 +445,7 @@ describe("who spent a cap", () => {
     });
   };
 
-  it("William's own LinkedIn past its 10 company reads: a 429 that spends nothing and runs nothing", async () => {
+  it("an account past its 10 company reads: a 429 that spends nothing and runs nothing", async () => {
     const calls: string[] = [];
     const caps = memoryCaps(() => noon);
     const sites = facade(caps, calls);

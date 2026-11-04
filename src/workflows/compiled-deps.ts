@@ -6,7 +6,7 @@
 import { envSecrets, type SecretAudit, type SecretSource, trackingSecrets } from "credvault";
 import { boundRunner } from "../auth/guard.js";
 import { SECRET_ENV_PREFIX } from "../auth/keep.js";
-import { siteAllowsHost } from "../auth/login.js";
+import { credentialFor, siteAllowsHost } from "../auth/login.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import type { FlowRunner } from "../browser/flow.js";
 import { type KeyKeeper, noKeys } from "../deps/keys.js";
@@ -40,6 +40,8 @@ export interface CompiledDeps {
 export function compiledDeps(
   browser: FlowRunner,
   o: {
+    /** The run's `plan.account`: its platform's legs run in that account's profile. */
+    account?: string | undefined;
     secrets?: SecretSource;
     shell?: Shell;
     desktop?: Desktop;
@@ -50,7 +52,7 @@ export function compiledDeps(
 ): CompiledDeps {
   const secrets = trackingSecrets(o.secrets ?? envSecrets(process.env, SECRET_ENV_PREFIX));
   return {
-    browser: boundRunner(browser, {
+    browser: boundRunner(runnerForAccount(browser, o.account), {
       secrets,
       allow: (site, host) => siteAllowsHost(SITE_LOGINS, site, host),
       audit: o.audit,
@@ -60,5 +62,36 @@ export function compiledDeps(
     keys: o.keys ?? noKeys,
     sink: o.sink ?? envFileSink(".env"),
     desktop: o.desktop ?? (process.platform === "darwin" ? macDesktop() : noDesktop()),
+  };
+}
+
+/** A site's platform: the credential it signs in with, unlabelled (gmail → google). */
+export const platformOf = (site: string): string =>
+  credentialFor(SITE_LOGINS, site.split("@")[0] ?? site).split("@")[0] ?? site;
+
+/** `plan.account` from a raw plan: plan schemas drop keys they do not name, so read it before parse. */
+export function accountIn(raw: unknown): string | undefined {
+  const a = raw && typeof raw === "object" ? (raw as { account?: unknown }).account : undefined;
+  return typeof a === "string" && a ? a : undefined;
+}
+
+/**
+ * Every bare leg of the account's platform re-sited to its label: `google@wren` runs `gmail`
+ * legs as `gmail@wren`, `google` legs as `google@wren`. A labelled leg and other platforms
+ * stay; a bare account (the main one) changes nothing.
+ */
+export function runnerForAccount(browser: FlowRunner, account: string | undefined): FlowRunner {
+  const at = account?.indexOf("@") ?? -1;
+  if (!account || at <= 0) return browser;
+  const platform = account.slice(0, at);
+  const label = account.slice(at + 1);
+  return {
+    run: (flow, input) =>
+      browser.run(
+        !flow.site.includes("@") && platformOf(flow.site) === platform
+          ? { ...flow, site: `${flow.site}@${label}` }
+          : flow,
+        input,
+      ),
   };
 }

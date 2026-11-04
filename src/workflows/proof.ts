@@ -13,7 +13,7 @@ import { recorded } from "../engine/leg.js";
 import { memoryEffects } from "../engine/memory.js";
 import { type Outcome, runFlow } from "../engine/run.js";
 import type { AnyWorkflow } from "../engine/workflow.js";
-import { compiledDeps } from "./compiled-deps.js";
+import { accountIn, compiledDeps } from "./compiled-deps.js";
 
 export const PROOF_FILE = "proof.json";
 
@@ -64,6 +64,7 @@ export async function runCompiled(
     memoryEffects().fx,
     workflow as never,
     compiledDeps(runnerAs(browser, o.as), {
+      account: accountIn(o.plan),
       ...(o.sink ? { sink: o.sink } : {}),
       ...(o.keys ? { keys: o.keys } : {}),
     }) as never,

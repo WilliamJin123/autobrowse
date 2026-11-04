@@ -4,6 +4,7 @@
  */
 import { hostNamed, registrable } from "../auth/guard.js";
 import { resolveLogin, type SiteLogin } from "../auth/login.js";
+import { SITE_LOGINS } from "../auth/sites.js";
 import { inputsOf } from "../engine/inputs.js";
 import type { AnyWorkflow } from "../engine/workflow.js";
 import type { Findable } from "./find.js";
@@ -13,8 +14,10 @@ export interface Tool {
   name: string;
   site: string | null;
   aim: string;
-  /** `q, max?`: required names, optional ones with `?`. */
+  /** `q, max = 20, account?`: as code reads it (`signature`). */
   inputs: string;
+  /** The plan's top-level fields; `account` on any site's tool (every workflow takes one). */
+  fields: ToolField[];
   steps: string[];
   irreversible: boolean;
   hosts: readonly string[];
@@ -25,24 +28,57 @@ export const TOOLKIT_MAX = 20;
 
 const RECORDED = /^Recorded \d{4}-\d\d-\d\d on /;
 
+export interface ToolField {
+  name: string;
+  required: boolean;
+  default?: unknown;
+}
+
+const VALUE_MAX = 40;
+
+/**
+ * Inputs as code shows them: `q, max = 20, account = "google@wren"`. `given` (a saved plan, the
+ * profile's account) over the schema's defaults; required bare, optional with none `?`.
+ */
+export function signature(
+  fields: readonly ToolField[],
+  given: Record<string, unknown> = {},
+): string {
+  return fields
+    .map((f) => {
+      const v = f.name in given && given[f.name] !== undefined ? given[f.name] : f.default;
+      if (v === undefined) return f.required ? f.name : `${f.name}?`;
+      const shown = JSON.stringify(v) ?? String(v);
+      return `${f.name} = ${shown.length > VALUE_MAX ? `${shown.slice(0, VALUE_MAX - 1)}…` : shown}`;
+    })
+    .join(", ");
+}
+
 export function toolOf(w: AnyWorkflow): Tool {
   const steps = w.steps.map((s) => s.name);
-  let inputs = "";
+  let fields: ToolField[] = [];
   try {
-    inputs = inputsOf(w.plan)
+    fields = inputsOf(w.plan)
       // top-level fields only: `workflows <name>` has the nested rows
       .filter((f) => !/[.[]/.test(f.name))
-      .map((f) => (f.required ? f.name : `${f.name}?`))
-      .join(", ");
+      .map((f) => ({
+        name: f.name,
+        required: f.required,
+        ...(f.default !== undefined ? { default: f.default } : {}),
+      }));
   } catch {
     // a plan JSON Schema can't hold (a RegExp field): the tree's detail still has the steps
   }
+  // a site that signs in: plan.account picks whose profile its legs run in
+  if (w.site && resolveLogin(SITE_LOGINS, w.site) && !fields.some((f) => f.name === "account"))
+    fields.push({ name: "account", required: false });
   return {
     name: w.name,
     site: w.site ?? null,
     // A recording's description is its date; the step names say what it does.
     aim: RECORDED.test(w.description) ? steps.join(" → ") : w.description,
-    inputs,
+    inputs: signature(fields),
+    fields,
     steps,
     irreversible: w.steps.some((s) => Boolean(s.irreversible)),
     hosts: w.hosts ?? [],
@@ -154,7 +190,7 @@ export function loginAccounts(
 /** A tool as search reads it. */
 export const findable = (t: Tool): Tool & Findable => ({
   ...t,
-  words: `${t.inputs.replaceAll("?", "")} ${t.steps.join(" ")}`,
+  words: `${t.fields.map((f) => f.name).join(" ")} ${t.steps.join(" ")}`,
 });
 
 /** The tree's root: each site and how many tools it has; multi-site workflows under `(any)`. */
