@@ -133,11 +133,13 @@ b.onclick=()=>hits.clicks++;
     (await cdp.send("Runtime.evaluate", {
       contextId: world.executionContextId,
       returnByValue: true,
-      expression: "({oh:outerHeight,ih:innerHeight,iw:innerWidth})",
-    })) as { result: { value: { oh: number; ih: number; iw: number } } }
+      expression: "({oh:outerHeight,ow:outerWidth,ih:innerHeight,iw:innerWidth})",
+    })) as { result: { value: { oh: number; ow: number; ih: number; iw: number } } }
   ).result.value;
-  const vx = bounds.left;
-  const vy = bounds.top + (v.oh - v.ih);
+  // frame border (Windows' invisible 8 px, Linux's 4 px), as core.rs: left, right and bottom
+  const b = v.ow - v.iw <= 16 ? (v.ow - v.iw) / 2 : 0;
+  const vx = bounds.left + b;
+  const vy = bounds.top + (v.oh - v.ih) - b;
   const snap = (name: string) => shot(name, vx, vy, v.iw, v.ih);
 
   const probe = async () => {
