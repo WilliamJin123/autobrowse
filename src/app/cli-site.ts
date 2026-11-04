@@ -354,7 +354,7 @@ export function registerSiteCommands(program: Command, local: LocalBackend, box?
   site
     .command("renew")
     .description(
-      "Prove each token, then make again every refused one and every one that lapses within 14 days, by the setup step and account that made it (wren's TokenRenewal runs this daily on the desk)",
+      "Prove each token, then make again every refused one and every one that lapses within 14 days, by the setup step and account that made it (wren's SiteTokenRenew runs this daily on the desk)",
     )
     .option("--dry", "only say what is due; no probes")
     .option("--names <names...>", "only these refused names, made again now")

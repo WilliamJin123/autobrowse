@@ -34,7 +34,7 @@ Refused tokens (designs/2026-10-16-refused-tokens.md): a refusal (invalid_grant,
 
 ## If you change this
 
-- **Hits:** `src/sites/facade.ts`, `src/sites/renew.ts`, `src/sites/refused.ts`, `src/sites/service.ts`, `src/sites/wire.ts`, `src/app/cli-env.ts`, `src/app/needs.ts`, wren's `TokenRenewal` and its reads of `/autobrowse/config` (outside the tree).
+- **Hits:** `src/sites/facade.ts`, `src/sites/renew.ts`, `src/sites/refused.ts`, `src/sites/service.ts`, `src/sites/wire.ts`, `src/app/cli-env.ts`, `src/app/needs.ts`, wren's `SiteTokenRenew` and its reads of `/autobrowse/config` (outside the tree).
 - **Does not hit:** the vault of sign-ins; the wallet.
 
 ## Surfaces

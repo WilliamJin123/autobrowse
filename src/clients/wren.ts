@@ -68,8 +68,8 @@ export function wrenClient(opts: {
       return "pending";
     },
     async startLoops(address) {
-      const send = await ingress(`/SendScheduler/${encodeURIComponent(address)}/start`);
-      const inbox = await ingress(`/InboxScheduler/${encodeURIComponent(address)}/start`);
+      const send = await ingress(`/EmailSend/${encodeURIComponent(address)}/start`);
+      const inbox = await ingress(`/EmailInboxRead/${encodeURIComponent(address)}/start`);
       return { send: send.running === true, inbox: inbox.running === true };
     },
   };
