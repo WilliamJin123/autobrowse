@@ -358,7 +358,21 @@ const pageMessage = z.object({
   pageId: id,
   recipient: z.union([z.object({ id }), z.object({ comment_id: id })]),
   message: z.union([
-    z.object({ text: z.string().min(1).max(2000) }),
+    z.object({
+      text: z.string().min(1).max(2000),
+      // Instagram's quick replies: a tap comes back with the payload (wren WA-1047)
+      quick_replies: z
+        .array(
+          z.object({
+            content_type: z.literal("text"),
+            title: z.string().min(1).max(20),
+            payload: z.string().min(1).max(1000),
+          }),
+        )
+        .min(1)
+        .max(13)
+        .optional(),
+    }),
     // One button template (wren designs/2026-11-04-meta-push-flows.md): its tap opens the 24h window.
     z.object({
       attachment: z.object({

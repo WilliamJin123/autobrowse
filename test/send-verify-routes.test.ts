@@ -895,6 +895,26 @@ describe("meta", () => {
     expect(r.seen.seen).toBe("unclear");
   });
 
+  it("DM: a private reply with a quick reply is checked by its text", async () => {
+    const r = await run(
+      "meta",
+      "POST",
+      "/{pageId}/messages",
+      {
+        pageId: PAGE,
+        recipient: { comment_id: "55" },
+        message: {
+          text: "Here is the link you asked for.",
+          quick_replies: [{ content_type: "text", title: "Send it", payload: "kw:1" }],
+        },
+      },
+      {
+        [`GET /${PAGE}/conversations`]: { data: [] },
+      },
+    );
+    expect(r.seen.seen).toBe("unclear");
+  });
+
   it("DM: a private reply with a button template is checked by its text", async () => {
     const r = await run(
       "meta",
