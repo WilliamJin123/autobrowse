@@ -254,6 +254,8 @@ const google: SiteLogin = {
   site: "google",
   home: "https://myaccount.google.com/",
   origins: ["google.com"],
+  // Products off google.com: their pages take google's tools and sign-in (WA-1036). Add one when a run meets it.
+  properties: ["youtube.com", "blogger.com", "withgoogle.com", "google.dev"],
   ask: 'Your Google account: the one behind every "Sign in with Google" button',
   loggedIn: async (fp) => GOOGLE_SIGNED_IN.test(fp.url()),
   async signIn(ctx) {
@@ -287,6 +289,8 @@ function googleApp(site: string, home: string, signedIn: RegExp): SiteLogin {
     site,
     home,
     credential: "google",
+    // google's products are google's: a YouTube page lists google-login, not gmail-login
+    properties: [],
     ask: `Your Google account: ${site} signs in with it`,
     loggedIn: async (fp) => signedIn.test(fp.url()),
     async signIn(ctx) {
@@ -748,6 +752,7 @@ const outlook: SiteLogin = {
   home: "https://outlook.live.com/mail/0/",
   credential: "microsoft",
   origins: ["live.com", "microsoftonline.com", "microsoft.com"],
+  properties: ["office.com", "azure.com", "microsoft365.com"],
   ask: "The Microsoft account whose mailbox Outlook shows (personal or work)",
   loggedIn: async (fp) => OUTLOOK_HOME.test(fp.url()) && !MICROSOFT_HOST.test(fp.url()),
   signIn: async (ctx) => {

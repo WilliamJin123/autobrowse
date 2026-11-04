@@ -107,6 +107,12 @@ export interface SiteLogin {
    * live.com and microsoftonline.com). Anywhere else is a leak.
    */
   origins?: readonly string[];
+  /**
+   * Registrable domains of this provider's other products (youtube.com for
+   * google): a page there takes this login's tools and sign-in. The password
+   * is never typed there; that boundary is `origins`.
+   */
+  properties?: readonly string[];
 }
 
 /** The passkeys page: the button that starts the ceremony (our authenticator answers it), what the page says after. */
@@ -877,6 +883,18 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
   return async (fp: FlowPage, site: string, account?: string): Promise<LoginOutcome> => {
     let name = site;
     let known = resolveLogin(sites, name);
+    // A site with no login of its own (youtube) on a provider's sign-in surface
+    // (accounts.google.com): the provider signs in, the `@label` carried.
+    if (!known) {
+      const on = sites.filter((s) => s.signInHere?.at.test(fp.url()));
+      // the provider itself (it names products), not an app that shares its surface (gmail)
+      const surface = on.find((s) => s.properties?.length) ?? on[0];
+      if (surface) {
+        const at = name.indexOf("@");
+        name = at < 0 ? surface.site : `${surface.site}${name.slice(at)}`;
+        known = resolveLogin(sites, name);
+      }
+    }
     let cred = await opts.credentials.get(known?.credential ?? name);
     // The caller knows whose sign-in this is (the account an OAuth consent
     // is for): a second account at the same provider lives as `<site>@<label>`,

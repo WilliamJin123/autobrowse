@@ -1639,7 +1639,9 @@ async function serve(
   const onPage = (wait: boolean): FlowRunner => ({
     run: async <I, O>(flow: BrowserFlow<I, O>, input: I): Promise<O> => {
       const here = opts.site.split("@")[0];
-      if (flow.site !== here)
+      // The page's own provider runs here too: google-login on youtube.com (`properties`).
+      const host = URL.canParse(fp.page.url()) ? new URL(fp.page.url()).host : "";
+      if (flow.site !== here && !sitesOfHost(host, SITE_LOGINS, []).includes(flow.site))
         throw new Error(
           `flow: ${flow.site}/${flow.name} needs ${flow.site}'s profile; this session is ${here}: open explore on ${flow.site}`,
         );

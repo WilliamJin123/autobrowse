@@ -77,6 +77,11 @@ describe("who signs in on open", () => {
     expect(wallAnswer(guess, "https://www.perplexity.ai/")).toMatchObject({
       signIn: "perplexity-login",
     });
+    // a provider's product names the provider's login (WA-1036)
+    const onProduct = { kind: "login", detail: "signed out", by: "text" } as const;
+    expect(wallAnswer(onProduct, "https://studio.youtube.com/")).toMatchObject({
+      signIn: "google-login",
+    });
     const sure = wallOf("https://www.linkedin.com/authwall?x=1", "");
     expect(wallAnswer(sure, "https://www.linkedin.com/authwall?x=1")).not.toHaveProperty("signIn");
     expect(wallAnswer(null, "https://x.com/")).toBeNull();

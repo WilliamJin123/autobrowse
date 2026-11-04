@@ -307,6 +307,39 @@ describe("loginProvider", () => {
       "unknown-site",
     );
   });
+  it("a site with no login, on a provider's sign-in surface, signs in as the provider (youtube → google)", async () => {
+    const ran: string[] = [];
+    const provider: SiteLogin = {
+      site: "p",
+      home: "https://p.test/",
+      properties: ["prod.test"],
+      loggedIn: async () => true,
+      signIn: async () => {
+        ran.push("signIn");
+      },
+      signInHere: {
+        at: /^https:\/\/id\.p\.test\//,
+        run: async ({ cred }) => {
+          ran.push(`here as ${cred.username}`);
+        },
+      },
+    };
+    // an app on the same surface, named first: the provider (it names products) still wins
+    const app: SiteLogin = { ...provider, site: "papp", credential: "p", properties: [] };
+    const login = loginProvider([app, provider], {
+      credentials: memoryCredentials({
+        p: { username: "u", password: "p" },
+        "p@two": { username: "u2", password: "p2" },
+      }),
+      codes: totpSource(),
+    });
+    const at = (url: string) => fakePage({ text: [], present: () => true, url }).fp;
+    expect(await login(at("https://id.p.test/signin"), "prod")).toBe("signed-in");
+    expect(await login(at("https://id.p.test/signin"), "prod@two")).toBe("signed-in");
+    expect(ran).toEqual(["here as u", "here as u2"]);
+    // off the surface the unknown site stays unknown
+    expect(await login(at("https://prod.test/"), "prod")).toBe("unknown-site");
+  });
   it("a refused sign-in holds the credential: the next call types no password till the hold ends", async () => {
     let tries = 0;
     const refusing: SiteLogin = {

@@ -51,6 +51,15 @@ describe("the toolkit", () => {
     expect(sitesOfHost("hn.algolia.com", SITE_LOGINS, tools)).toEqual(["hn"]);
     expect(sitesOfHost("www.loom.com", SITE_LOGINS, tools)).toContain("loom");
     expect(sitesOfHost("example.org", SITE_LOGINS, tools)).toEqual([]);
+    // a provider's product (WA-1036): google first, never its apps (gmail) that share the surface
+    for (const h of ["www.youtube.com", "studio.youtube.com", "portal.azure.com"]) {
+      const sites = sitesOfHost(h, SITE_LOGINS, tools);
+      expect(sites[0]).toBe(h.endsWith("azure.com") ? "outlook" : "google");
+      expect(sites).not.toContain("gmail");
+    }
+    expect(toolkitFor("studio.youtube.com", SITE_LOGINS, tools)?.tools[0]?.name).toBe(
+      "google-login",
+    );
   });
 
   it("caps an answer's tools and counts the rest", () => {

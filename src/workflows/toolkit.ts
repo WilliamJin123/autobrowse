@@ -55,12 +55,13 @@ export function toolsOf(workflows: readonly AnyWorkflow[]): Tool[] {
 }
 
 /**
- * The sites a host belongs to. A login's `home` host or registrable domain (and its `origins`);
- * a workflow's own hosts; a site named by the domain (`loom.com` → loom). Exact home host first.
+ * The sites a host belongs to. A login's `home` host or registrable domain (its `origins`, its
+ * `properties`: youtube.com → google); a workflow's own hosts; a site named by the domain
+ * (`loom.com` → loom). Exact home host first.
  */
 export function sitesOfHost(
   host: string,
-  logins: readonly Pick<SiteLogin, "site" | "home" | "origins">[],
+  logins: readonly Pick<SiteLogin, "site" | "home" | "origins" | "properties">[],
   tools: readonly Tool[],
 ): string[] {
   const h = host.toLowerCase();
@@ -74,7 +75,7 @@ export function sitesOfHost(
     if (home === h) exact.push(l.site);
     else if (
       (home && registrable(home) === reg) ||
-      (l.origins ?? []).some((o) => registrable(o) === reg)
+      [...(l.origins ?? []), ...(l.properties ?? [])].some((o) => registrable(o) === reg)
     )
       near.push(l.site);
   }
