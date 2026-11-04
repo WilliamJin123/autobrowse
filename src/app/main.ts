@@ -11,7 +11,6 @@ import { startUiServer } from "../ui/server.js";
 import { backendFor } from "./backend.js";
 import { ingress } from "./client.js";
 import { cloudAdminUrl, planEndpoint } from "./endpoint.js";
-import { holding } from "./metered.js";
 import { opsLane } from "./ops.js";
 import { awsFor, boot } from "./owner.js";
 import { registerDeployment } from "./register.js";
@@ -21,10 +20,9 @@ import {
   budgetOf,
   buildApp,
   gmailFor,
-  keepTracesOnTimer,
+  keepDiskOnTimer,
   linqFor,
   llmFor,
-  shipperFor,
 } from "./services.js";
 import { statusOf } from "./status.js";
 
@@ -163,27 +161,8 @@ startUiServer({
   token: settings.uiToken,
   keys: fileKeys(expandHome(settings.accessFile)),
 });
-// Screenshots leave this machine every SHOTS_EVERY_MINUTES and before an idle stop. One run at a time.
-const ship = shipperFor(settings);
-let shipping: Promise<void> | null = null;
-const shipShots = (why: string): Promise<void> => {
-  if (!ship) return Promise.resolve();
-  shipping ??= ship()
-    .then((r) => {
-      if (r.shipped || r.refused) log.info({ ...r, unreadable: r.unreadable.length, why }, "shots");
-    })
-    .catch((err) => log.warn({ err: err instanceof Error ? err.message : String(err) }, "shots"))
-    .finally(() => {
-      shipping = null;
-    });
-  return shipping;
-};
-if (ship && settings.shotsEveryMinutes > 0)
-  setInterval(
-    () => void holding(log).then((hold) => (hold ? undefined : shipShots("timer"))),
-    settings.shotsEveryMinutes * 60_000,
-  ).unref();
-keepTracesOnTimer(settings, log);
+// Screenshots leave this machine on the disk timer and before an idle stop.
+const disk = keepDiskOnTimer(settings, log);
 // autotrack fleet health: the operator's worker checks each device's heartbeat hourly.
 if (isDefaultOwner(settings.owner) && settings.trackBucket) {
   const ops = opsLane(httpClient());
@@ -257,7 +236,7 @@ else if (settings.idleStopMinutes > 0) {
     }),
     // What this session did with secrets and money, to the person, before the lights go out.
     beforeStop: async () => {
-      await shipShots("before stop");
+      await disk.ship("before stop");
       const { ledgerSince, ledgerSummary } = await import("../auth/ledger.js");
       const { auditFor, spendLedgerFor } = await import("./services.js");
       const lines = ledgerSummary(

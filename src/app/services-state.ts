@@ -31,6 +31,7 @@ import { CRED_ENV, keychainOf } from "../auth/keep.js";
 import { type NamedStore, namedStore } from "../auth/roles.js";
 import { addSiteLogins } from "../auth/sites.js";
 import { type Fixes, fileFixes } from "../browser/fixes.js";
+import { trimProfiles, trimWording } from "../browser/profile-trim.js";
 import { fileScreens, type LearnedScreens } from "../browser/screens.js";
 import { httpClient } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
@@ -39,7 +40,13 @@ import { modFixes, modScreens, withModFixes, withModScreens } from "../mods/mod.
 import { isDefaultOwner, ownerKeys } from "../owner.js";
 import { clearRun, keepRun, packStale } from "../runs/capture.js";
 import { s3BlobStore, s3TraceStore } from "../shots/s3.js";
-import { keepArtifact, keepRecording, type ShipReport, shipShots } from "../shots/ship.js";
+import {
+  clearDump,
+  keepArtifact,
+  keepRecording,
+  type ShipReport,
+  shipShots,
+} from "../shots/ship.js";
 import { scrubKeptTraces } from "../shots/trace-scrub.js";
 import { keptTraceSteps } from "../shots/trace-steps.js";
 import { backupTraces, dirTraceStore, sweepTraces, traceDirName } from "../shots/traces.js";
@@ -121,6 +128,9 @@ export function credentialsFor(
   return namedStore(armed, store);
 }
 
+/** Failure dumps stay on this disk this long after they ship (WA-1056). */
+const DUMP_KEEP_DAYS = 14;
+
 /** Ships new screenshots to the bucket; null when no bucket is set (they stay local). */
 export function shipperFor(
   settings: Settings,
@@ -144,7 +154,13 @@ export function shipperFor(
     packStale(runs);
     return shipShots({
       roots: [
-        { name: "artifacts", dir: artifacts, keep: keepArtifact },
+        {
+          name: "artifacts",
+          dir: artifacts,
+          keep: keepArtifact,
+          clear: clearDump,
+          clearAfterDays: DUMP_KEEP_DAYS,
+        },
         { name: "recordings", dir: expandHome(settings.recordingsDir), keep: keepRecording },
         { name: "runs", dir: runs, keep: keepRun, clear: clearRun },
       ],
@@ -209,29 +225,76 @@ export function tracesFor(settings: Settings) {
   };
 }
 
-/** Copy then sweep traces every SHOTS_EVERY_MINUTES (at least 15), and a minute after start. One run at a time. */
-export function keepTracesOnTimer(settings: Settings, log: Logger): void {
+/** Closed profiles' caches trimmed, shared component files cloned (src/browser/profile-trim.ts). */
+export function profileTrimFor(settings: Settings, o: { dry?: boolean } = {}) {
+  return trimProfiles({
+    profilesDir: expandHome(settings.profilesDir),
+    ledgerFile: join(stateDirFor(settings), "profiles-cloned.tsv"),
+    clone: process.platform === "darwin",
+    ...o,
+  });
+}
+
+/**
+ * This disk's upkeep, one timer for desk and box: every SHOTS_EVERY_MINUTES (at least 15) and a
+ * minute after start, traces copied then swept, shots shipped then old dumps cleared; once a day,
+ * closed profiles trimmed. One run at a time. `ship` is for a stop: the shots now.
+ */
+export function keepDiskOnTimer(
+  settings: Settings,
+  log: Logger,
+): { ship(why: string): Promise<void> } {
   const keep = tracesFor(settings);
-  if (!keep) return;
+  const shipper = settings.shotsEveryMinutes > 0 ? shipperFor(settings) : null;
+  const err = (e: unknown) => ({ err: e instanceof Error ? e.message : String(e) });
+  let shipping: Promise<void> | null = null;
+  const ship = (why: string): Promise<void> => {
+    if (!shipper) return Promise.resolve();
+    shipping ??= shipper()
+      .then((r) => {
+        if (r.shipped || r.refused || r.cleared)
+          log.info({ ...r, unreadable: r.unreadable.length, why }, "shots");
+      })
+      .catch((e) => log.warn(err(e), "shots"))
+      .finally(() => {
+        shipping = null;
+      });
+    return shipping;
+  };
+  let trimmedAt = 0;
   let busy = false;
   const tick = (): void => {
     if (busy) return;
     busy = true;
-    void holding(log)
-      .then(async (hold) => {
-        if (hold) return;
-        const r = await keep.backup();
-        const swept = await keep.sweep();
-        if (r.shipped || r.refused || swept.removed)
-          log.info({ ...r, unreadable: r.unreadable.length, swept }, "traces");
-      })
-      .catch((err) => log.warn({ err: err instanceof Error ? err.message : String(err) }, "traces"))
+    void (async () => {
+      // local only: runs while the network is held
+      if (Date.now() - trimmedAt >= 86_400_000) {
+        trimmedAt = Date.now();
+        await profileTrimFor(settings)
+          .then((r) => {
+            if (r.removed.length || r.cloned || r.cloneError)
+              log.info({ lines: trimWording(r, false) }, "profiles trimmed");
+          })
+          .catch((e) => log.warn(err(e), "profiles trim"));
+      }
+      if (await holding(log)) return;
+      if (keep)
+        await (async () => {
+          const r = await keep.backup();
+          const swept = await keep.sweep();
+          if (r.shipped || r.refused || swept.removed)
+            log.info({ ...r, unreadable: r.unreadable.length, swept }, "traces");
+        })().catch((e) => log.warn(err(e), "traces"));
+      await ship("timer");
+    })()
+      .catch((e) => log.warn(err(e), "disk upkeep"))
       .finally(() => {
         busy = false;
       });
   };
   setInterval(tick, Math.max(settings.shotsEveryMinutes, 15) * 60_000).unref();
   setTimeout(tick, 60_000).unref();
+  return { ship };
 }
 
 /** The shared library's queue goes to Wren's ingest on the trace timer's beat (`share/share`). */

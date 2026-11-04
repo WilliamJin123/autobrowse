@@ -18,6 +18,7 @@ import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from ".
 import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import type { Hints } from "./locate.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
+import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { reapOrphans, reapTempDirs } from "./reap.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
 
@@ -296,7 +297,11 @@ async function keepOutOfTheWay(): Promise<void> {
  * software fallback): a rarer tell than the software renderer this turns back on.
  */
 const NO_GPU_ARGS = process.platform === "linux" ? ["--enable-unsafe-swiftshader"] : [];
-const LOCAL_ARGS = ["--disable-blink-features=AutomationControlled", ...NO_GPU_ARGS];
+const LOCAL_ARGS = [
+  "--disable-blink-features=AutomationControlled",
+  `--disk-cache-size=${DISK_CACHE_BYTES}`,
+  ...NO_GPU_ARGS,
+];
 
 /**
  * Headed on Linux: X11 (XWayland on a Wayland desktop). The overlay can place its window over

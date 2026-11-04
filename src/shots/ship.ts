@@ -20,6 +20,8 @@ export interface ShotRoot {
   keep: (rel: string) => boolean;
   /** Which shipped files leave this disk once the ledger shows them in the bucket. */
   clear?: (rel: string) => boolean;
+  /** Clear only files at least this old (mtime): the dumps a person may still read stay a while. */
+  clearAfterDays?: number;
 }
 
 /** Where shots go. One adapter names the vendor (S3, or R2 by endpoint). */
@@ -75,6 +77,9 @@ export const keepArtifact = (rel: string): boolean =>
   rel.endsWith(".html") ||
   rel.endsWith("/steps.jsonl");
 
+/** A flow's failure dump at the top of artifacts; never a subfolder (records, sends, uploads are state). */
+export const clearDump = (rel: string): boolean => !rel.includes(sep) && keepArtifact(rel);
+
 /** A recording or explore: its screenshots, manifest, summary, journals, network logs and saved pages. */
 export const keepRecording = (rel: string): boolean =>
   IMAGES.has(extname(rel)) ||
@@ -115,7 +120,7 @@ async function pendingShots(o: ShipOptions) {
   return out.sort((a, b) => a.mtime - b.mtime);
 }
 
-export async function shipShots(o: ShipOptions): Promise<ShipReport> {
+export async function shipShots(o: ShipOptions, now = Date.now()): Promise<ShipReport> {
   const todo = await pendingShots(o);
   const report: ShipReport = { shipped: 0, bytes: 0, pending: 0, unreadable: [], refused: null };
   for (const [i, f] of todo.entries()) {
@@ -140,12 +145,12 @@ export async function shipShots(o: ShipOptions): Promise<ShipReport> {
     report.shipped++;
     report.bytes += f.size;
   }
-  if (!o.dry) report.cleared = await clearShipped(o);
+  if (!o.dry) report.cleared = await clearShipped(o, now);
   return report;
 }
 
 /** Removes each `clear` file the ledger shows shipped as it is now (key, size, mtime). */
-async function clearShipped(o: ShipOptions): Promise<number> {
+async function clearShipped(o: ShipOptions, now: number): Promise<number> {
   const roots = o.roots.filter((r) => r.clear);
   if (!roots.length) return 0;
   const done = await shippedSet(o.ledgerFile);
@@ -157,6 +162,7 @@ async function clearShipped(o: ShipOptions): Promise<number> {
       const s = await stat(path).catch(() => null);
       const key = [o.machine, root.name, ...rel.split(sep)].join("/");
       if (!s || !done.has(`${key}\t${s.size}\t${Math.trunc(s.mtimeMs)}`)) continue;
+      if (root.clearAfterDays && now - s.mtimeMs < root.clearAfterDays * 86_400_000) continue;
       await unlink(path).catch(() => undefined);
       n++;
     }

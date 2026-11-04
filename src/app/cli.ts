@@ -857,6 +857,19 @@ program
     for (const x of gone)
       console.log(`${o.dry ? "orphan" : "stopped"} ${x.profile} (pid ${x.pid})`);
   });
+program
+  .command("trim")
+  .description(
+    "Free disk in closed browser profiles: caches over 200 MB go, shared component files become one APFS copy; cookies and storage untouched (the desk does this daily)",
+  )
+  .option("--dry", "count only")
+  .action(async (o: { dry?: boolean }) => {
+    const { trimWording } = await import("../browser/profile-trim.js");
+    const { profileTrimFor } = await import("./services.js");
+    const r = await profileTrimFor(settings, o.dry ? { dry: true } : {});
+    for (const line of trimWording(r, !!o.dry)) console.log(line);
+    if (r.cloneError) process.exitCode = 1;
+  });
 const browsers = program
   .command("browsers")
   .description(

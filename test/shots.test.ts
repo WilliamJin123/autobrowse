@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type BlobStore,
+  clearDump,
   keepArtifact,
   keepRecording,
   shipShots,
@@ -92,5 +93,29 @@ describe("shipShots", () => {
       pending: 5,
     });
     expect(put).toEqual({});
+  });
+
+  it("clears a shipped top-level dump only once it is old; subfolders stay", async () => {
+    const d = dirs();
+    mkdirSync(join(d.artifacts, "uploads"));
+    writeFileSync(join(d.artifacts, "uploads", "id.png"), "kept");
+    const old = new Date("2026-10-01T00:00:00Z");
+    utimesSync(join(d.artifacts, "npm-login-1.png"), old, old);
+    const { store } = memoryStore();
+    const roots = [
+      {
+        name: "artifacts",
+        dir: d.artifacts,
+        keep: keepArtifact,
+        clear: clearDump,
+        clearAfterDays: 14,
+      },
+    ];
+    const r = await shipShots({ ...opts(d, store), roots }, Date.parse("2026-11-04T00:00:00Z"));
+    expect(r.cleared).toBe(1);
+    expect(() => readFileSync(join(d.artifacts, "npm-login-1.png"))).toThrow();
+    expect(readFileSync(join(d.artifacts, "npm-login-1.aria.txt"), "utf8")).toBe("aria");
+    expect(readFileSync(join(d.artifacts, "uploads", "id.png"), "utf8")).toBe("kept");
+    expect(readFileSync(join(d.artifacts, "npm-login-1.zip"), "utf8")).toContain("trace");
   });
 });

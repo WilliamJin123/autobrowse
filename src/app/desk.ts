@@ -38,8 +38,8 @@ import { registerDeployment } from "./register.js";
 import {
   buildApp,
   credentialsFor,
+  keepDiskOnTimer,
   keepSharedOnTimer,
-  keepTracesOnTimer,
   keyAdminFor,
   reproofOnTimer,
   sendJournalFor,
@@ -153,7 +153,7 @@ if (plan.mode === "tunnel") {
 if (wren) watchRecordings(wren, (msg) => log.info({ watch: msg }, "recordings"));
 if (recorder) watchCalls(recorder, (msg) => log.warn({ calls: msg }, "calls"));
 watchers?.start();
-keepTracesOnTimer(settings, log);
+keepDiskOnTimer(settings, log);
 sendSharedOnTimer(log);
 keepSharedOnTimer(log);
 reproofOnTimer(log, COMPILED_DIR, (name, plan) =>
