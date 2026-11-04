@@ -1,10 +1,9 @@
 # Explore: drive a browser or the desktop
 
-One browser stays open on a site. `open` on a login page (its URL says so) signs in
-through the site's stored login; on a provider's sign-in page (accounts.google.com from
-YouTube) through the provider's. A wall only the page's words suggest comes back as
+One browser stays open on a site. `open` never signs in. A sign-in wall comes back as
 `wall` with `signIn: "<site>-login"` (the provider's on its products: `google-login` on
-youtube.com): if it is a wall, run `{"cmd":"flow","name":"<site>-login"}`.
+youtube.com) and `accounts`: every stored account that login can use. Pick one, then run
+`{"cmd":"flow","name":"<site>-login","plan":{"account":"<account>"}}`.
 You send one JSON command at a time over loopback. Every act that works is
 journaled; `save` writes a recording; `compile` makes it a workflow.
 
@@ -82,7 +81,8 @@ Act (journaled):
 - `{"cmd":"flow","name":"amazon-cart","plan":{"searchFor":"Dune"}}` — runs a workflow on this page: a compiled one (`autobrowse workflows`) or a hand-written leg as `<site>-<name>` (`linkedin-create-post`; its input fields are the plan). Its saved plan goes under yours.
   Answer: `{status, steps, gate?, url}`. The page stays where it ended: go on by hand. Mix freely: sign in, explore, `flow`, explore again.
   - Its legs must be on this session's site. Another site's workflow needs its own session.
-  - `<site>-login` signs in with the stored credential (through its Google/Microsoft button when the site has one; `"plan":{"account":"…"}` for a second account). The runner types it; you never hold it. Use it on a sign-in page, a signed-out state or an expired session instead of `--login` and `place`.
+  - `<site>-login` signs in with a stored credential (through its Google/Microsoft button when the site has one). `"plan":{"account":"…"}` takes an `account` from the list (`google@wren`), a role (`wren`) or an address; none = the profile's own (a profile with none, such as bare `youtube`, must name one). The runner types it; you never hold it. Use it on a sign-in page, a signed-out state or an expired session instead of `--login` and `place`.
+  - Accounts: `profile: true` marks the account this browser profile is for. Another one puts its cookies in this profile; for more than a quick task, start a session as that account instead (`start.sh youtube@<label>`).
   - Every money act asks the person, as yours do. A workflow's `purchase`/`password`/`send` gate asks too. Send with `?wait=1` to hold for the answer.
   - `waiting` with `gate.name` `human`: fix it, then send the same command. The step runs again from its first `open`, so a fix the site keeps (a sign-in, a setting) holds; a fix on the page only (a closed dialog) does not. `choose`: send it again with `"choice":"…"`.
   - `failed`: the same command goes on from the failed step. `"fresh":true` starts over.
@@ -95,7 +95,7 @@ Act (journaled):
   - Acts in a rerun: a click, press or script is done once; a rerun skips it and goes on from the URL it left. Hover, fill, select and upload are replayed to rebuild the page. Mark a click that changes only the page (a "Next" with no new URL, a tab, a menu) `{goal, view:true}`, or a rerun skips it and reads the wrong page.
   - `failed` says an act "may have run" (the last run died mid act): look at the page, then send again with `"started":"ran"` (it happened) or `"redo"`.
   - Money acts ask the person, as yours do. Journaled as one row: `save` compiles it into the workflow. Each call is a row in the run history (`autobrowse explored show <run>`).
-- `tools` in an answer: the first answer on a page of a known site lists that site's workflows (`{sites, tools:[{name, aim, inputs}], more}`; `q, max?` = required, optional). It comes once per site. A provider's product (youtube.com, portal.azure.com) lists the provider's (`google-login` first). Use one with `flow` before you do the job by hand.
+- `tools` in an answer: the first answer on a page of a known site lists that site's workflows (`{sites, tools:[{name, aim, inputs, accounts?}], more}`; `q, max?` = required, optional; a `-login` tool lists its `accounts`). It comes once per site. A provider's product (youtube.com, portal.azure.com) lists the provider's (`google-login` first). Use one with `flow` before you do the job by hand.
 - `{"cmd":"tools"}` — each site and its count. `"site":"x"`: that site's workflows (past the 20 an answer shows). `"find":"words"`: a fuzzy search over all of them.
 
 Files (the Mac's sealed store, `autobrowse files`): start with `--files <set>[,<set>]`

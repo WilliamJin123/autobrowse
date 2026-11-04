@@ -334,11 +334,17 @@ describe("loginProvider", () => {
       codes: totpSource(),
     });
     const at = (url: string) => fakePage({ text: [], present: () => true, url }).fp;
-    expect(await login(at("https://id.p.test/signin"), "prod")).toBe("signed-in");
     expect(await login(at("https://id.p.test/signin"), "prod@two")).toBe("signed-in");
-    expect(ran).toEqual(["here as u", "here as u2"]);
-    // off the surface the unknown site stays unknown
-    expect(await login(at("https://prod.test/"), "prod")).toBe("unknown-site");
+    expect(ran).toEqual(["here as u2"]);
+    // bare: never the provider's main account on its own
+    expect(await login(at("https://id.p.test/signin"), "prod")).toBe("unknown-site");
+    expect(await login(at("https://prod.test/"), "prod@two")).toBe("unknown-site");
+    // the account the agent picked, by stored name or role, as explore lists them
+    ran.length = 0;
+    expect(await login(at("https://id.p.test/signin"), "p", "p@two")).toBe("signed-in");
+    expect(await login(at("https://id.p.test/signin"), "papp", "two")).toBe("signed-in");
+    expect(await login(at("https://id.p.test/signin"), "p", "p")).toBe("signed-in");
+    expect(ran).toEqual(["here as u2", "here as u2", "here as u"]);
   });
   it("a refused sign-in holds the credential: the next call types no password till the hold ends", async () => {
     let tries = 0;

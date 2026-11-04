@@ -883,16 +883,32 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
   return async (fp: FlowPage, site: string, account?: string): Promise<LoginOutcome> => {
     let name = site;
     let known = resolveLogin(sites, name);
-    // A site with no login of its own (youtube) on a provider's sign-in surface
-    // (accounts.google.com): the provider signs in, the `@label` carried.
-    if (!known) {
+    // A labelled site with no login (youtube@wren) on a provider's sign-in surface: that label's
+    // provider account (google@wren). Bare `youtube` stays unknown: never the provider's main account.
+    if (!known && name.includes("@")) {
       const on = sites.filter((s) => s.signInHere?.at.test(fp.url()));
       // the provider itself (it names products), not an app that shares its surface (gmail)
       const surface = on.find((s) => s.properties?.length) ?? on[0];
       if (surface) {
-        const at = name.indexOf("@");
-        name = at < 0 ? surface.site : `${surface.site}${name.slice(at)}`;
+        name = `${surface.site}${name.slice(name.indexOf("@"))}`;
         known = resolveLogin(sites, name);
+      }
+    }
+    // `account` as a stored name (`google@wren`) or role (`wren`), as explore lists them
+    if (account) {
+      const platform = (known?.credential ?? name).split("@")[0] ?? name;
+      for (const key of account.startsWith(`${platform}@`) || account === platform
+        ? [account]
+        : account.includes("@")
+          ? []
+          : [`${platform}@${account}`]) {
+        if (!(await opts.credentials.get(key))) continue;
+        // this site's own spec, that key's label: gmail + google@wren → gmail@wren (credential google@wren)
+        const base = name.split("@")[0] ?? name;
+        name = key.includes("@") ? `${base}${key.slice(key.indexOf("@"))}` : base;
+        known = resolveLogin(sites, name) ?? known;
+        account = undefined;
+        break;
       }
     }
     let cred = await opts.credentials.get(known?.credential ?? name);

@@ -10,6 +10,17 @@
 
 Already built, and not re-decided here: the toolkit arrives in the first object answer after a host change, once per site set (`newSiteTools`, 2026-10-29).
 
+## Correction, same night (William)
+
+"I didn't mean that it should auto sign in. It should expose that sign in is a compiled workflow and all the profiles that could be signed in there … it seems like it's just auto signing into the first account, which is not how it should work since we have multiple accounts."
+
+- An agent's explore `open` never signs in (reverses WA-1022's "a login URL signs in", 10-29, for console sessions). A sign-in wall answers `signIn: "<login>"` and `accounts: [{account, user, roles, profile?}]`, URL walls included.
+- The toolkit's `<site>-login` entry carries the same `accounts`.
+- `plan.account` takes the listed name (`google@wren`), a role or an address. None: the profile's own account (`profile: true`); a profile with none (bare `youtube`) must name one, and the error lists them.
+- The login provider maps a site with no login to the provider only with a label (`youtube@wren` → `google@wren`); bare `youtube` stays `unknown-site`, never the provider's main (William's personal) account.
+- Desk legs and the headless agent keep signing in on a wall: no agent picks there, and the run's site names the account.
+- Account and profile: one Chrome profile per account stays the rule. An agent may sign another account into a profile (the OAuth consent path already does); the list marks the profile's own and the skill says to start a session as the other account for more than a quick task. Rejected: refusing a cross-account sign-in (blocks the consent case).
+
 ## Goal
 
 - A page on any product of a provider (YouTube under Google, Azure under Microsoft) gets the provider's login and tools, with no entry per product.
@@ -40,14 +51,14 @@ Ranked by: one source for routes, workflows, walls and the toolkit; no password-
 
 - `SiteLogin.properties?: readonly string[]`: google `["youtube.com", "blogger.com", "withgoogle.com", "google.dev"]`; outlook `["office.com", "azure.com", "microsoft365.com"]`; github none (its wall is on github.com). Add a domain when a run meets it.
 - `sitesOfHost`: a host under a login's `properties` is a near match (after the exact home host).
-- `loginProvider`: a site with no login (`youtube`, `youtube@wren`) on a page a login's `signInHere.at` matches signs in as that login, the `@label` carried (`youtube@wren` → `google@wren`). A known site keeps its own path.
+- `loginProvider`: a labelled site with no login (`youtube@wren`) on a page a login's `signInHere.at` matches signs in as that login, the label carried (`google@wren`). Bare `youtube` stays unknown. A known site keeps its own path.
 - explore `flow`: a workflow of a site the page's host belongs to (`sitesOfHost`) runs here; the old rule (only the session's site) stays for every other site.
 - `wallAnswer` and the toolkit come free from `sitesOfHost`.
 - Skill: explore.md says `wall.signIn` may name the provider's login, not the session's site.
 
 ## Then
 
-- Live proof (AC 4): a browser subagent on YouTube Studio in a product profile, signed in by `google-login`.
+- Live proof: a fresh product profile on YouTube Studio; `open` answers the wall with google-login and its accounts and signs in nothing; `flow google-login {account}` then signs in.
 - A product that needs its own `loggedIn` (Gmail's inbox URL) keeps option A's entry; the two coexist.
 
 ## Decision log
@@ -55,3 +66,4 @@ Ranked by: one source for routes, workflows, walls and the toolkit; no password-
 - 2026-11-04: `properties` on the provider (option B); `origins` untouched (the password boundary).
 - 2026-11-04: The login provider, not the runner, reads a sign-in page's URL: it owns the logins; the runner keeps passing the session's site.
 - 2026-11-04: Product sessions keep their own profile (P1): concurrency over one fewer device sign-in.
+- 2026-11-04 (William): an agent's `open` never signs in; walls and login tools list the accounts; the agent picks. Desk legs keep signing in. A bare product site never maps to the provider's main account.

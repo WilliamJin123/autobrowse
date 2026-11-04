@@ -13,7 +13,7 @@ import type { CredentialStore } from "credvault";
 import type { Scope } from "../access/keys.js";
 import { type HealOutcome, healFailure } from "../agent/heal.js";
 import { type AgentSessions, agentSessions } from "../agent/sessions.js";
-import { type Accounts, accountsOf } from "../auth/accounts.js";
+import { type Accounts, accountsOf, accountsOn } from "../auth/accounts.js";
 import { type LedgerWindow, ledgerSince } from "../auth/ledger.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { fileFixes } from "../browser/fixes.js";
@@ -343,7 +343,14 @@ export function explorerOpener(
       browser: await browserFor(settings, site, display),
       recordingsDir: expandHome(settings.recordingsDir),
       port,
-      ...(signIn ? { login: loginFor(settings, gmailFor(settings)) } : {}),
+      ...(signIn
+        ? {
+            login: loginFor(settings, gmailFor(settings)),
+            // names, users, roles: the store unarmed, as `creds list` reads it
+            accounts: (platform: string) =>
+              accountsOn(credentialsFor(settings, { armed: false }), platform),
+          }
+        : {}),
       captcha: captchaFor(settings),
       audit: auditFor(settings),
       ...(cards ? { cards, cardsOnFile: cardsOnFileFor(settings) } : {}),

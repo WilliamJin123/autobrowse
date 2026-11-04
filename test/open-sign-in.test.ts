@@ -82,8 +82,11 @@ describe("who signs in on open", () => {
     expect(wallAnswer(onProduct, "https://studio.youtube.com/")).toMatchObject({
       signIn: "google-login",
     });
+    // a URL wall names it too: open no longer signs in, the agent picks the account
     const sure = wallOf("https://www.linkedin.com/authwall?x=1", "");
-    expect(wallAnswer(sure, "https://www.linkedin.com/authwall?x=1")).not.toHaveProperty("signIn");
+    expect(wallAnswer(sure, "https://www.linkedin.com/authwall?x=1")).toMatchObject({
+      signIn: "linkedin-login",
+    });
     expect(wallAnswer(null, "https://x.com/")).toBeNull();
   });
 });

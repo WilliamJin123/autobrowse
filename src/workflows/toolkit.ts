@@ -3,7 +3,7 @@
  * by site. A page's host picks the site's tools; search and the tree find the rest.
  */
 import { hostNamed, registrable } from "../auth/guard.js";
-import type { SiteLogin } from "../auth/login.js";
+import { resolveLogin, type SiteLogin } from "../auth/login.js";
 import { inputsOf } from "../engine/inputs.js";
 import type { AnyWorkflow } from "../engine/workflow.js";
 import type { Findable } from "./find.js";
@@ -112,6 +112,43 @@ export function toolkitFor(
     tools: mine.slice(0, max).map(({ name, aim, inputs }) => ({ name, aim, inputs })),
     more: Math.max(0, mine.length - max),
   };
+}
+
+/** One stored account a `<site>-login` can sign in as; `account` is what `plan.account` takes. */
+export interface LoginAccount {
+  account: string;
+  user: string;
+  roles: readonly string[];
+  /** The account this browser profile is for: another one puts its cookies in this profile. */
+  profile?: true;
+}
+
+/**
+ * The accounts a login lists to an agent, this profile's own marked. `session` is the
+ * explore profile: `gmail` owns `google`, `youtube@wren` owns `google@wren`, bare `youtube` none.
+ */
+export function loginAccounts(
+  session: string,
+  platform: string,
+  logins: readonly SiteLogin[],
+  rows: readonly { name: string; username: string; roles: readonly string[] }[],
+): LoginAccount[] {
+  const cred = resolveLogin(logins, session)?.credential ?? null;
+  const at = session.indexOf("@");
+  const own =
+    cred && cred.split("@")[0] === platform
+      ? cred
+      : resolveLogin(logins, session)?.site.split("@")[0] === platform
+        ? session
+        : at >= 0
+          ? `${platform}${session.slice(at)}`
+          : null;
+  return rows.map((r) => ({
+    account: r.name,
+    user: r.username,
+    roles: r.roles,
+    ...(r.name === own ? { profile: true as const } : {}),
+  }));
 }
 
 /** A tool as search reads it. */

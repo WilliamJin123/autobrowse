@@ -7,6 +7,7 @@ import { defineWorkflow, done } from "../src/index.js";
 import {
   find,
   findable,
+  loginAccounts,
   sitesOfHost,
   sitesTree,
   type Tool,
@@ -60,6 +61,27 @@ describe("the toolkit", () => {
     expect(toolkitFor("studio.youtube.com", SITE_LOGINS, tools)?.tools[0]?.name).toBe(
       "google-login",
     );
+  });
+
+  it("lists a login's accounts, this profile's own marked", () => {
+    const rows = [
+      { name: "google", username: "a@x.test", roles: ["main"] },
+      { name: "google@wren", username: "b@x.test", roles: ["wren"] },
+    ];
+    const own = (session: string) =>
+      loginAccounts(session, "google", SITE_LOGINS, rows)
+        .filter((a) => a.profile)
+        .map((a) => a.account);
+    expect(own("youtube@wren")).toEqual(["google@wren"]);
+    expect(own("google@wren")).toEqual(["google@wren"]);
+    expect(own("gmail")).toEqual(["google"]);
+    expect(own("google")).toEqual(["google"]);
+    expect(own("youtube")).toEqual([]);
+    expect(loginAccounts("youtube", "google", SITE_LOGINS, rows)[1]).toEqual({
+      account: "google@wren",
+      user: "b@x.test",
+      roles: ["wren"],
+    });
   });
 
   it("caps an answer's tools and counts the rest", () => {

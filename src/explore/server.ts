@@ -30,6 +30,7 @@ import type { Page } from "playwright";
 import type { z } from "zod";
 import { writeRecords } from "../agent/records.js";
 import { SecretLeak, urlWithoutQuery } from "../auth/guard.js";
+import { credentialFor } from "../auth/login.js";
 import type { SecretValues } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
@@ -150,10 +151,12 @@ import { type Capture, captureFor } from "../runs/capture.js";
 import { machine, type RunLog, type RunOutcome, runLog } from "../runs/log.js";
 import { missCause, targetOf } from "../runs/success.js";
 import { compiledDeps } from "../workflows/compiled-deps.js";
-import { loginName } from "../workflows/logins.js";
+import { LOGIN_WORKFLOWS, loginName } from "../workflows/logins.js";
 import {
   findable,
   find as findTools,
+  type LoginAccount,
+  loginAccounts,
   sitesOfHost,
   sitesTree,
   type Tool,
@@ -266,9 +269,9 @@ export function pageChange(before: readonly string[], after: readonly string[]):
   };
 }
 
-/** A wall for the agent: a guessed sign-in wall names the site's `<site>-login` tool. */
-export function wallAnswer(wall: Wall | null, url: string) {
-  if (!wall || wall.kind === "captcha" || wall.by === "url") return wall;
+/** A wall for the agent: a sign-in wall names the site's `<site>-login` tool (the provider's on its products). */
+export function wallAnswer(wall: Wall | null, url: string): (Wall & { signIn?: string }) | null {
+  if (!wall || wall.kind === "captcha") return wall;
   const host = URL.canParse(url) ? new URL(url).host : "";
   const site = sitesOfHost(host, SITE_LOGINS, []).find((s) =>
     SITE_LOGINS.some((l) => l.site === s),
@@ -308,6 +311,13 @@ export interface ExploreOptions {
     plan(name: string, given: Record<string, unknown>): Promise<Record<string, unknown>>;
     keys?: KeyKeeper;
   };
+  /**
+   * The stored accounts on a login's platform (names, users, roles; never a secret): a sign-in
+   * wall and a `<site>-login` tool list them, so the agent picks one. Absent: not listed.
+   */
+  accounts?: (
+    platform: string,
+  ) => Promise<readonly { name: string; username: string; roles: readonly string[] }[]>;
   /** Writes `records` code when the command sends none; absent: `records` needs `code`. */
   llm?: Llm | null;
   /** Where `keep` puts a secret read off the page (.env locally, SSM in prod). */
@@ -1462,7 +1472,44 @@ async function serve(
     const key = kit?.sites.join(",") ?? "";
     if (key === toolsSent) return null;
     toolsSent = key;
-    return kit;
+    if (!kit) return kit;
+    const tools = await Promise.all(
+      kit.tools.map(async (t) => {
+        const site = t.name.endsWith("-login") ? t.name.slice(0, -"-login".length) : null;
+        const accounts = site ? await accountsOf(site) : null;
+        return accounts?.length ? { ...t, accounts } : t;
+      }),
+    );
+    return { ...kit, tools };
+  };
+  // Each login's stored accounts, read once a session: what a wall and a login tool list.
+  const accountCache = new Map<string, Promise<LoginAccount[]>>();
+  const accountsOf = (site: string): Promise<LoginAccount[]> => {
+    const platform = credentialFor(SITE_LOGINS, site).split("@")[0] ?? site;
+    const got =
+      accountCache.get(platform) ??
+      (opts.accounts?.(platform) ?? Promise.resolve([])).then(
+        (rows) => loginAccounts(opts.site, platform, SITE_LOGINS, rows),
+        () => [],
+      );
+    accountCache.set(platform, got);
+    return got;
+  };
+  // A login with no account named: this profile's own, never the platform's main by default.
+  const loginDefault = async (c: Extract<Command, { cmd: "flow" }>) => {
+    if (!c.name.endsWith("-login") || c.plan?.account || !LOGIN_WORKFLOWS.has(c.name)) return {};
+    const accounts = await accountsOf(c.name.slice(0, -"-login".length));
+    if (!accounts.length) return {};
+    const own = accounts.find((a) => a.profile);
+    if (own) return { account: own.account };
+    throw new Error(
+      `flow ${c.name}: name an account in plan.account, one of: ${accounts.map((a) => `${a.account} (${a.roles.join(", ") || a.user})`).join("; ")}`,
+    );
+  };
+  const withAccounts = async <W extends { signIn?: string } | null>(wall: W) => {
+    if (!wall?.signIn) return wall;
+    const accounts = await accountsOf(wall.signIn.slice(0, -"-login".length));
+    return accounts.length ? { ...wall, accounts } : wall;
   };
   const looked = async (c: Command, wait: boolean) => {
     if (!LOOKS.has(c.cmd)) return { answer: await act(c, wait), rows: null };
@@ -1664,7 +1711,10 @@ async function serve(
     const workflow = await from.get(c.name);
     if (!workflow)
       throw new Error(`flow: no compiled workflow ${c.name}; see: autobrowse workflows`);
-    const plan = workflow.plan.parse({ dryRun: false, ...(await from.plan(c.name, c.plan ?? {})) });
+    const plan = workflow.plan.parse({
+      dryRun: false,
+      ...(await from.plan(c.name, { ...(await loginDefault(c)), ...(c.plan ?? {}) })),
+    });
     if (c.fresh) flowRuns.delete(c.name);
     const run = flowRuns.get(c.name) ?? { fx: memoryEffects().fx, gate: null };
     flowRuns.set(c.name, run);
@@ -1882,16 +1932,17 @@ async function serve(
         // the text suggests comes back as the wall, with the site's sign-in tool: the agent judges.
         // A captcha comes back too: a checkbox one is clicked like any control, a puzzle goes to a person.
         try {
-          await fp.open(c.url, {
-            allowWall: !opts.login,
-            ...(opts.signInOn === "any" ? {} : { signIn: "url" as const }),
-          });
+          // An agent at the console picks the account: open never signs in; the wall lists them.
+          await fp.open(c.url, { allowWall: opts.signInOn !== "any" || !opts.login });
         } catch (err) {
           if (!(err instanceof NeedsHuman) || (await looksLikeWall(page))?.kind !== "captcha")
             throw err;
         }
         journal({ kind: "navigate" });
-        return { url: page.url(), wall: wallAnswer(await looksLikeWall(page), page.url()) };
+        return {
+          url: page.url(),
+          wall: await withAccounts(wallAnswer(await looksLikeWall(page), page.url())),
+        };
       }
       case "click": {
         const spent = await gate("click", c, wait);
