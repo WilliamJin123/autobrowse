@@ -357,7 +357,29 @@ const conversations = z.object({
 const pageMessage = z.object({
   pageId: id,
   recipient: z.union([z.object({ id }), z.object({ comment_id: id })]),
-  message: z.object({ text: z.string().min(1).max(2000) }),
+  message: z.union([
+    z.object({ text: z.string().min(1).max(2000) }),
+    // One button template (wren designs/2026-11-04-meta-push-flows.md): its tap opens the 24h window.
+    z.object({
+      attachment: z.object({
+        type: z.literal("template"),
+        payload: z.object({
+          template_type: z.literal("button"),
+          text: z.string().min(1).max(640),
+          buttons: z
+            .array(
+              z.object({
+                type: z.literal("postback"),
+                title: z.string().min(1).max(20),
+                payload: z.string().min(1).max(1000),
+              }),
+            )
+            .min(1)
+            .max(3),
+        }),
+      }),
+    }),
+  ]),
   messaging_type: z.enum(["RESPONSE", "UPDATE", "MESSAGE_TAG"]).optional(),
   tag: z.string().optional(),
 });
@@ -1061,7 +1083,7 @@ export const meta: SiteApi = {
       request: pageMessage,
       irreversible: true,
       verify: {
-        words: (b) => b.message.text,
+        words: (b) => ("text" in b.message ? b.message.text : b.message.attachment.payload.text),
         read: async (b, look): Promise<VerifyRead> => {
           // To a person: their one conversation (Messenger or Instagram). From a comment's
           // Private Reply: who the person is is not in the input, so the newest conversations.

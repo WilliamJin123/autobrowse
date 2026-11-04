@@ -894,6 +894,32 @@ describe("meta", () => {
     );
     expect(r.seen.seen).toBe("unclear");
   });
+
+  it("DM: a private reply with a button template is checked by its text", async () => {
+    const r = await run(
+      "meta",
+      "POST",
+      "/{pageId}/messages",
+      {
+        pageId: PAGE,
+        recipient: { comment_id: "55" },
+        message: {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "button",
+              text: "Here is the link you asked for.",
+              buttons: [{ type: "postback", title: "Send it", payload: "kw:1" }],
+            },
+          },
+        },
+      },
+      {
+        [`GET /${PAGE}/conversations`]: { data: [] },
+      },
+    );
+    expect(r.seen.seen).toBe("unclear");
+  });
 });
 
 describe("instagram", () => {
