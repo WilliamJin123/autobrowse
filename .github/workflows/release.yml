@@ -38,7 +38,9 @@ jobs:
           ls win32-x64/overlay-host.exe win32-arm64/overlay-host.exe
           ls -lR
       - name: the package holds every host
-        run: npm pack --dry-run 2>&1 | grep overlay-host
+        run: |
+          npm pack --dry-run 2>&1 | grep overlay-host
+          test "$(npm pack --dry-run 2>&1 | grep -c overlay-host)" -eq 6
       # A tag for a version already on npm is history, not a release: stop quietly.
       - id: published
         run: |
