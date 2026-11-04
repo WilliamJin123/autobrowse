@@ -115,8 +115,8 @@ type Valued<F extends Facets> = Values<F> | ((now: number) => Values<F>);
 
 export interface FacetSet<F extends Facets = Facets> {
   site: string;
-  /** the route it feeds: `GET /search/results/content` */
-  route: string;
+  /** every route it feeds, `<site> <METHOD> <path>`; a derived site (reddit-public) lists its own */
+  routes: string[];
   /** the surface in the platform's words */
   label: string;
   facets: F;
@@ -219,7 +219,7 @@ export const rowOf = (name: string, f: Facet): FacetRow => ({
 /** A set as plain data: what a UI draws its controls from; presets as they resolve at `now`. */
 export const catalogOf = (s: FacetSet, now = Date.now()) => ({
   site: s.site,
-  route: s.route,
+  routes: s.routes,
   label: s.label,
   facets: Object.entries(s.facets).map(([n, f]) => rowOf(n, f)),
   presets: Object.fromEntries(

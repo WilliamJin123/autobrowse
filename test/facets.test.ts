@@ -80,6 +80,8 @@ describe("facets", () => {
   it("the catalog is plain data with the UI's labels", () => {
     const rows = FACET_SETS.map((s) => catalogOf(s, NOW));
     expect(JSON.parse(JSON.stringify(rows))).toEqual(rows);
+    // A derived site lists its route too, so a reader of the catalog finds reddit-public's search.
+    expect(catalogOf(REDDIT_SEARCH).routes).toContain("reddit-public GET /search");
     const sort = catalogOf(LINKEDIN_POSTS).facets.find((f) => f.name === "sortBy");
     expect(sort).toMatchObject({
       label: "Sort by",

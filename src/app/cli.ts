@@ -293,7 +293,7 @@ program
     const sets = FACET_SETS.filter((s) => !site || s.site === site).map(catalogOf);
     if (o.json) return console.log(JSON.stringify(sets));
     for (const s of sets) {
-      console.log(`\n${bold(`${s.site} ${s.label}`)} ${dim(s.route)}`);
+      console.log(`\n${bold(`${s.site} ${s.label}`)} ${dim(s.routes.join(", "))}`);
       for (const line of columns(
         s.facets.map((f) => [
           f.name,

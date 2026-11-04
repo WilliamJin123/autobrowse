@@ -90,6 +90,8 @@ How each platform's search offers filters. "API" wins where it covers the surfac
 - birdwatch (engine, birdwatch dev session): `Query.preset` passed to each source's route as `preset`; a source whose route lacks it says so.
 - Instagram hashtag Graph route `meta GET /instagram/tags/{tag}` is built; Meta answers code 10 until the Public Content Access review (proven 2026-11-03). Threads `keyword_search` returned only our own posts (7 of 7, 2026-11-03).
 - LinkedIn id filters (author company, industry, from member, mentions) and people filters (geo, industry, past company, language) wait for the live panel audit: the desk held linkedin@wren.
+- Live, 2026-11-04 after the desk took 42cd6af: YouTube `GET /youtube/v3/search?preset=top-month` returned view-count order inside 30 days (api facets proven). A Reddit search from the CLI answered 403 with and without a preset (0 acts, 3.5 s, run locally on the reddit@wren profile in the minutes between desk restarts); whether that run was signed in is unproven, and the desk's own signed-in reads passed all day. The same answer with no facet input says it is not the preset; a desk-side search read is the proof still owed.
+- Overlay, same day: Google's Trusted Types dropped the panel's buttons (icons by innerHTML) and our portal's `style-src` dropped its styles (a `<style>` node). Both fixed in 42cd6af (DOM calls, constructed sheets). The rebuild that ends this class of break is WA-1035.
 
 ## Decision log
 

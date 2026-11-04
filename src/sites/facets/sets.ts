@@ -14,7 +14,7 @@ export const LINKEDIN_JSON = (v: unknown) => JSON.stringify(v);
 
 export const LINKEDIN_POSTS = facetSet({
   site: "linkedin",
-  route: "GET /search/results/content",
+  routes: ["linkedin GET /search/results/content"],
   label: "Posts search",
   facets: {
     datePosted: one(
@@ -53,7 +53,7 @@ export const LINKEDIN_POSTS = facetSet({
 
 export const LINKEDIN_PEOPLE = facetSet({
   site: "linkedin",
-  route: "GET /search/results/people",
+  routes: ["linkedin GET /search/results/people"],
   label: "People search",
   facets: {
     network: many("Connections", { F: "1st", S: "2nd", O: "3rd+" }),
@@ -63,7 +63,7 @@ export const LINKEDIN_PEOPLE = facetSet({
 
 export const X_SEARCH = facetSet({
   site: "x",
-  route: "GET /2/tweets/search/recent",
+  routes: ["x GET /2/tweets/search/recent"],
   label: "Search",
   facets: {
     sort_order: one(
@@ -92,7 +92,7 @@ export const X_SEARCH = facetSet({
 
 export const THREADS_SEARCH = facetSet({
   site: "instagram",
-  route: "GET /web/threads/search",
+  routes: ["instagram GET /web/threads/search"],
   label: "Threads search",
   facets: {
     search_type: one(
@@ -112,7 +112,7 @@ export const THREADS_SEARCH = facetSet({
 
 export const REDDIT_SEARCH = facetSet({
   site: "reddit",
-  route: "GET /r/{subreddit}/search",
+  routes: ["reddit GET /r/{subreddit}/search", "reddit GET /search", "reddit-public GET /search"],
   label: "Search",
   facets: {
     sort: one(
@@ -141,7 +141,7 @@ export const REDDIT_SEARCH = facetSet({
 
 export const GOOGLE_SEARCH = facetSet({
   site: "web",
-  route: "GET /google",
+  routes: ["web GET /google"],
   label: "Google search",
   facets: {
     qdr: one(
@@ -163,7 +163,7 @@ const api = { via: "api" } as const;
 
 export const YOUTUBE_SEARCH = facetSet({
   site: "youtube",
-  route: "GET /youtube/v3/search",
+  routes: ["youtube GET /youtube/v3/search"],
   label: "Search",
   facets: {
     type: one("Type", { video: "Video", channel: "Channel", playlist: "Playlist" }, api),
@@ -217,7 +217,7 @@ export const YOUTUBE_SEARCH = facetSet({
 
 export const INSTAGRAM_TAGS = facetSet({
   site: "meta",
-  route: "GET /instagram/tags/{tag}",
+  routes: ["meta GET /instagram/tags/{tag}"],
   label: "Hashtag",
   facets: {
     edge: one(
