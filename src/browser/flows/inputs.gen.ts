@@ -157,6 +157,24 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   entry(
     googleSearch,
     z.object({
+      preset: z
+        .union([
+          z.literal("latest"),
+          z.literal("top"),
+          z.literal("day"),
+          z.literal("week"),
+          z.literal("month"),
+          z.literal("year"),
+          z.literal("latest-day"),
+          z.literal("latest-week"),
+          z.literal("latest-month"),
+          z.literal("latest-year"),
+          z.literal("top-day"),
+          z.literal("top-week"),
+          z.literal("top-month"),
+          z.literal("top-year"),
+        ])
+        .optional(),
       q: z.string(),
       n: z.number().optional(),
       hl: z.string().optional(),
@@ -303,6 +321,25 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       page: z.number().optional(),
       pages: z.number().optional(),
       network: z.array(z.union([z.literal("F"), z.literal("S"), z.literal("O")])).optional(),
+      currentCompany: z.array(z.string()).optional(),
+      preset: z
+        .union([
+          z.literal("latest"),
+          z.literal("top"),
+          z.literal("day"),
+          z.literal("week"),
+          z.literal("month"),
+          z.literal("year"),
+          z.literal("latest-day"),
+          z.literal("latest-week"),
+          z.literal("latest-month"),
+          z.literal("latest-year"),
+          z.literal("top-day"),
+          z.literal("top-week"),
+          z.literal("top-month"),
+          z.literal("top-year"),
+        ])
+        .optional(),
     }),
     true,
   ),
@@ -311,10 +348,24 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     z.object({
       keywords: z.string(),
       max: z.number().optional(),
-      since: z
-        .union([z.literal("past-24h"), z.literal("past-week"), z.literal("past-month")])
+      preset: z
+        .union([
+          z.literal("latest"),
+          z.literal("top"),
+          z.literal("day"),
+          z.literal("week"),
+          z.literal("month"),
+          z.literal("year"),
+          z.literal("latest-day"),
+          z.literal("latest-week"),
+          z.literal("latest-month"),
+          z.literal("latest-year"),
+          z.literal("top-day"),
+          z.literal("top-week"),
+          z.literal("top-month"),
+          z.literal("top-year"),
+        ])
         .optional(),
-      authorTitle: z.string().optional(),
     }),
     true,
   ),
@@ -454,7 +505,32 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(threadsReply, z.object({ username: z.string(), code: z.string(), text: z.string() }), true),
-  entry(threadsSearch, z.object({ q: z.string(), max: z.number().optional() }), true),
+  entry(
+    threadsSearch,
+    z.object({
+      q: z.string(),
+      max: z.number().optional(),
+      preset: z
+        .union([
+          z.literal("latest"),
+          z.literal("top"),
+          z.literal("day"),
+          z.literal("week"),
+          z.literal("month"),
+          z.literal("year"),
+          z.literal("latest-day"),
+          z.literal("latest-week"),
+          z.literal("latest-month"),
+          z.literal("latest-year"),
+          z.literal("top-day"),
+          z.literal("top-week"),
+          z.literal("top-month"),
+          z.literal("top-year"),
+        ])
+        .optional(),
+    }),
+    true,
+  ),
   entry(
     tiktokComment,
     z.object({ videoId: z.string(), username: z.string().optional(), text: z.string() }),
@@ -535,11 +611,29 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   entry(
     xSearch,
     z.object({
-      query: z.string(),
       max_results: z.number().optional(),
       since_id: z.string().optional(),
       exclude: z.string().optional(),
       expansions: z.string().optional(),
+      query: z.string(),
+      preset: z
+        .union([
+          z.literal("latest"),
+          z.literal("top"),
+          z.literal("day"),
+          z.literal("week"),
+          z.literal("month"),
+          z.literal("year"),
+          z.literal("latest-day"),
+          z.literal("latest-week"),
+          z.literal("latest-month"),
+          z.literal("latest-year"),
+          z.literal("top-day"),
+          z.literal("top-week"),
+          z.literal("top-month"),
+          z.literal("top-year"),
+        ])
+        .optional(),
     }),
     true,
   ),

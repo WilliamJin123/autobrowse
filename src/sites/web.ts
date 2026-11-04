@@ -41,6 +41,8 @@ import {
   search,
   WebMiss,
 } from "../reach/web.js";
+import { fields } from "./facets/core.js";
+import { GOOGLE_SEARCH } from "./facets/sets.js";
 import { proofShotRoute } from "./proof.js";
 import { type ApiLeg, route, type SiteApi, SiteError } from "./types.js";
 
@@ -211,7 +213,7 @@ export const web: SiteApi = {
       method: "GET",
       path: "/google",
       summary:
-        "Google's page for `q` (`n` results, default 10, up to 30; `gl` country, `hl` language): the AI Overview and its sources, every organic result, ads, People also ask. A browser leg: call it on the desk",
+        "Google's page for `q` (`n` results, default 10, up to 30; `gl` country, `hl` language; `qdr` h|d|w|m|y: Google's Tools time filter, or `preset` day|week|month|year): the AI Overview and its sources, every organic result, ads, People also ask. A browser leg: call it on the desk",
       request: z.object({
         q: z.string().min(1),
         n: z.coerce.number().int().min(1).max(30).default(10),
@@ -223,6 +225,7 @@ export const web: SiteApi = {
           .string()
           .regex(/^[a-z]{2}$/)
           .optional(),
+        ...fields(GOOGLE_SEARCH),
       }),
       meter: ({ n }) => ({ google: Math.ceil(n / 10) }),
       browser: { flow: "web/google" },

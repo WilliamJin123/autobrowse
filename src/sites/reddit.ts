@@ -9,6 +9,8 @@
  * capped per account like a person posting.
  */
 import { z } from "zod";
+import { fields, presetWords, resolve } from "./facets/core.js";
+import { REDDIT_SEARCH } from "./facets/sets.js";
 import { route, type SiteApi, SiteError } from "./types.js";
 import type { VerifyGet, VerifyRead, VerifyRow } from "./verdict.js";
 import { arr, isoOf, rec, sameName, str, text, unclear } from "./verify-kit.js";
@@ -89,8 +91,7 @@ const listing = z.object({
 const srSearch = z.object({
   subreddit: z.string().regex(/^[A-Za-z0-9_]{2,21}$/),
   q: z.string().min(1).max(512),
-  sort: z.enum(["relevance", "hot", "top", "new", "comments"]).default("new"),
-  t: z.enum(["hour", "day", "week", "month", "year", "all"]).default("month"),
+  ...fields(REDDIT_SEARCH),
   limit,
   after: z.string().optional(),
   restrict_sr: z.literal("on").default("on"),
@@ -261,9 +262,12 @@ export const reddit: SiteApi = {
       meter: () => ({ reads: 1 }),
       browser: {
         flow: read,
-        input: ({ subreddit, ...q }) => ({ path: `/r/${subreddit}/search`, query: query(q) }),
+        input: ({ subreddit, ...q }) => ({
+          path: `/r/${subreddit}/search`,
+          query: query(resolve(REDDIT_SEARCH, q)),
+        }),
       },
-      summary: "Posts in one subreddit matching `q` (`sort`, `t`, `limit`, `after`)",
+      summary: `Posts in one subreddit matching \`q\` (\`sort\` default new, \`t\` default month, \`limit\`, \`after\`; ${presetWords(REDDIT_SEARCH)})`,
     }),
     route({
       method: "GET",
@@ -332,8 +336,11 @@ export const reddit: SiteApi = {
       path: "/search",
       request: search,
       meter: () => ({ reads: 1 }),
-      browser: { flow: read, input: (q) => ({ path: "/search", query: query(q) }) },
-      summary: "Posts (or `type=sr` subreddits, `type=user` accounts) matching `q` site-wide",
+      browser: {
+        flow: read,
+        input: (q) => ({ path: "/search", query: query(resolve(REDDIT_SEARCH, q)) }),
+      },
+      summary: `Posts (or \`type=sr\` subreddits, \`type=user\` accounts) matching \`q\` site-wide (\`sort\`, \`t\`; ${presetWords(REDDIT_SEARCH)})`,
     }),
     route({
       method: "GET",

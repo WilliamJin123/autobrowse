@@ -380,6 +380,33 @@ describe("headed overlay", () => {
     }
   });
 
+  it("draws, styled, under a strict CSP: Trusted Types (Google), no inline style (our portal)", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tt.test/", (r) =>
+        r.fulfill({
+          contentType: "text/html",
+          headers: {
+            "content-security-policy": "require-trusted-types-for 'script'; style-src 'self'",
+          },
+          body: PAGE,
+        }),
+      );
+      await page.goto("https://tt.test/");
+      const o = overlayFor(true);
+      await o.set(page, { goal: "x" });
+      expect(
+        await page.evaluate(
+          `[...${ui}.tuiEl.querySelectorAll('.bar [data-a]')].map((e) => e.getAttribute('data-a'))`,
+        ),
+      ).toEqual(["look", "marks", "theme", "min"]);
+      expect(await page.evaluate(`getComputedStyle(${ui}.tuiEl).borderRadius`)).toBe("14px");
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("draws nothing when off", async () => {
     const browser = await chromium.launch();
     try {

@@ -130,7 +130,7 @@ describe("linkedin posts: a card", () => {
   });
 
   it("urls: search filters quoted and newest first; the company Posts tab", () => {
-    expect(postsSearchUrl("staffing agency", "past-24h")).toBe(
+    expect(postsSearchUrl({ keywords: "staffing agency", datePosted: "past-24h" })).toBe(
       `${WEB}/search/results/content/?keywords=staffing+agency&datePosted=%22past-24h%22&sortBy=%22date_posted%22`,
     );
     expect(companyPostsUrl("sample-co")).toBe(`${WEB}/company/sample-co/posts/?feedView=all`);
@@ -322,7 +322,7 @@ describe("linkedin posts: the flows and the routes", () => {
       [CLASSIC, SDUI, noUrn],
     ]);
     const out = await linkedinSearchPosts.run(fp, { keywords: "staffing", max: 5 });
-    expect(opened).toEqual([postsSearchUrl("staffing", "past-week")]);
+    expect(opened).toEqual([postsSearchUrl({ keywords: "staffing", datePosted: "past-week" })]);
     expect(out.posts.map((p) => p.urn)).toEqual(["urn:li:activity:7001", "urn:li:ugcPost:7002"]);
     expect(out.dropped).toBe(1);
     expect(acts).toEqual([]);
@@ -513,7 +513,7 @@ describe("linkedin posts: the flows and the routes", () => {
       as,
     );
     expect(seen).toEqual([
-      'search-posts {"keywords":"ria","max":20,"since":"past-week"}',
+      'search-posts {"keywords":"ria","max":20}',
       'company-posts {"company":"sample-co","max":5}',
       'post {"urn":"urn:li:activity:7001"}',
       'list-posts {"author":"urn:li:person:abc","count":100,"start":0}',
@@ -522,7 +522,22 @@ describe("linkedin posts: the flows and the routes", () => {
       sites.call("linkedin", "GET", "/search/results/content", { keywords: "x", max: 101 }, as),
     ).rejects.toThrow();
     await expect(
-      sites.call("linkedin", "GET", "/search/results/content", { keywords: "x", since: "y" }, as),
+      sites.call(
+        "linkedin",
+        "GET",
+        "/search/results/content",
+        { keywords: "x", datePosted: "y" },
+        as,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      sites.call(
+        "linkedin",
+        "GET",
+        "/search/results/content",
+        { keywords: "x", since: "past-week" },
+        as,
+      ),
     ).rejects.toThrow();
   });
 

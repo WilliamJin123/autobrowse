@@ -10,6 +10,8 @@ import { z } from "zod";
 import { POST_URN } from "../browser/flows/linkedin-post-analytics.js";
 import { type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { fields, presetWords } from "./facets/core.js";
+import { LINKEDIN_PEOPLE, LINKEDIN_POSTS } from "./facets/sets.js";
 import { pollWaits } from "./poll.js";
 import {
   type ApiLeg,
@@ -170,9 +172,7 @@ const peopleSearch = z.object({
   keywords: z.string().min(1),
   page: z.coerce.number().int().min(1).max(100).default(1),
   pages: z.coerce.number().int().min(1).max(10).default(1),
-  network: z
-    .preprocess((v) => (typeof v === "string" ? v.split(",") : v), z.array(z.enum(["F", "S", "O"])))
-    .optional(),
+  ...fields(LINKEDIN_PEOPLE),
 });
 const flag = z.preprocess((v) => v === true || v === "true", z.boolean()).default(false);
 const inbox = z.object({
@@ -207,13 +207,14 @@ const activity = z.object({
   max: z.coerce.number().int().min(1).max(100).default(20),
 });
 const postsMax = z.coerce.number().int().min(1).max(100).default(20);
-const searchPosts = z.object({
-  keywords: z.string().min(1).max(200),
-  max: postsMax,
-  since: z.enum(["past-24h", "past-week", "past-month"]).default("past-week"),
-  /** Only authors whose job title says this ("founder"). */
-  authorTitle: z.string().trim().min(1).max(100).optional(),
-});
+/** Strict: an old or misspelt filter name (`since`) is a 400, not a search with no filter. */
+const searchPosts = z
+  .object({
+    keywords: z.string().min(1).max(200),
+    max: postsMax,
+    ...fields(LINKEDIN_POSTS),
+  })
+  .strict();
 const companyPosts = z.object({ company: handle, max: postsMax });
 
 interface VideoInit {
@@ -717,7 +718,7 @@ export const linkedin: SiteApi = {
       method: "GET",
       path: "/search/results/people",
       summary:
-        "People search (`keywords`, `page`, `pages`, `network` F/S/O): name, headline, location, the role that matched, profile handle",
+        "People search (`keywords`, `page`, `pages`; LinkedIn's own filters, `autobrowse facets linkedin`: `network` F/S/O, `currentCompany` ids): name, headline, location, the role that matched, profile handle",
       request: peopleSearch,
       meter: (q) => ({ search: q.pages }),
       browser: { flow: "linkedin/search-people" },
@@ -833,8 +834,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/search/results/content",
-      summary:
-        "Posts for a keyword, newest first (`keywords`, `max` default 20 up to 100, `since` past-24h|past-week|past-month): urn, author, authorUrl, headline, text, age, reactions, comments, url, raw; `dropped` counts cards with no post urn. Reads only",
+      summary: `Posts for a keyword, newest first in the past week by default (\`keywords\`, \`max\` default 20 up to 100; ${presetWords(LINKEDIN_POSTS)}; LinkedIn's own filters, \`autobrowse facets linkedin\`: \`sortBy\`, \`datePosted\`, \`contentType\`, \`postedBy\`, \`authorJobTitle\`): urn, author, authorUrl, headline, text, age, reactions, comments, url, raw; \`dropped\` counts cards with no post urn. Reads only`,
       request: searchPosts,
       meter: () => ({ posts: 1 }),
       browser: { flow: "linkedin/search-posts" },

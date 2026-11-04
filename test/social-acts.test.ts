@@ -85,11 +85,11 @@ describe("social act routes", () => {
   });
 
   it("filters LinkedIn's post search by the author's title", () => {
-    const u = new URL(postsSearchUrl("staffing agency", "past-week", "founder"));
+    const u = new URL(postsSearchUrl({ keywords: "staffing agency", authorJobTitle: "founder" }));
     expect(u.searchParams.get("authorJobTitle")).toBe('"founder"');
-    expect(new URL(postsSearchUrl("staffing agency")).searchParams.has("authorJobTitle")).toBe(
-      false,
-    );
+    expect(
+      new URL(postsSearchUrl({ keywords: "staffing agency" })).searchParams.has("authorJobTitle"),
+    ).toBe(false);
   });
 });
 

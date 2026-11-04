@@ -33,6 +33,8 @@
  * JSON call to read instead. The Posts tab ignores `sortBy` in its URL
  * (it opens on "Top"), so the flow picks Recent in its menu.
  */
+import { apply, type FacetInput } from "../../sites/facets/core.js";
+import { LINKEDIN_JSON, LINKEDIN_POSTS } from "../../sites/facets/sets.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
 import { scrollCollect } from "../scroll-collect.js";
@@ -320,16 +322,11 @@ export const READ_POSTS = `(() => {
     });
 })()`;
 
-export type PostsSince = "past-24h" | "past-week" | "past-month";
-
-export interface SearchPostsInput {
+export type SearchPostsInput = {
   keywords: string;
   /** How many from the top, newest first (default 20). */
   max?: number;
-  since?: PostsSince;
-  /** Only authors whose title says this ("founder"): LinkedIn's own Author job title filter. */
-  authorTitle?: string;
-}
+} & FacetInput<typeof LINKEDIN_POSTS>;
 
 export interface CompanyPostsInput {
   company: string;
@@ -352,18 +349,11 @@ const FOOT = `(() => {
   return { atFoot: e.scrollTop + innerHeight >= e.scrollHeight - 200, height: e.scrollHeight, tail: t.slice(-400) };
 })()`;
 
-/** LinkedIn's own query: filters quoted (`datePosted="past-week"`), newest first. */
-export const postsSearchUrl = (
-  keywords: string,
-  since: PostsSince = "past-week",
-  authorTitle?: string,
-): string => {
+/** LinkedIn's own query, its facets JSON-quoted (`datePosted="past-week"`); newest first unless `sortBy`. */
+export const postsSearchUrl = (i: SearchPostsInput): string => {
   const u = new URL(`${WEB}/search/results/content/`);
-  u.searchParams.set("keywords", keywords);
-  u.searchParams.set("datePosted", JSON.stringify(since));
-  u.searchParams.set("sortBy", JSON.stringify("date_posted"));
-  if (authorTitle?.trim()) u.searchParams.set("authorJobTitle", JSON.stringify(authorTitle.trim()));
-  return u.toString();
+  u.searchParams.set("keywords", i.keywords);
+  return apply(u, LINKEDIN_POSTS, i, { encode: LINKEDIN_JSON }).toString();
 };
 
 /**
@@ -440,8 +430,7 @@ export async function readPosts(
 export const linkedinSearchPosts = defineFlow<SearchPostsInput, Posts>({
   site: "linkedin",
   name: "search-posts",
-  run: (fp, input) =>
-    readPosts(fp, postsSearchUrl(input.keywords, input.since, input.authorTitle), input.max ?? 20),
+  run: (fp, input) => readPosts(fp, postsSearchUrl(input), input.max ?? 20),
 });
 
 export const linkedinCompanyPosts = defineFlow<CompanyPostsInput, Posts>({

@@ -13,6 +13,8 @@ import { z } from "zod";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import type { Amount } from "../gates/spend.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { fields, resolve } from "./facets/core.js";
+import { INSTAGRAM_TAGS } from "./facets/sets.js";
 import { WEB_REDIRECT } from "./oauth.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi, SiteError } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead, VerifyRow } from "./verdict.js";
@@ -310,6 +312,17 @@ const igComments = z.object({
   ...page,
 });
 /** Instagram usernames: letters, digits, `.` and `_`, up to 30. */
+/** A hashtag's posts: Graph's Hashtag Search (Instagram Public Content Access). */
+const igHashtag = z.object({
+  tag: z.string().regex(/^[\p{L}\p{N}_]{1,100}$/u, "a hashtag, no #"),
+  /** `top_media` (most liked) or `recent_media` (last 24 hours, newest first): the app's own two tabs. */
+  ...fields(INSTAGRAM_TAGS),
+  limit: z.coerce.number().int().min(1).max(50).default(25),
+  after: z
+    .string()
+    .regex(/^[A-Za-z0-9_=-]{1,512}$/)
+    .optional(),
+});
 const igLookup = z.object({
   username: z.string().regex(/^[A-Za-z0-9._]{1,30}$/, "an Instagram username"),
   /** The page after this one: a previous answer's `next`. */
@@ -589,6 +602,37 @@ export const meta: SiteApi = {
       summary: "The Pages the person admins, each with its Instagram professional account id",
       request: pages,
       api: (q, leg) => get(leg, "me/accounts", q),
+    }),
+    route({
+      method: "GET",
+      path: "/instagram/tags/{tag}",
+      summary:
+        "Public Instagram posts on a hashtag (`edge` recent_media: last 24 h, newest first; top_media: most liked; `limit` up to 50, `after`): `{ tag, id, data, next }`. Graph caps 30 distinct hashtags a week per account. Meta refuses it (code 10) until its Instagram Public Content Access review passes",
+      request: igHashtag,
+      meter: () => ({ reads: 1 }),
+      api: async (q, leg) => {
+        const { tag, edge, limit, after } = resolve(INSTAGRAM_TAGS, q) as typeof q & {
+          edge: string;
+        };
+        const user_id = await igUserOf(leg);
+        const found = (await get(leg, "ig_hashtag_search", { user_id, q: tag })) as {
+          data?: { id: string }[];
+        };
+        const id = found.data?.[0]?.id;
+        if (!id) return { tag, id: null, data: [], next: null };
+        const page = (await get(leg, `${id}/${edge}`, {
+          user_id,
+          fields: IG_MEDIA,
+          limit,
+          after,
+        })) as { data?: unknown[]; paging?: { cursors?: { after?: string }; next?: string } };
+        return {
+          tag,
+          id,
+          data: page.data ?? [],
+          next: page.paging?.next ? (page.paging.cursors?.after ?? null) : null,
+        };
+      },
     }),
     route({
       method: "GET",

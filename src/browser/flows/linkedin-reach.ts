@@ -20,6 +20,8 @@
  * so and the act is never repaired.
  */
 import { decodeHTML } from "entities";
+import { apply, type FacetInput } from "../../sites/facets/core.js";
+import { LINKEDIN_JSON, LINKEDIN_PEOPLE } from "../../sites/facets/sets.js";
 import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
@@ -198,20 +200,18 @@ async function waitRows(
   return fp.human(`no ${what} at ${fp.url()} (${shapeWords(await shapeOf(fp))})`);
 }
 
-export interface SearchPeopleInput {
+export type SearchPeopleInput = {
   keywords: string;
   /** First results page, 1-based. */
   page?: number;
   /** How many pages from there (10 people a page). */
   pages?: number;
-  /** Connection degree: F = 1st, S = 2nd, O = 3rd+. */
-  network?: Array<"F" | "S" | "O">;
-}
+} & FacetInput<typeof LINKEDIN_PEOPLE>;
 
 export const searchUrl = (i: SearchPeopleInput, page: number): string => {
   const u = new URL(`${WEB}/search/results/people/`);
   u.searchParams.set("keywords", i.keywords);
-  if (i.network?.length) u.searchParams.set("network", JSON.stringify(i.network));
+  apply(u, LINKEDIN_PEOPLE, i, { encode: LINKEDIN_JSON });
   if (page > 1) u.searchParams.set("page", String(page));
   return u.toString();
 };

@@ -12,6 +12,8 @@ import { basename, extname } from "node:path";
 import { z } from "zod";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { fields, presetWords, resolve } from "./facets/core.js";
+import { X_SEARCH } from "./facets/sets.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
 import type { VerifyRead, VerifyRow } from "./verdict.js";
 import { arr, isoOf, rec, str, text, unclear, withoutLinks } from "./verify-kit.js";
@@ -97,6 +99,7 @@ const search = z.object({
   "user.fields": z.string().default("username,name"),
   next_token: z.string().optional(),
   since_id: id.optional(),
+  ...fields(X_SEARCH),
 });
 const upload = z.object({
   /** A local image or video file. */
@@ -426,13 +429,12 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/tweets/search/recent",
-      summary:
-        "Latest posts matching `query` (X search operators, `max_results`, `since_id` cursor; free: the signed-in page)",
+      summary: `Posts matching \`query\` (X search operators, \`max_results\`, \`since_id\` cursor; X's own \`sort_order\` recency (default)|relevancy, \`start_time\`, \`end_time\`; ${presetWords(X_SEARCH)}; free: the signed-in page)`,
       request: search,
       prefer: "browser",
       meter: () => ({ search: 1 }),
       browser: { flow: "x/search" },
-      api: (q, leg) => get(leg, "/2/tweets/search/recent", q),
+      api: (q, leg) => get(leg, "/2/tweets/search/recent", resolve(X_SEARCH, q)),
     }),
     route({
       method: "POST",

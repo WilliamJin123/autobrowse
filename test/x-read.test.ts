@@ -116,10 +116,20 @@ describe("x page parsers", () => {
     ]);
   });
 
-  it("search is Latest", () => {
-    expect(searchUrl("from:stripe ai")).toBe(
+  it("search is Latest; sort_order and times on the page", () => {
+    expect(searchUrl({ query: "from:stripe ai" })).toBe(
       "https://x.com/search?q=from%3Astripe+ai&f=live&src=typed_query",
     );
+    const u = new URL(
+      searchUrl({
+        query: "ai",
+        sort_order: "relevancy",
+        start_time: "2026-11-01T00:00:00Z",
+        end_time: "2026-11-02T00:00:00Z",
+      }),
+    );
+    expect(u.searchParams.get("f")).toBe("top");
+    expect(u.searchParams.get("q")).toBe("ai since_time:1793491200 until_time:1793577600");
   });
 });
 

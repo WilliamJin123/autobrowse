@@ -15,6 +15,8 @@
  * the read repeats until they are in and the answer stops growing. Class names are Google's obfuscated ones, so each read has a
  * structural fallback (an `a h3`, the longest text block, a `data-q`).
  */
+import { apply, type FacetInput } from "../../sites/facets/core.js";
+import { GOOGLE_SEARCH } from "../../sites/facets/sets.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 
 export const GOOGLE = "https://www.google.com";
@@ -26,7 +28,7 @@ const PER_PAGE = 10;
 const MAX_PAGES = 3;
 const RESOLVE_AT_ONCE = 6;
 
-export interface SearchInput {
+export type SearchInput = FacetInput<typeof GOOGLE_SEARCH> & {
   q: string;
   /** Organic results wanted, 1-30: past 10, the next pages are read too. */
   n?: number;
@@ -34,7 +36,7 @@ export interface SearchInput {
   hl?: string;
   /** Country (`gl`), e.g. us or ca; unset, Google picks by IP. */
   gl?: string;
-}
+};
 
 export interface Source {
   title: string;
@@ -177,7 +179,7 @@ export function searchUrl(i: SearchInput, page = 0): string {
   const q = new URLSearchParams({ q: i.q, hl: i.hl ?? "en" });
   if (i.gl) q.set("gl", i.gl);
   if (page) q.set("start", String(page * PER_PAGE));
-  return `${GOOGLE}/search?${q}`;
+  return apply(new URL(`${GOOGLE}/search?${q}`), GOOGLE_SEARCH, i).toString();
 }
 
 /**

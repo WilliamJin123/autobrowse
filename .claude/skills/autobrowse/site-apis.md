@@ -27,6 +27,18 @@ autobrowse site renew [--dry]            # refresh what is due
   opens a browser in the signed-in profile.
 - Keys and tokens land in the env store (accounts.md), never in your output.
 
+## Search filters
+
+Search routes (LinkedIn posts and people, X, Threads, Reddit, Google, YouTube) run
+the platform's default search with no filter input: send nothing you don't need.
+
+- `preset` for a common shape, one grammar everywhere: `latest` or `top`, `day`,
+  `week`, `month` or `year`, or paired (`top-week`). A surface takes only the
+  presets it can honor exactly; any other is a 400 naming the ones it takes.
+- Anything else: the platform's own filter names (`contentType`, `postedBy`,
+  `sort_order`, `videoDuration`). `autobrowse facets <site>` lists them with
+  their values and the UI's labels. An explicit filter beats the preset's.
+
 Same facade elsewhere: `/api/sites/<site>/<path>` over HTTP, Restate service
 `sites` (`call`, `status`, `setup`, `renew`) for wren. Legs a site refuses from
 the box's IP run on the Mac's desk (`desk/call`).

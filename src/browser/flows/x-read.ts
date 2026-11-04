@@ -16,6 +16,8 @@
  * scrolling (`scrollCollect`).
  */
 import type { Response } from "playwright";
+import { apply, type FacetInput } from "../../sites/facets/core.js";
+import { X_SEARCH } from "../../sites/facets/sets.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import { scrollCollect } from "../scroll-collect.js";
 import { signedInAs } from "./x-act.js";
@@ -525,18 +527,21 @@ export const xPosts = defineFlow<PostsInput, unknown>({
       : withReplies(fp, i.id, i),
 });
 
-export interface SearchInput extends Feed {
-  query: string;
-}
+export type SearchInput = Feed & { query: string } & FacetInput<typeof X_SEARCH>;
 
-/** Latest first (`f=live`), the order the API's recent search answers in. */
-export const searchUrl = (query: string): string =>
-  `${WEB}/search?${new URLSearchParams({ q: query, f: "live", src: "typed_query" })}`;
+/** The API's names on the page: `sort_order` → Latest/Top tab (`f`), times → `since_time:` operators. */
+export const searchUrl = (i: { query: string } & FacetInput<typeof X_SEARCH>): string => {
+  const u = new URL(`${WEB}/search`);
+  u.searchParams.set("q", i.query);
+  apply(u, X_SEARCH, i);
+  u.searchParams.set("src", "typed_query");
+  return u.toString();
+};
 
 export const xSearch = defineFlow<SearchInput, unknown>({
   site: "x",
   name: "search",
-  run: (fp, i) => feed(fp, searchUrl(i.query), i),
+  run: (fp, i) => feed(fp, searchUrl(i), i),
 });
 
 /**

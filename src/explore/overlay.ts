@@ -416,9 +416,12 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   const host = el('div', null, null, 'position:fixed;inset:0;z-index:2147483647;pointer-events:none');
   host.setAttribute('${attr}', '');
   const root = host.attachShadow({ mode: 'closed' });
-  const style = el('style', null, ${JSON.stringify(CSS)});
+  // Constructed sheets, not <style>: a page CSP without 'unsafe-inline' (our portal) blocks <style>.
+  const style = new CSSStyleSheet();
+  style.replaceSync(${JSON.stringify(CSS)});
   // The running command's phase words: one keyframes rule, swapped per command.
-  const phase = el('style');
+  const phase = new CSSStyleSheet();
+  let phaseKeys = '';
   const marks = el('div');
   // Folded: a tab peeking from the left edge, the page free around it.
   const tab = el('div', 'tab');
@@ -434,9 +437,12 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   }
   const wrap = el('div', 'wrap');
   wrap.append(marks, tab, tui);
-  root.append(style, phase, wrap);
+  root.adoptedStyleSheets = [style, phase];
+  root.append(wrap);
   const ICONS = ${JSON.stringify(ICONS)};
-  const icon = (d) => { const e = el('span'); e.innerHTML = '<svg viewBox="0 0 24 24"><path d="' + d + '"/></svg>'; return e.firstChild; };
+  // DOM calls, not innerHTML: Trusted Types pages (Google) throw on it and the draw stops.
+  const NS = 'http://www.w3.org/2000/svg';
+  const icon = (d) => { const s = document.createElementNS(NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); s.appendChild(p); return s; };
   const dark = () => ui.theme ? ui.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   // Capture on window runs before the page's document listeners and the observer.
   const KINDS = ['pointerdown','pointerup','pointermove','pointerover','pointerout','pointerenter','pointerleave',
@@ -559,7 +565,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     if (s.busy && !ui.wasBusy) ui.since = Date.now();
     ui.wasBusy = s.busy;
     const since = ((Date.now() - (ui.since || Date.now())) / 1000).toFixed(2);
-    if (phase.textContent !== s.ph.keys) phase.textContent = s.ph.keys;
+    if (phaseKeys !== s.ph.keys) { phaseKeys = s.ph.keys; phase.replaceSync(s.ph.keys); }
     wrap.className = 'wrap ' + (term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
     // Boxes redrawn only when they change: a redraw never restarts the target's lock-on.
     const mk = JSON.stringify([ui.marks, s.boxes, s.target]);

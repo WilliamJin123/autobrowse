@@ -18,6 +18,8 @@ import { currentCall } from "../browser/attempt.js";
 import { resolveFile } from "../browser/run-files.js";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { fields, presetWords, resolve } from "./facets/core.js";
+import { YOUTUBE_SEARCH } from "./facets/sets.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi, SiteError } from "./types.js";
 import { once } from "./uploads.js";
 import type { Seen, VerifyGet, VerifyRead } from "./verdict.js";
@@ -323,6 +325,16 @@ const banner = z.object({
   file: z.string().min(1),
   contentType: z.string().default("image/png"),
 });
+/** Search with YouTube's own filters; other `search.list` params pass through as the API reads them. */
+const search = z
+  .object({
+    part: z.string().default("snippet"),
+    q: z.string().max(500).optional(),
+    maxResults: z.coerce.number().int().min(0).max(50).optional(),
+    pageToken: z.string().optional(),
+    ...fields(YOUTUBE_SEARCH),
+  })
+  .loose();
 const read = z
   .object({
     resource: z.enum([
@@ -659,6 +671,21 @@ export const youtube: SiteApi = {
           "youtube/v3/channels",
         );
         return { channel: channel.id, bannerUrl: url };
+      },
+    }),
+    route({
+      method: "GET",
+      path: "/youtube/v3/search",
+      summary: `Search (\`q\`, \`maxResults\` up to 50, \`pageToken\`) with YouTube's own filters, \`autobrowse facets youtube\`: \`type\`, \`order\`, \`publishedAfter\`/\`publishedBefore\`, \`videoDuration\`, \`videoDefinition\`, \`eventType\`, \`regionCode\`, \`relevanceLanguage\`, \`channelId\` and more; ${presetWords(YOUTUBE_SEARCH)}. 100 quota units a call`,
+      request: search,
+      api: async ({ resource: _, ...q }, leg) => {
+        const u = new URL(`${YOUTUBE_ORIGIN}/youtube/v3/search`);
+        for (const [k, v] of Object.entries(resolve(YOUTUBE_SEARCH, q)))
+          if (v !== undefined) u.searchParams.set(k, String(v));
+        return must(
+          await leg.http.json<unknown>(u.toString(), { headers: bearer(leg) }),
+          "youtube/v3/search",
+        );
       },
     }),
     route({

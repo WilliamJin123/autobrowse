@@ -12,6 +12,9 @@
  *
  * Mapped 2026-10-26 in explore (the reply dialog opened and was cancelled; nothing was sent).
  */
+
+import { apply, type FacetInput } from "../../sites/facets/core.js";
+import { THREADS_SEARCH } from "../../sites/facets/sets.js";
 import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
@@ -88,18 +91,23 @@ export function postOfCard(c: Card): ThreadsPost | null {
   };
 }
 
+/** The search page; `search_type` RECENT → `filter=recent` (the Recent tab). */
+export const threadsSearchUrl = (q: string, f: FacetInput<typeof THREADS_SEARCH> = {}): string => {
+  const u = new URL(`${WEB}/search`);
+  u.searchParams.set("q", q);
+  u.searchParams.set("serp_type", "default");
+  return apply(u, THREADS_SEARCH, f).toString();
+};
+
 export const threadsSearch = defineFlow<
-  { q: string; max?: number },
+  { q: string; max?: number } & FacetInput<typeof THREADS_SEARCH>,
   { q: string; data: ThreadsPost[] }
 >({
   site: "instagram",
   name: "threads-search",
-  async run(fp, { q, max }) {
+  async run(fp, { q, max, ...facets }) {
     const cap = Math.min(Math.max(1, max ?? 30), MAX_THREADS_SEARCH);
-    await openThreads(
-      fp,
-      `${WEB}/search?q=${encodeURIComponent(q)}&serp_type=default&filter=recent`,
-    );
+    await openThreads(fp, threadsSearchUrl(q, facets));
     const seen = new Map<string, ThreadsPost>();
     const take = async () => {
       for (const c of await fp.page.evaluate<Card[]>(CARDS).catch(() => [] as Card[])) {

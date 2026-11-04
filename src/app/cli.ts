@@ -281,6 +281,35 @@ program
   });
 
 program
+  .command("facets")
+  .description(
+    "Each search surface's own sort and filters: names, the UI's labels, values, how applied (url, api, ui)",
+  )
+  .argument("[site]", "one site")
+  .option("--json", "the sets as JSON")
+  .action(async (site: string | undefined, o: { json?: boolean }) => {
+    const { catalogOf } = await import("../sites/facets/core.js");
+    const { FACET_SETS } = await import("../sites/facets/sets.js");
+    const sets = FACET_SETS.filter((s) => !site || s.site === site).map(catalogOf);
+    if (o.json) return console.log(JSON.stringify(sets));
+    for (const s of sets) {
+      console.log(`\n${bold(`${s.site} ${s.label}`)} ${dim(s.route)}`);
+      for (const line of columns(
+        s.facets.map((f) => [
+          f.name,
+          `${f.label} ${dim(`(${f.kind}, ${f.via})`)}`,
+          f.values
+            ? f.values.map((v) => (v.value === f.default ? `${v.value}*` : v.value)).join(" ")
+            : (f.ids?.of ?? ""),
+        ]),
+      ))
+        console.log(line);
+      const presets = Object.keys(s.presets);
+      if (presets.length) console.log(dim(`presets: ${presets.join(" ")}`));
+    }
+  });
+
+program
   .command("sites")
   .description(
     "Supported sites: sign-in known, API routes, workflows; `--find` searches them by name",

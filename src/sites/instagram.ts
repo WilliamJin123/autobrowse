@@ -11,6 +11,8 @@ import { z } from "zod";
 import { MAX_THREADS_SEARCH } from "../browser/flows/threads-act.js";
 import { type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { fields } from "./facets/core.js";
+import { THREADS_SEARCH } from "./facets/sets.js";
 import { WEB_REDIRECT } from "./oauth.js";
 import { bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead } from "./verdict.js";
@@ -110,6 +112,7 @@ const threadsPost = z.object({
 const threadsSearch = z.object({
   q: z.string().trim().min(1).max(100),
   max: z.coerce.number().int().min(1).max(MAX_THREADS_SEARCH).default(30),
+  ...fields(THREADS_SEARCH),
 });
 
 const profileName = z.object({
@@ -507,7 +510,7 @@ export const instagram: SiteApi = {
       method: "GET",
       path: "/web/threads/search",
       summary:
-        "Threads posts for words, newest first, off the search page (the API's search finds only our own until Meta's review): `{ q, data: [{ code, url, username, text, at, likes, replies }] }` (`max`, default 30); replies to others are left. Reads only",
+        "Threads posts for words, off the search page (the API's search finds only our own until Meta's review); `search_type` RECENT (default, newest first) or TOP, or `preset` latest|top: `{ q, data: [{ code, url, username, text, at, likes, replies }] }` (`max`, default 30); replies to others are left. Reads only",
       request: threadsSearch,
       meter: () => ({ threads_search: 1 }),
       browser: { flow: "instagram/threads-search" },
