@@ -137,3 +137,5 @@ The host is Rust (`native/overlay`): wry for the webview (WKWebView, WebView2, W
 - 2026-11-04: Windows stacks by z-order, not by owner. Rejected: owner = Chrome's window (input queues attached across processes). Cost: after Chrome is raised, up to 33 ms before the panel is above it again.
 - 2026-11-04: Linux uses an override-redirect popup and restacks it itself. Rejected: a managed utility window, transient for Chrome's (the window manager may focus it on map, and stacking varies by manager).
 - 2026-11-04: Wayland is a limit, not a bug: X11 only on Linux.
+- 2026-11-04: Minimize folds the panel into the left-edge tab (a copy shrinks toward the tab's point; the tab peeks after), and reopen grows it back out of that point (William: "a better minimize animation"). The real panel goes at once, so the host's click rect is the tab's during the fold. Panel look only; reduced motion and the terminal look switch at once.
+- 2026-11-04: In the panel, the target leads and the verb follows: "click **Save**", not "**click** Save" (William). A failure colours the target. The terminal look and traces keep their order.

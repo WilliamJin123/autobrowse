@@ -196,9 +196,9 @@ const PANEL_CSS = [
   ".tab.busy::after{background:var(--accent);animation:breathe 1.4s var(--ease) infinite}",
   "@keyframes breathe{50%{opacity:.35}}",
   ".tab.enter{animation:peek .28s var(--ease)}",
+  // after the folding panel reaches the edge
+  ".tab.enter.late{animation-delay:.24s;animation-fill-mode:backwards}",
   "@keyframes peek{from{transform:translate(-100%,-50%)}}",
-  ".tui.enter{animation:pop .36s var(--spring)}",
-  "@keyframes pop{from{opacity:0;transform:translateX(-10px) scale(.96)}}",
   ".bar{gap:6px;padding:5px 4px 2px var(--g);cursor:grab}",
   ".bar .name{font-weight:650;letter-spacing:-.01em}",
   ".bar .state,.bar .k,.bar .meta{min-width:0;color:var(--ink-3);overflow:hidden}",
@@ -219,7 +219,8 @@ const PANEL_CSS = [
   ".goal{font-weight:650;line-height:1.3;letter-spacing:-.01em;overflow-wrap:anywhere}",
   ".thought{color:var(--ink-2);overflow-wrap:anywhere}",
   ".doing{display:flex;align-items:baseline;gap:5px;overflow-wrap:anywhere}",
-  ".verb{flex:none;color:var(--accent);background:var(--tint);border-radius:5px;padding:0 5px;font-weight:600;font-size:.92em;line-height:1.45}",
+  ".doing>:last-child{font-weight:600}",
+  ".verb{flex:none;color:var(--accent);background:var(--tint);border-radius:5px;padding:0 5px;font-weight:500;font-size:.92em;line-height:1.45}",
   // A line whose words changed rises in; the same words redrawn stay still.
   ".in{animation:rise .24s var(--ease)}",
   "@keyframes rise{from{opacity:0;transform:translateY(3px)}}",
@@ -236,9 +237,10 @@ const PANEL_CSS = [
   ".row:hover{background:var(--fill)}",
   ".row .n{grid-column:1;color:var(--ink-3);text-align:right}",
   ".row .mk{display:none}",
-  ".row .cmd{grid-column:2;font-weight:600}",
-  ".row.failed .cmd{color:var(--bad)}",
-  ".row .what{grid-column:3;color:var(--ink-2);overflow-wrap:anywhere}",
+  // the target leads, the verb follows (William, 11-04)
+  ".row .cmd{grid-column:2;color:var(--ink-3)}",
+  ".row .what{grid-column:3;font-weight:600;overflow-wrap:anywhere}",
+  ".row.failed .what{color:var(--bad)}",
   ".row .at{grid-column:4}",
   ".row .ms{grid-column:5}",
   ".row>:not(:first-child):not(.note){padding-left:6px}",
@@ -498,17 +500,47 @@ export const panelHtml = (
     }
     const enter = ui.enter;
     ui.enter = null;
+    // Fold and open: the panel shrinks into the tab and grows out of it (panel look only).
+    const genie = !term && !still();
+    // the tab's point in the panel's own px (layout box: a running animation does not move it)
+    const toTab = () => (-tui.offsetLeft) + 'px ' + (innerHeight / 2 - tui.offsetTop) + 'px';
+    const FOLDED = 'scale(.03,.14)';
     if (ui.min) {
+      let late = false;
+      if (enter === 'tab' && genie && ui.tuiEl) {
+        // a copy folds; the real panel is gone at once, so the host's rect is the tab's
+        ui.ghost?.remove();
+        const g = ui.ghost = tui.cloneNode(true);
+        g.style.pointerEvents = 'none';
+        g.style.transformOrigin = toTab();
+        wrap.appendChild(g);
+        g.animate([
+          { transform: 'none', opacity: 1 },
+          { transform: 'scale(.42,.6)', opacity: .95, offset: .55 },
+          { transform: FOLDED, opacity: 0 },
+        ], { duration: 300, easing: 'cubic-bezier(.55,0,.8,.2)', fill: 'forwards' }).onfinish = () => g.remove();
+        late = true;
+      }
       tui.style.display = 'none';
       tab.style.display = '';
-      tab.className = 'tab' + (s.busy ? ' busy' : '') + (enter === 'tab' ? ' enter' : '');
+      tab.className = 'tab' + (s.busy ? ' busy' : '') + (enter === 'tab' ? ' enter' + (late ? ' late' : '') : '');
       ui.tuiEl = null;
     } else {
       tab.style.display = 'none';
       clamp();
       const place = ui.x == null ? 'left:12px;bottom:12px' : 'left:' + ui.x + 'px;top:' + ui.y + 'px';
-      tui.className = 'tui' + (s.busy ? ' busy' : '') + (ui.sized ? ' sized' : '') + (enter === 'tui' ? ' enter' : '');
-      tui.style.cssText = place + ';width:' + ui.w + 'px' + (ui.sized ? ';height:' + ui.h + 'px' : '');
+      tui.className = 'tui' + (s.busy ? ' busy' : '') + (ui.sized ? ' sized' : '');
+      // a redraw mid-open keeps the origin
+      tui.style.cssText = place + ';width:' + ui.w + 'px' + (ui.sized ? ';height:' + ui.h + 'px' : '') + (ui.origin ? ';transform-origin:' + ui.origin : '');
+      if (enter === 'tui' && genie) {
+        ui.ghost?.remove();
+        tui.style.transformOrigin = ui.origin = toTab();
+        tui.animate([
+          { transform: FOLDED, opacity: 0 },
+          { opacity: 1, offset: .3 },
+          { transform: 'none', opacity: 1 },
+        ], { duration: 420, easing: 'cubic-bezier(.2,1.12,.36,1)' }).onfinish = () => { ui.origin = null; post(); };
+      }
       ui.tuiEl = tui;
       bar.textContent = '';
       body.textContent = '';
