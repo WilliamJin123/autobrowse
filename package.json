@@ -9,6 +9,7 @@
   "files": [
     "dist",
     "!dist/**/*.test.*",
+    "assets/overlay",
     "README.md",
     "LICENSE.md"
   ],

@@ -1,32 +1,20 @@
 /**
- * The headed overlay (designs/2026-10-27-explore-gaps.md): what the agent
- * sees and why it acts, drawn over the page for a person who watches. Boxes
- * carry the outline's ref numbers, or a marks shot's (its colours, kept until
- * the next act); the control about to be acted on flashes;
- * a terminal-style panel holds the goal, the thought, the act and a live
- * trace of every command. It sits in a closed shadow root outside `body` (so
- * the aria tree never reads it) and is taken off for every screenshot.
- * Headless, nothing is drawn.
+ * The headed overlay (designs/2026-10-27-explore-gaps.md, 2026-11-04-overlay-out-of-page.md):
+ * what the agent sees and why it acts, for a person who watches. Boxes carry the outline's ref
+ * numbers, or a marks shot's (its colours, kept until the next act); the control about to be
+ * acted on flashes; a panel holds the goal, the thought, the act and a live trace.
  *
- * Decorative: it changes nothing a page, a run or a shot sees. The whole
- * panel takes the pointer: its bar (drag to move, buttons: boxes on/off,
- * minimize), its four corner grips (resize) and its body, where a click does
- * nothing. A window capture listener swallows those events before the page's
- * handlers or the recorder's observer see one; mousedown's default is
- * stopped so focus stays where it was. A person's click always lands on the
- * panel; the agent's presses pass through it. The page cannot tell the two
- * apart, so the panel goes inert (pointer-events none) only when an act's
- * target, looked up before the act, is under it or not on screen, and during
- * a hold or a drag, whose points are not known ahead. A drag holds pointer
- * capture, so the page never sees the moves. Minimized, it is a tab at the
- * left edge. Boxes off, their positions are not looked up either.
+ * Out of the page: a native macOS window (`overlay-host.ts`) glued over the Chrome window's
+ * viewport draws all of it. No node, style, global or main-world script of ours in the page;
+ * geometry is read through CDP in an isolated world. A person's click on the panel never reaches
+ * the page, an agent's CDP press never meets the panel, and no CDP shot or film has it.
+ * Headless or off macOS, nothing is drawn.
  */
-import { randomBytes } from "node:crypto";
-import type { Page } from "playwright";
-import { drawsOn } from "../browser/bare.js";
+import type { BrowserContext, CDPSession, Page } from "playwright";
 import { type Hints, locate } from "../browser/locate.js";
 import type { Command } from "./commands.js";
 import { type Box, MARK_COLOURS } from "./marks.js";
+import { type HostEvent, nativeHost, type OverlayHost } from "./overlay-host.js";
 
 /** One command as the trace shows it; never a typed value. */
 export interface TraceRow {
@@ -54,11 +42,6 @@ export interface OverlayState {
   target: Box | null;
   /** A command is running. */
   busy: boolean;
-  /** Hands whose points are not known ahead (a hold, a drag): the panel takes no pointer. */
-  held: boolean;
-  /** An act's target was looked up: `aim` is where it is, null when not on screen. */
-  aimed: boolean;
-  aim: Box | null;
   /** The running command: picks its phase words. */
   cmd: string | null;
   /** The bar's right side: seed, pace. */
@@ -74,58 +57,10 @@ const EMPTY: OverlayState = {
   boxes: [],
   target: null,
   busy: false,
-  held: false,
-  aimed: false,
-  aim: null,
   cmd: null,
   meta: null,
   trace: [],
 };
-
-/**
- * Commands that never press the page at a point. Keys go to the focus; a feed's scroll runs in a
- * `hold`; `flow`, `code` and `batch` steps begin on their own.
- */
-const READS_ONLY = new Set([
-  "open",
-  "aria",
-  "snapshot",
-  "text",
-  "url",
-  "pages",
-  "page",
-  "screenshot",
-  "marks",
-  "overlay",
-  "network",
-  "html",
-  "eval",
-  "count",
-  "read",
-  "records",
-  "keep",
-  "note",
-  "cut",
-  "goal",
-  "done",
-  "files",
-  "read_file",
-  "tools",
-  "save",
-  "journal",
-  "pause",
-  "resume",
-  "type",
-  "key",
-  "script",
-  "new-ip",
-  "flow",
-  "code",
-  "batch",
-  "act",
-]);
-/** Acts that press their target: `flash` looks it up first. Any other command is held. */
-const AIMED = new Set(["click", "fill", "place", "select", "press", "hover", "upload"]);
 
 /** The narrowest a person can size the panel, px. */
 const PANEL_MIN_W = 220;
@@ -215,32 +150,31 @@ const scope = (prefix: string, rules: string[]) =>
 /** Both looks: the page's boxes, the layer's frame, the motion rules. Only transform and opacity move. */
 const SHARED_CSS = [
   "*{box-sizing:border-box}",
+  "html,body{margin:0;background:transparent;overflow:hidden;height:100%}",
   ".wrap{--hair:color-mix(in srgb,var(--ink) 11%,transparent);--fill:color-mix(in srgb,var(--ink) 5%,transparent);--tint:color-mix(in srgb,var(--accent) 12%,transparent);--ease:cubic-bezier(.16,1,.3,1);--spring:cubic-bezier(.34,1.4,.64,1)}",
   `.wrap.light{${THEMES.light}}`,
   `.wrap.dark{${THEMES.dark}}`,
   `.wrap.term{--accent:${T.accent}}`,
-  // As the marks shot draws them (marks.ts layerScript).
-  ".box{position:fixed;border:2px solid}",
+  // As the marks shot draws them (marks.ts layerScript); `.marks` scales page px to the window's.
+  ".marks{position:fixed;left:0;top:0;transform-origin:0 0}",
+  ".box{position:absolute;border:2px solid}",
   ".tag{position:absolute;left:-2px;font:bold 11px/14px monospace;color:#fff;padding:0 3px}",
   // The target locks on (from 8px out), then a ring leaves it; --sx/--sy: 8px of scale per side.
-  ".target{position:fixed;border:2px solid var(--accent);border-radius:6px;animation:aim .32s var(--spring) both}",
+  ".target{position:absolute;border:2px solid var(--accent);border-radius:6px;animation:aim .32s var(--spring) both}",
   '.target::after{content:"";position:absolute;inset:-2px;border:2px solid var(--accent);border-radius:8px;opacity:0;animation:ring 1.3s var(--ease) .15s infinite}',
   "@keyframes aim{from{opacity:0;transform:scale(var(--sx),var(--sy))}}",
   "@keyframes ring{from{opacity:.6;transform:none}to{opacity:0;transform:scale(var(--sx),var(--sy))}}",
   "svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}",
   ".tui{position:fixed;display:flex;flex-direction:column;max-width:calc(100vw - 12px);cursor:default;user-select:none;-webkit-user-select:none;container-type:inline-size}",
-  ".tui:not(.inert){pointer-events:auto}",
-  ".tui.inert{opacity:.6}",
   ".tab{position:fixed;left:0;top:50%;transform:translateY(-50%);height:56px;cursor:pointer}",
-  ".tab:not(.inert){pointer-events:auto}",
   ".bar{display:flex;align-items:center;white-space:nowrap}",
   ".bar .fill{flex:1}",
   ".grip{position:absolute}",
+  // a button in a corner (trace folded, minimize) takes the press, not the grip under it
+  ".btn{position:relative;z-index:1}",
   '.phase::after{content:"";animation:ph var(--d) steps(1) forwards;animation-delay:var(--t)}',
   '.dots::after{content:"";animation:dots 1.8s steps(1) infinite}',
   contentKeys("dots", ["", ".", "..", "..."]),
-  ".rule .btn{pointer-events:auto}",
-  ".tui.inert .rule .btn{pointer-events:none}",
   ".rows{display:grid;align-content:start;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin}",
   ".tui.sized .rows{flex:1;min-height:0;max-height:none}",
   ".row{display:grid;grid-column:1/-1;grid-template-columns:subgrid}",
@@ -398,11 +332,15 @@ interface Prefs {
   sized: boolean;
 }
 
-/** In the page, once a document: the layer and its handlers; `ui.draw` updates it in place. */
-const installScript = (attr: string, prefs: Prefs) => `(() => {
-  const K = '__${attr}';
-  if (window[K] && window[K].draw) return;
-  const ui = window[K] = { ...${JSON.stringify(prefs)}, lastN: -1, host: null };
+/**
+ * The panel's document, in the native window's web view (overlay-host.ts): the boxes and the
+ * panel, sized to the viewport. Only the panel's rect takes the mouse; it posts that rect and
+ * the prefs to the host after each change.
+ */
+export const panelHtml = (
+  prefs: Prefs,
+) => `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style><style id="ph"></style></head><body><script>(() => {
+  const ui = window.ui = { ...${JSON.stringify(prefs)} };
   ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, look: ui.look, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
   const el = (tag, cls, text, css) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; };
   const COLOURS = ${JSON.stringify(MARK_COLOURS)};
@@ -413,17 +351,10 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     ui.x = Math.round(Math.max(0, Math.min(innerWidth - 60, ui.x)));
     ui.y = Math.round(Math.max(0, Math.min(innerHeight - 24, ui.y)));
   };
-  const host = el('div', null, null, 'position:fixed;inset:0;z-index:2147483647;pointer-events:none');
-  host.setAttribute('${attr}', '');
-  const root = host.attachShadow({ mode: 'closed' });
-  // Constructed sheets, not <style>: a page CSP without 'unsafe-inline' (our portal) blocks <style>.
-  const style = new CSSStyleSheet();
-  style.replaceSync(${JSON.stringify(CSS)});
   // The running command's phase words: one keyframes rule, swapped per command.
-  const phase = new CSSStyleSheet();
-  let phaseKeys = '';
-  const marks = el('div');
-  // Folded: a tab peeking from the left edge, the page free around it.
+  const phase = document.getElementById('ph');
+  const marks = el('div', 'marks');
+  // Folded: a tab peeking from the left edge.
   const tab = el('div', 'tab');
   tab.setAttribute('data-a', 'min');
   tab.title = 'autobrowse: open';
@@ -437,68 +368,60 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   }
   const wrap = el('div', 'wrap');
   wrap.append(marks, tab, tui);
-  root.adoptedStyleSheets = [style, phase];
-  root.append(wrap);
+  document.body.append(wrap);
   const ICONS = ${JSON.stringify(ICONS)};
-  // DOM calls, not innerHTML: Trusted Types pages (Google) throw on it and the draw stops.
   const NS = 'http://www.w3.org/2000/svg';
   const icon = (d) => { const s = document.createElementNS(NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); s.appendChild(p); return s; };
   const dark = () => ui.theme ? ui.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  // Capture on window runs before the page's document listeners and the observer.
-  const KINDS = ['pointerdown','pointerup','pointermove','pointerover','pointerout','pointerenter','pointerleave',
-    'mousedown','mouseup','mousemove','mouseover','mouseout','mouseenter','mouseleave',
-    'click','dblclick','auxclick','contextmenu','wheel','touchstart','touchend','touchmove','pointercancel'];
-  for (const k of KINDS) window.addEventListener(k, (e) => {
-    if (!ui.host || e.target !== ui.host) return;
-    e.stopImmediatePropagation();
-    const hit = root.elementFromPoint(e.clientX, e.clientY);
-    // The grip sizes, the bar moves; capture keeps every move on us until the button lifts.
-    if (k === 'pointerdown' && ui.tuiEl && hit && !hit.closest('.btn')) {
-      const r = ui.tuiEl.getBoundingClientRect();
-      const g = hit.closest('.grip');
-      // A top or left corner moves that edge; the opposite corner stays put.
-      if (g) ui.drag = { kind: 'size', x: e.clientX, y: e.clientY, r, l: g.dataset.c[1] === 'w', t: g.dataset.c[0] === 'n' };
-      else if (hit.closest('.bar')) ui.drag = { kind: 'move', x: e.clientX - r.left, y: e.clientY - r.top };
-      if (ui.drag) {
-        ui.tuiEl.setPointerCapture(e.pointerId);
-        e.preventDefault();
-        return;
-      }
+  // The host: the rect that takes the mouse, and the prefs (boxes on or off) for the session.
+  const post = () => {
+    const r = (ui.min ? tab : tui).getBoundingClientRect();
+    const m = { rect: [r.x, r.y, r.width, r.height], prefs: ui.prefs() };
+    try { window.webkit.messageHandlers.host.postMessage(m); } catch {}
+  };
+  // a rect read mid-animation (peek, spring) is not where it lands
+  for (const n of [tab, tui]) for (const k of ['animationend', 'transitionend']) n.addEventListener(k, post);
+  // The grip sizes, the bar moves; capture keeps every move on us until the button lifts.
+  tui.addEventListener('pointerdown', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t || t.closest('.btn')) return;
+    const r = tui.getBoundingClientRect();
+    const g = t.closest('.grip');
+    // A top or left corner moves that edge; the opposite corner stays put.
+    if (g) ui.drag = { kind: 'size', x: e.clientX, y: e.clientY, r, l: g.dataset.c[1] === 'w', t: g.dataset.c[0] === 'n' };
+    else if (t.closest('.bar')) ui.drag = { kind: 'move', x: e.clientX - r.left, y: e.clientY - r.top };
+    if (ui.drag) { tui.setPointerCapture(e.pointerId); e.preventDefault(); }
+  });
+  tui.addEventListener('pointermove', (e) => {
+    const d = ui.drag;
+    if (!d) return;
+    const st = tui.style;
+    if (d.kind === 'size') {
+      const r = d.r, dx = e.clientX - d.x, dy = e.clientY - d.y;
+      const w = d.l ? r.width - dx : r.width + dx, h = d.t ? r.height - dy : r.height + dy;
+      ui.w = Math.round(Math.max(${PANEL_MIN_W}, Math.min(d.l ? r.right : innerWidth - r.left, w)));
+      ui.h = Math.round(Math.max(60, Math.min(d.t ? r.bottom : innerHeight - r.top, h)));
+      ui.x = Math.round(d.l ? r.right - ui.w : r.left);
+      ui.y = Math.round(d.t ? r.bottom - ui.h : r.top);
+      ui.sized = true;
+      st.width = ui.w + 'px';
+      st.height = ui.h + 'px';
+      tui.classList.add('sized');
+    } else {
+      ui.x = e.clientX - d.x;
+      ui.y = e.clientY - d.y;
+      clamp();
     }
-    if (ui.drag) {
-      if (k === 'pointermove' && ui.drag.kind === 'size') {
-        const d = ui.drag, r = d.r, dx = e.clientX - d.x, dy = e.clientY - d.y;
-        const w = d.l ? r.width - dx : r.width + dx, h = d.t ? r.height - dy : r.height + dy;
-        ui.w = Math.round(Math.max(${PANEL_MIN_W}, Math.min(d.l ? r.right : innerWidth - r.left, w)));
-        ui.h = Math.round(Math.max(60, Math.min(d.t ? r.bottom : innerHeight - r.top, h)));
-        ui.x = Math.round(d.l ? r.right - ui.w : r.left);
-        ui.y = Math.round(d.t ? r.bottom - ui.h : r.top);
-        ui.sized = true;
-        const st = ui.tuiEl.style;
-        st.width = ui.w + 'px';
-        st.height = ui.h + 'px';
-        st.left = ui.x + 'px';
-        st.top = ui.y + 'px';
-        st.bottom = 'auto';
-        ui.tuiEl.classList.add('sized');
-      } else if (k === 'pointermove') {
-        ui.x = e.clientX - ui.drag.x;
-        ui.y = e.clientY - ui.drag.y;
-        clamp();
-        ui.tuiEl.style.left = ui.x + 'px';
-        ui.tuiEl.style.top = ui.y + 'px';
-        ui.tuiEl.style.bottom = 'auto';
-      } else if (k === 'pointerup' || k === 'pointercancel') ui.drag = null;
-      e.preventDefault();
-      return;
-    }
-    // The trace scrolls by hand; the page under it never does.
-    if (k === 'wheel' && hit && hit.closest('.rows')) rows.scrollTop += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rows.clientHeight : 1);
-    // mousedown's default moves focus.
-    if (k === 'mousedown' || k === 'click' || k === 'auxclick' || k === 'contextmenu' || k === 'dblclick' || k === 'wheel') e.preventDefault();
-    if (k !== 'click') return;
-    const a = hit && hit.closest('[data-a]');
-    if (!a) return;
+    st.left = ui.x + 'px';
+    st.top = ui.y + 'px';
+    st.bottom = 'auto';
+  });
+  const drop = () => { if (ui.drag) { ui.drag = null; post(); } };
+  tui.addEventListener('pointerup', drop);
+  tui.addEventListener('pointercancel', drop);
+  document.addEventListener('click', (e) => {
+    const a = e.target instanceof Element ? e.target.closest('[data-a]') : null;
+    if (!a || !ui.s) return;
     const act = a.getAttribute('data-a');
     // Opening springs the panel out of the tab; folding slides the tab in.
     if (act === 'min') { ui.min = !ui.min; ui.enter = ui.min ? 'tab' : 'tui'; }
@@ -507,20 +430,9 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     else if (act === 'trace') ui.trace = !ui.trace;
     else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
     ui.paint();
-  }, { capture: true, passive: false });
-  // Off for a shot: the node leaves the document; its rows and scroll come back with it.
-  ui.hide = () => {
-    if (!host.isConnected) return;
-    ui.top = rows.scrollTop;
-    host.remove();
-    ui.host = null;
-  };
-  const show = () => {
-    if (host.isConnected) return;
-    document.documentElement.appendChild(host);
-    ui.host = host;
-    rows.scrollTop = ui.top || 0;
-  };
+  });
+  // The viewport (the window) changed size: the panel stays in it.
+  addEventListener('resize', () => { if (ui.s) ui.paint(); });
   const rowOf = (r) => {
     const row = el('div', 'row' + (r.ok ? '' : ' failed'));
     row.appendChild(el('span', 'n num', String(r.n)));
@@ -559,14 +471,15 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
   };
   ui.paint = () => {
     const s = ui.s;
-    show();
     const term = ui.look === 'term';
     // A command's phase words run on from when it began, across redraws.
     if (s.busy && !ui.wasBusy) ui.since = Date.now();
     ui.wasBusy = s.busy;
     const since = ((Date.now() - (ui.since || Date.now())) / 1000).toFixed(2);
-    if (phaseKeys !== s.ph.keys) { phaseKeys = s.ph.keys; phase.replaceSync(s.ph.keys); }
+    if (phase.textContent !== s.ph.keys) phase.textContent = s.ph.keys;
     wrap.className = 'wrap ' + (term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
+    // Page px to window px: the page's zoom over ours.
+    marks.style.transform = 'scale(' + (s.dpr || devicePixelRatio) / devicePixelRatio + ')';
     // Boxes redrawn only when they change: a redraw never restarts the target's lock-on.
     const mk = JSON.stringify([ui.marks, s.boxes, s.target]);
     if (mk !== ui.marksKey) {
@@ -585,7 +498,6 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
     }
     const enter = ui.enter;
     ui.enter = null;
-    let panel = tab;
     if (ui.min) {
       tui.style.display = 'none';
       tab.style.display = '';
@@ -597,7 +509,7 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
       const place = ui.x == null ? 'left:12px;bottom:12px' : 'left:' + ui.x + 'px;top:' + ui.y + 'px';
       tui.className = 'tui' + (s.busy ? ' busy' : '') + (ui.sized ? ' sized' : '') + (enter === 'tui' ? ' enter' : '');
       tui.style.cssText = place + ';width:' + ui.w + 'px' + (ui.sized ? ';height:' + ui.h + 'px' : '');
-      ui.tuiEl = panel = tui;
+      ui.tuiEl = tui;
       bar.textContent = '';
       body.textContent = '';
       rule.textContent = '';
@@ -679,22 +591,16 @@ const installScript = (attr: string, prefs: Prefs) => `(() => {
       }
       rows.style.display = ui.trace && s.count ? '' : 'none';
     }
-    // Inert only when the agent's press could land on the panel; 16px of room around it.
-    const r = panel.getBoundingClientRect(), a = s.aim, m = 16;
-    const under = !a || (a.x < r.right + m && a.x + a.w > r.left - m && a.y < r.bottom + m && a.y + a.h > r.top - m);
-    if (s.held || (s.aimed && under)) panel.classList.add('inert');
+    post();
     return ui.prefs();
   };
-  /** \`from\`: the newest row the caller thinks the page holds; -1 sends them all. */
-  ui.draw = (s, list, from, last) => {
-    if (from >= 0 && from !== ui.lastN) return { need: true };
+  /** \`reset\`: the rows are all of them, not the new ones. */
+  ui.draw = (s, list, reset) => {
     ui.s = s;
-    show();
-    add(list, from < 0);
-    ui.lastN = last;
+    add(list, reset);
     return ui.paint();
   };
-})()`;
+})()</script></body></html>`;
 
 /** Sentence case for a phase word. */
 const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
@@ -702,20 +608,104 @@ const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
 const clipLine = (s: string | null | undefined, n: number) =>
   s ? (s.length > n ? `${s.slice(0, n - 1)}…` : s) : null;
 
+/** Where the page's window is and how its viewport sits in it; read through CDP, never in the page's world. */
+export interface Geometry {
+  /** The browser process: tells several Chromes apart. 0: unknown. */
+  pid: number;
+  windowId: number;
+  bounds: { x: number; y: number; w: number; h: number };
+  view: { outerW: number; outerH: number; innerW: number; innerH: number; dpr: number };
+}
+
+const cdps = new WeakMap<Page, { cdp: CDPSession; world?: number | undefined }>();
+const pids = new WeakMap<BrowserContext, Promise<number>>();
+const VIEW =
+  "({outerW:outerWidth,outerH:outerHeight,innerW:innerWidth,innerH:innerHeight,dpr:devicePixelRatio})";
+
+const pidOf = (ctx: BrowserContext): Promise<number> => {
+  let p = pids.get(ctx);
+  if (!p) {
+    p = (async () => {
+      const s = await ctx.browser()?.newBrowserCDPSession();
+      if (!s) return 0;
+      const r = (await s.send("SystemInfo.getProcessInfo")) as {
+        processInfo: Array<{ type: string; id: number }>;
+      };
+      await s.detach().catch(() => undefined);
+      return r.processInfo.find((x) => x.type === "browser")?.id ?? 0;
+    })().catch(() => 0);
+    pids.set(ctx, p);
+  }
+  return p;
+};
+
+/** An isolated world's read: the page's own getters, observers and CSP never see it. */
+async function inWorld(c: { cdp: CDPSession; world?: number | undefined }): Promise<unknown> {
+  for (let i = 0; i < 2; i++) {
+    if (c.world === undefined) {
+      const { frameTree } = (await c.cdp.send("Page.getFrameTree")) as {
+        frameTree: { frame: { id: string } };
+      };
+      const w = (await c.cdp.send("Page.createIsolatedWorld", {
+        frameId: frameTree.frame.id,
+        worldName: "autobrowse-overlay",
+      })) as { executionContextId: number };
+      c.world = w.executionContextId;
+    }
+    const r = (await c.cdp
+      .send("Runtime.evaluate", { contextId: c.world, expression: VIEW, returnByValue: true })
+      .catch(() => null)) as { result?: { value?: unknown }; exceptionDetails?: unknown } | null;
+    if (r?.result?.value && !r.exceptionDetails) return r.result.value;
+    // a new document took the world with it
+    c.world = undefined;
+  }
+  return null;
+}
+
+export async function geometryOf(page: Page): Promise<Geometry | null> {
+  try {
+    let c = cdps.get(page);
+    if (!c) {
+      c = { cdp: await page.context().newCDPSession(page) };
+      cdps.set(page, c);
+    }
+    const [{ windowId, bounds }, view, pid] = await Promise.all([
+      c.cdp.send("Browser.getWindowForTarget") as Promise<{
+        windowId: number;
+        bounds: { left?: number; top?: number; width?: number; height?: number };
+      }>,
+      inWorld(c),
+      pidOf(page.context()),
+    ]);
+    if (!view) return null;
+    const b = {
+      x: bounds.left ?? 0,
+      y: bounds.top ?? 0,
+      w: bounds.width ?? 0,
+      h: bounds.height ?? 0,
+    };
+    return { pid, windowId, bounds: b, view: view as Geometry["view"] };
+  } catch {
+    // not Chromium, or the page went
+    return null;
+  }
+}
+
+export interface OverlayDeps {
+  /** The window that draws; default the native host (macOS). */
+  host?: (why: (reason: string) => void) => Promise<OverlayHost | null>;
+  /** Default `geometryOf`. */
+  geometry?: (page: Page) => Promise<Geometry | null>;
+}
+
 /** One session's overlay; `enabled` false makes every call a no-op. */
-export function overlayFor(startOn: boolean) {
+export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   // `toggle` flips it for the session's life.
   let enabled = startOn;
-  // A random attribute name: the page sees a node, never one that names us.
-  const attr = `data-o${randomBytes(4).toString("hex")}`;
   let state: OverlayState = { ...EMPTY };
   let drawn = false;
-  /** Commands and holds in flight, nested (a flow's steps inside its `flow` command): held or not. */
-  const running: boolean[] = [];
-  const settle = () => {
-    state.busy = running.length > 0;
-    state.held = running.includes(true);
-  };
+  /** Commands in flight, nested (a flow's steps inside its `flow` command). */
+  let running = 0;
   let prefs: Prefs = {
     min: false,
     trace: true,
@@ -728,70 +718,94 @@ export function overlayFor(startOn: boolean) {
     h: 320,
     sized: false,
   };
-  /** The newest row the page holds; -1: none known, so the next draw sends every row. */
+  /** The newest row the window holds; -1: none, so the next draw sends every row. */
   let sentN = -1;
-  const run = (page: Page, script: string) =>
-    Promise.race([
-      page.evaluate(script).catch(() => undefined),
-      new Promise<undefined>((r) => setTimeout(() => r(undefined), DRAW_MS).unref()),
+  let host: OverlayHost | null = null;
+  let opening: Promise<OverlayHost | null> | null = null;
+  /** Why nothing is drawn: no macOS, no swiftc. */
+  let why: string | null = null;
+  /** The page the window follows, and the Chrome window it was matched to. */
+  let followed: Page | null = null;
+  let windowKey: string | null = null;
+  let dpr = 0;
+  const geometry = deps.geometry ?? geometryOf;
+
+  const onEvent = (e: HostEvent) => {
+    if (e.t === "js" && e.prefs && typeof e.prefs === "object") prefs = e.prefs as Prefs;
+    // Chrome's window changed size (full screen, an infobar) or went: measure again.
+    else if (e.t === "lost") windowKey = null;
+    if ((e.t === "moved" || e.t === "lost") && followed) void place(followed);
+  };
+  const open = (): Promise<OverlayHost | null> => {
+    opening ??= (deps.host ?? nativeHost)((r) => {
+      why = r;
+    }).then((h) => {
+      host = h;
+      if (h) {
+        h.on(onEvent);
+        h.send({ t: "html", html: panelHtml(prefs) });
+      }
+      return h;
+    });
+    return opening;
+  };
+  const close = () => {
+    host?.close();
+    host = null;
+    opening = null;
+    followed = null;
+    windowKey = null;
+    sentN = -1;
+  };
+  /** The window over the page's viewport: which Chrome window, and its insets now. */
+  const place = async (page: Page) => {
+    const g = await Promise.race([
+      geometry(page),
+      new Promise<null>((r) => setTimeout(() => r(null), DRAW_MS).unref()),
     ]);
-  const K = `window['__${attr}']`;
-  /** Each draw sends the state and the rows the page lacks; a new document gets the layer first. */
-  const paint = async (page: Page, s: OverlayState | undefined) => {
-    if (!s) {
-      const got = await run(
-        page,
-        `(() => { const ui = ${K}; if (ui && ui.hide) { ui.hide(); return ui.prefs(); } })()`,
-      );
-      if (got && typeof got === "object") prefs = got as Prefs;
-      return;
+    if (!g || !host) return;
+    const key = `${g.pid}:${g.windowId}`;
+    if (key !== windowKey) {
+      windowKey = key;
+      host.send({ t: "target", pid: g.pid, ...g.bounds });
     }
-    const { trace, ...rest } = s;
-    const words = PHASES[s.cmd ?? ""];
+    host.send({ t: "view", ...g.view });
+    dpr = g.view.dpr;
+  };
+  /** Each draw sends the state and the rows the window lacks. */
+  const paint = async (page: Page): Promise<boolean> => {
+    const h = await open();
+    if (!h) return false;
+    if (followed !== page) {
+      followed = page;
+      windowKey = null;
+      page.once("close", () => {
+        if (followed === page) host?.send({ t: "hide" });
+      });
+      page.context().once("close", close);
+    }
+    await place(page);
+    const { trace, ...rest } = state;
+    const words = PHASES[state.cmd ?? ""];
     const view = {
       ...rest,
+      dpr,
       count: trace.length,
       ph: { keys: contentKeys("ph", (words ?? ["working"]).map(cap)), n: words?.length ?? 1 },
     };
     const last = trace.at(-1)?.n ?? 0;
-    const call = (from: number) => {
-      const rows = trace.filter((r) => r.n > from).map(({ detail: _, ...r }) => r);
-      return `(() => { const ui = ${K}; return ui && ui.draw ? ui.draw(${JSON.stringify(view)}, ${JSON.stringify(rows)}, ${from}, ${last}) : 'gone'; })()`;
-    };
-    let got = await run(page, call(sentN));
-    if (got === "gone") {
-      await run(page, installScript(attr, prefs));
-      got = await run(page, call(-1));
-    } else if (got && typeof got === "object" && "need" in got) got = await run(page, call(-1));
-    if (got && typeof got === "object" && !("need" in got)) {
-      prefs = got as Prefs;
-      sentN = last;
-    }
+    const rows = trace.filter((r) => r.n > sentN).map(({ detail: _, ...r }) => r);
+    h.send({
+      t: "js",
+      js: `ui.draw(${JSON.stringify(view)}, ${JSON.stringify(rows)}, ${sentN < 0})`,
+    });
+    sentN = last;
+    return true;
   };
-  const draw = async (page: Page) => {
-    if (!enabled) return;
-    await paint(page, state);
-    drawn = true;
-    drawsOn(page, (fn) => off(page, fn));
-  };
-  /** `fn` runs with the layer off: a screenshot shows the page, not us. */
-  const off = async <T>(page: Page, fn: () => Promise<T>): Promise<T> => {
-    if (!enabled || !drawn) return fn();
-    await paint(page, undefined);
-    try {
-      return await fn();
-    } finally {
-      await draw(page);
-    }
-  };
-  /** The boxes button as the page has it now: a click since the last draw counts. */
-  const marksOn = async (page: Page): Promise<boolean> => {
-    const on = await Promise.race([
-      page.evaluate(`(window['__${attr}'] || {}).marks`).catch(() => undefined),
-      new Promise<undefined>((r) => setTimeout(() => r(undefined), BOX_MS).unref()),
-    ]);
-    if (typeof on === "boolean") prefs = { ...prefs, marks: on };
-    return prefs.marks;
+  const draw = async (page: Page): Promise<boolean> => {
+    if (!enabled) return false;
+    drawn = await paint(page);
+    return drawn;
   };
   const boxOf = async (page: Page, hints: Hints): Promise<Box | null> => {
     const b = await locate(page, hints)
@@ -807,15 +821,21 @@ export function overlayFor(startOn: boolean) {
     get enabled() {
       return enabled;
     },
-    /** On or off at any time; off takes the layer down and keeps the trace for when it comes back. */
-    async toggle(page: Page, on: boolean): Promise<{ drawn: boolean }> {
+    /** Why nothing is drawn while on (no macOS, no swiftc); null when it draws. */
+    get why() {
+      return why;
+    },
+    /** On or off at any time; off hides the window and keeps the trace for when it comes back. */
+    async toggle(page: Page, on: boolean): Promise<{ drawn: boolean; why?: string }> {
       enabled = on;
-      if (on) await draw(page);
-      else if (drawn) {
+      if (!on) {
+        host?.send({ t: "hide" });
         drawn = false;
-        await paint(page, undefined);
+        return { drawn: false };
       }
-      return { drawn: on };
+      host?.send({ t: "show" });
+      const ok = await draw(page);
+      return ok ? { drawn: true } : { drawn: false, ...(why ? { why } : {}) };
     },
     /** Panel fields from a caller (the agent's goal, step, thought); `refs` boxes the outline's controls. */
     async set(
@@ -826,7 +846,7 @@ export function overlayFor(startOn: boolean) {
         refs?: Array<{ n: number; hints: Hints }> | undefined;
         clear?: boolean | undefined;
       },
-    ): Promise<{ drawn: boolean; boxes?: number }> {
+    ): Promise<{ drawn: boolean; boxes?: number; why?: string }> {
       if (!enabled) return { drawn: false };
       const { refs, clear, ...fields } = patch;
       if (clear)
@@ -834,13 +854,12 @@ export function overlayFor(startOn: boolean) {
           ...EMPTY,
           trace: state.trace,
           busy: state.busy,
-          held: state.held,
           cmd: state.cmd,
           meta: state.meta,
         };
       for (const [k, v] of Object.entries(fields))
         if (v !== undefined) (state as unknown as Record<string, unknown>)[k] = clipLine(v, 240);
-      if (refs && !(await marksOn(page))) state.boxes = [];
+      if (refs && !prefs.marks) state.boxes = [];
       else if (refs) {
         const boxes = await Promise.all(refs.map((r) => boxOf(page, r.hints)));
         state.boxes = refs.flatMap((r, i) => {
@@ -848,11 +867,11 @@ export function overlayFor(startOn: boolean) {
           return box ? [{ n: r.n, box }] : [];
         });
       }
-      await draw(page);
+      if (!(await draw(page))) return { drawn: false, ...(why ? { why } : {}) };
       // Boxes off: no count, so a 0 never reads as controls missing.
       return { drawn: true, ...(prefs.marks ? { boxes: state.boxes.length } : {}) };
     },
-    /** A marks shot's numbered boxes stay on the page; the boxes button shows and hides them. */
+    /** A marks shot's numbered boxes stay drawn; the boxes button shows and hides them. */
     async marked(page: Page, boxes: Array<{ n: number; box: Box }>): Promise<void> {
       if (!enabled) return;
       state.boxes = boxes;
@@ -862,51 +881,33 @@ export function overlayFor(startOn: boolean) {
     tag(meta: string | null): void {
       state.meta = meta;
     },
-    /** A command starts; one whose points are not known ahead makes the panel inert before it can press. */
+    /** A command starts: the busy line runs its phase words. */
     async begin(page: Page, cmd?: string): Promise<void> {
       if (!enabled) return;
-      running.push(!cmd || !(READS_ONLY.has(cmd) || AIMED.has(cmd)));
-      settle();
+      running++;
+      state.busy = true;
       state.cmd = cmd ?? null;
       if (drawn) await draw(page);
     },
-    /** A command ended: its row joins the trace and the panel takes clicks again. */
+    /** A command ended: its row joins the trace. */
     async end(page: Page, row: Omit<TraceRow, "n" | "at">): Promise<void> {
       if (!enabled) return;
       const n = (state.trace.at(-1)?.n ?? 0) + 1;
       const at = new Date().toTimeString().slice(0, 8);
       state.trace = [...state.trace, { ...row, n, at }].slice(-TRACE_KEEP);
-      running.pop();
-      settle();
+      running = Math.max(0, running - 1);
+      state.busy = running > 0;
       if (!state.busy) state.cmd = null;
       // The row holds the act now; the line waits for the next.
       state.doing = null;
       await draw(page);
     },
-    /** Hands that may touch the page outside a command (a wait that clears a banner, a scroll): inert, no row. */
-    async hold<T>(page: Page, fn: () => Promise<T>): Promise<T> {
-      if (!enabled) return fn();
-      const was = state.held;
-      running.push(true);
-      settle();
-      if (!was && drawn) await draw(page);
-      try {
-        return await fn();
-      } finally {
-        running.pop();
-        settle();
-        if (!was && drawn) await draw(page);
-      }
-    },
-    /** Before an act: the target flashes and the panel says what is done. */
+    /** Before an act: the target flashes (boxes on) and the panel says what is done. */
     /** `thought`: the act's goal; it stays on the panel until the next one. */
     async flash(page: Page, hints: Hints, doing: string, thought?: string): Promise<void> {
       if (!enabled) return;
       if (thought) state.thought = clipLine(thought, 240);
-      // Looked up with boxes off too: it decides whether the panel lets the press through.
-      state.aim = await boxOf(page, hints);
-      state.aimed = true;
-      state.target = (await marksOn(page)) ? state.aim : null;
+      state.target = prefs.marks ? await boxOf(page, hints) : null;
       state.doing = clipLine(doing, 160);
       await draw(page);
     },
@@ -914,25 +915,20 @@ export function overlayFor(startOn: boolean) {
     async after(page: Page): Promise<void> {
       if (!enabled || !drawn) return;
       state.target = null;
-      state.aim = null;
-      state.aimed = false;
       state.boxes = [];
       await draw(page);
     },
-    /** A new document wiped the layer: the panel comes back, without boxes. */
+    /** A new document: its boxes go. */
     async loaded(page: Page): Promise<void> {
       if (!drawn) return;
       return this.after(page);
     },
-    around: off,
-    /** The session ends: nothing of ours stays on the page. */
-    async remove(page: Page): Promise<void> {
-      if (!drawn) return;
+    /** The session ends: the window goes and its process exits. */
+    async remove(_page: Page): Promise<void> {
       drawn = false;
       state = { ...EMPTY };
-      sentN = -1;
-      drawsOn(page, null);
-      await paint(page, undefined);
+      running = 0;
+      close();
     },
   };
 }

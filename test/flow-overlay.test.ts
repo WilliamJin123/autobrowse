@@ -6,9 +6,39 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { overlayOn } from "../src/app/services-signin.js";
 import { defineFlow, flowRunner } from "../src/browser/flow.js";
+import type { OverlayHost } from "../src/explore/overlay-host.js";
 
 const PAGE = "<title>t</title><input aria-label=Card><button>Pay</button><p id=total>Total 12</p>";
-const ui = "window[Object.keys(window).find((k) => k.startsWith('__data-o'))]";
+
+/** The overlay's window as a recorder: each `ui.draw` line it gets, run against a plain `ui`. */
+const recorder = () => {
+  const ui = {
+    s: null as Record<string, unknown> | null,
+    rows: [] as unknown[],
+    draw(s: Record<string, unknown>, list: unknown[], reset: boolean) {
+      ui.s = s;
+      ui.rows = reset ? list : [...ui.rows, ...list];
+    },
+  };
+  let made = 0;
+  const host = async (): Promise<OverlayHost> => {
+    made++;
+    return {
+      send: (o) => {
+        if (o.t === "js") new Function("ui", o.js as string)(ui);
+      },
+      on: () => undefined,
+      close: () => undefined,
+    };
+  };
+  return {
+    host,
+    seen: () => (ui.s ? { ...ui.s, trace: ui.rows } : null),
+    get made() {
+      return made;
+    },
+  };
+};
 
 describe("the overlay on a flow run", () => {
   const server = createServer((_q, r) =>
@@ -20,7 +50,10 @@ describe("the overlay on a flow run", () => {
     ),
   );
   afterAll(() => server.close());
-  const runnerWith = (overlay?: boolean) => {
+  const runnerWith = (
+    overlay: boolean | undefined,
+    overlayHost: ReturnType<typeof recorder>["host"],
+  ) => {
     const dir = mkdtempSync(join(tmpdir(), "autobrowse-flow-overlay-"));
     return flowRunner(
       {
@@ -30,10 +63,10 @@ describe("the overlay on a flow run", () => {
         artifactsDir: join(dir, "artifacts"),
         headless: true,
       },
-      { pace: null, ...(overlay === undefined ? {} : { overlay }) },
+      { pace: null, overlayHost, ...(overlay === undefined ? {} : { overlay }) },
     );
   };
-  const pay = (seen: (trace: unknown) => void) =>
+  const pay = (seen: () => void) =>
     defineFlow<string, void>({
       site: "scratch",
       name: "pay",
@@ -46,7 +79,7 @@ describe("the overlay on a flow run", () => {
         );
         await fp.read({ css: "#total" });
         await fp.act({ kind: "click" }, { role: "button", name: "Pay" }, { goal: "pay" });
-        seen(await fp.page.evaluate(`${ui} ? { ...${ui}.s, trace: ${ui}.rows } : null`));
+        seen();
       },
     });
 
@@ -56,9 +89,10 @@ describe("the overlay on a flow run", () => {
       goal: string;
       trace: Array<{ cmd: string; what: string; ok: boolean; note: string }>;
     } | null = null;
-    await runnerWith(true).run(
-      pay((t) => {
-        s = t as typeof s;
+    const r = recorder();
+    await runnerWith(true, r.host).run(
+      pay(() => {
+        s = r.seen() as typeof s;
       }),
       url,
     );
@@ -79,13 +113,15 @@ describe("the overlay on a flow run", () => {
 
   it("is off unless asked", async () => {
     let s: unknown = "unset";
-    await runnerWith().run(
-      pay((t) => {
-        s = t;
+    const r = recorder();
+    await runnerWith(undefined, r.host).run(
+      pay(() => {
+        s = r.seen();
       }),
       await ready,
     );
     expect(s).toBeNull();
+    expect(r.made).toBe(0);
   }, 60_000);
 
   it("is on headed, off for a film or the desk, and a flag wins", () => {

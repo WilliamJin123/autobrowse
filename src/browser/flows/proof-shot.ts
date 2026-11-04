@@ -10,7 +10,6 @@
  * the top of the page: what a stranger sees there.
  */
 import type { Page } from "playwright";
-import { bare } from "../bare.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 
 const LAND_MS = 12_000;
@@ -192,16 +191,14 @@ export const proofShot = defineFlow<ShotInput, ProofShot>({
       : await find(fp, ref, snippet);
     await fp.page.evaluate(UNCOVER).catch(() => undefined);
     const clip = found.comment ? clipOf(found.comment, found.title, found.page) : null;
-    const shot = await bare(fp.page, () =>
-      clip
-        ? fp.page.screenshot({
-            type: "jpeg",
-            quality: QUALITY,
-            fullPage: true,
-            clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h },
-          })
-        : fp.page.screenshot({ type: "jpeg", quality: QUALITY }),
-    );
+    const shot = await (clip
+      ? fp.page.screenshot({
+          type: "jpeg",
+          quality: QUALITY,
+          fullPage: true,
+          clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h },
+        })
+      : fp.page.screenshot({ type: "jpeg", quality: QUALITY }));
     const view = fp.page.viewportSize();
     return {
       found: Boolean(found.comment),

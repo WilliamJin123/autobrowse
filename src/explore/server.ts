@@ -690,9 +690,7 @@ async function serve(
     const c = capture;
     if (!c || page.isClosed() || secretFlow) return null;
     try {
-      const shot = await overlay.around(page, () =>
-        page.screenshot({ type: "jpeg", quality: 80, scale: "css" }),
-      );
+      const shot = await page.screenshot({ type: "jpeg", quality: 80, scale: "css" });
       return c.picture(shot);
     } catch {
       return null;
@@ -918,7 +916,7 @@ async function serve(
   const shoot = async (): Promise<string> => {
     const file = join(shotsDir, `${String(shotN++).padStart(4, "0")}.png`);
     // A failed shot is an error, never a path to a file that is not there.
-    await overlay.around(page, () => page.screenshot({ path: file }));
+    await page.screenshot({ path: file });
     return file;
   };
   const journal = (a: Journaled) => {
@@ -1323,9 +1321,7 @@ async function serve(
     }
     if (receiptOutcome(whole) === "unclear" || stillAsking(whole)) return [];
     const text = redactText(whole).slice(0, 6_000);
-    const png = await overlay
-      .around(page, () => page.screenshot({ fullPage: true, timeout: 15_000 }))
-      .catch(() => undefined);
+    const png = await page.screenshot({ fullPage: true, timeout: 15_000 }).catch(() => undefined);
     const host = new URL(page.url()).host;
     const kept = placedCard
       ? null

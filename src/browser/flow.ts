@@ -18,7 +18,7 @@ import type { FileChooser, Locator, Page } from "playwright";
 import { resumeDir, statsDirOf } from "../deps/stats.js";
 // Explore's panel; moves to browser/ once its open peer edit lands.
 import type { Command } from "../explore/commands.js";
-import { overlayFor, traceRow } from "../explore/overlay.js";
+import { type OverlayDeps, overlayFor, traceRow } from "../explore/overlay.js";
 import { expandHome } from "../google/auth.js";
 import { tallied } from "../llm/ledger.js";
 import { redactAria, redactText } from "../recorder/redact.js";
@@ -26,7 +26,6 @@ import { type FlowOutcome, type FlowRunRow, type FlowRuns, fileFlowRuns } from "
 import { shareOff, shareTrace } from "../share/share.js";
 import { failureShape, firstTraceOfShape } from "../shots/traces.js";
 import { currentCall, currentReach, type DoneActs, markReached, markSubmitted } from "./attempt.js";
-import { bare } from "./bare.js";
 import { type CaptchaOutcome, type Eyes, solveCaptcha } from "./captcha/index.js";
 import type { CodeStore } from "./code.js";
 import { filmLog, filmStep } from "./film.js";
@@ -357,12 +356,13 @@ export interface RunnerOptions {
    */
   watch?: string;
   /**
-   * Draw the terminal panel and a pulsing box on each act's control
-   * (`explore/overlay`) for a person who watches or a film. Off by default:
-   * the desk runs headed on real accounts, and the layer is a node a page script can see.
-   * Never on a secret flow or the person's own browser.
+   * Draw the panel and a box on each act's control (`explore/overlay`), a native
+   * window over Chrome's, for a person who watches. Off by default; never on a
+   * secret flow or the person's own browser.
    */
   overlay?: boolean;
+  /** The overlay's window; default the native host (tests inject one). */
+  overlayHost?: OverlayDeps["host"];
   /**
    * One line per run, success or not (`runs/flows`): outcome, time, acts,
    * captcha tries, model tokens. Absent = the stats dir (`deps/stats`,
@@ -670,8 +670,11 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
         const fixesUsed: { goal: string; hints: Hints }[] = [];
         let submitted = false;
         let active = session.page;
-        const overlay = overlayFor(runner.overlay === true && !flow.secret && !session.shared);
-        // A new document wipes the layer: the panel comes back on every load, any tab.
+        const overlay = overlayFor(
+          runner.overlay === true && !flow.secret && !session.shared,
+          runner.overlayHost ? { host: runner.overlayHost } : {},
+        );
+        // A new document: its boxes go, any tab.
         const redraw = (p: Page) => void overlay.loaded(p);
         const onPage = (p: Page) => p.on("load", redraw);
         if (overlay.enabled) {
@@ -756,11 +759,9 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             // guard like "the dialog opened, else a person" never misses its
             // control behind a banner or a screen learned on this site.
             if (withinMs > 0)
-              await overlay
-                .hold(active, () =>
-                  clearWay(hints, { kind: "click" }, lastGoal ?? "wait", withinMs),
-                )
-                .catch(() => undefined);
+              await clearWay(hints, { kind: "click" }, lastGoal ?? "wait", withinMs).catch(
+                () => undefined,
+              );
             return locate(active, hints)
               .first()
               .isVisible()
@@ -796,7 +797,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           nextPage: (timeout) =>
             session.context.waitForEvent("page", { timeout }).catch(() => null),
           // Hands between steps: the panel lets them through.
-          scroll: (dy) => overlay.hold(active, () => hands.scroll(active, dy)),
+          scroll: (dy) => hands.scroll(active, dy),
           pages: () => session.context.pages(),
           switchTo(page) {
             active = page;
@@ -1170,9 +1171,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           const shot = join(artifactsDir, `${stamp}.png`);
           if (
             !flow.secret &&
-            (await bare(session.page, () =>
-              session.page.screenshot({ path: shot, fullPage: true }),
-            ).then(
+            (await session.page.screenshot({ path: shot, fullPage: true }).then(
               () => true,
               () => false,
             ))
