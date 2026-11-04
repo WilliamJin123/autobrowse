@@ -998,4 +998,4 @@ Design: `designs/2026-10-24-shared-library.md`.
 
 ## License
 
-PolyForm Shield 1.0.0: use, change and share for any purpose except a product that competes with Wren Automation. See LICENSE.md and CONTRIBUTING.md. Releases published before this change keep their old license.
+PolyForm Strict 1.0.0: noncommercial use only; no changes, no redistribution. A commercial license: wrenautomation.com. See LICENSE.md and CONTRIBUTING.md. Releases published before this change keep their old license.
