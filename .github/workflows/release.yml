@@ -37,6 +37,8 @@ jobs:
           for k in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do chmod 755 "$k/overlay-host"; done
           ls win32-x64/overlay-host.exe win32-arm64/overlay-host.exe
           ls -lR
+      - name: the package holds every host
+        run: npm pack --dry-run 2>&1 | grep overlay-host
       # A tag for a version already on npm is history, not a release: stop quietly.
       - id: published
         run: |

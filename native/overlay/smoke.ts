@@ -65,8 +65,9 @@ const ctx = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), "o
   headless: false,
   viewport: null,
   args: [
-    "--window-size=1100,760",
-    "--window-position=120,120",
+    // fits 1024x768 less a taskbar (the Windows runner's screen)
+    "--window-size=1000,680",
+    "--window-position=10,10",
     ...(os === "linux" ? ["--ozone-platform=x11"] : []),
   ],
 });
@@ -150,6 +151,7 @@ b.onclick=()=>hits.clicks++;
   };
   const p0 = await probe();
   check(Object.keys(p0).length > 0, `the panel answers (${Object.keys(p0).join(",")})`);
+  await sleep(400); // the compositor's first frame
   snap("0-drawn");
   const hits = () =>
     page.evaluate("({...hits, has: document.hasFocus()})") as Promise<
