@@ -122,6 +122,8 @@ describe("headed overlay, out of the page", () => {
       const h = await webHost(browser);
       const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
       await page.setContent(TRAPS);
+      let requests = 0;
+      page.on("request", () => requests++);
       const aria = await page.locator("body").ariaSnapshot();
       const shot = await page.screenshot();
       const o = overlayFor(true, { host: h.factory });
@@ -152,6 +154,7 @@ describe("headed overlay, out of the page", () => {
       expect(await page.evaluate("JSON.stringify(hits)")).toBe(
         JSON.stringify({ mut: 0, read: 0, ev: 0 }),
       );
+      expect(requests).toBe(0);
       expect(await page.evaluate("Object.keys(window).length === globals")).toBe(true);
       expect(await page.evaluate("document.documentElement.outerHTML")).not.toMatch(/data-o|tui/);
       expect(await page.locator("body").ariaSnapshot()).toBe(aria);
@@ -478,6 +481,12 @@ describe("headed overlay, out of the page", () => {
       expect(await v.evaluate(`${rows}.childElementCount`)).toBe(41);
       const last = h.sent.filter((m) => m.t === "js").at(-1)?.js as string;
       expect(last.match(/"what":"/g)?.length).toBe(1);
+      // A new document keeps the trace.
+      await page.setContent(PAGE);
+      await o.loaded(page);
+      await h.idle();
+      expect(await v.evaluate(`${rows}.childElementCount`)).toBe(41);
+      expect(await v.evaluate(`${rows}.firstChild.textContent`)).toContain("new");
     } finally {
       await browser.close();
     }
