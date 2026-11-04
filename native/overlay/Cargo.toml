@@ -1,0 +1,44 @@
+[package]
+name = "overlay-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "autobrowse's headed overlay window (designs/2026-11-04-overlay-out-of-page.md)"
+
+[dependencies]
+wry = { version = "0.57.1", default-features = false, features = ["os-webview"] }
+serde_json = "1"
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+dispatch2 = "0.3"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std", "objc2-core-foundation", "NSApplication", "NSRunningApplication", "NSColor", "NSEvent",
+  "NSGraphics", "NSPanel", "NSResponder", "NSScreen", "NSView", "NSWindow",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+  "std", "CFArray", "CFDictionary", "CFNumber", "CFString", "CFCGTypes",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+  "std", "CGWindow", "CGGeometry",
+] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader",
+  "Win32_System_Ole", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+gdkx11 = "0.18"
+x11 = { version = "2.21", features = ["xlib"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

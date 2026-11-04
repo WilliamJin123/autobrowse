@@ -299,6 +299,13 @@ const NO_GPU_ARGS = process.platform === "linux" ? ["--enable-unsafe-swiftshader
 const LOCAL_ARGS = ["--disable-blink-features=AutomationControlled", ...NO_GPU_ARGS];
 
 /**
+ * Headed on Linux: X11 (XWayland on a Wayland desktop). The overlay can place its window over
+ * Chrome's only there (designs/2026-11-04-overlay-out-of-page.md).
+ */
+const X11_ARGS =
+  process.platform === "linux" && process.env.DISPLAY ? ["--ozone-platform=x11"] : [];
+
+/**
  * Behind a proxy, WebRTC would still ask STUN over UDP from the machine's
  * own address and show the page the IP the proxy hides; only proxied UDP
  * (none, for an HTTP proxy) is allowed.
@@ -325,7 +332,13 @@ async function launchLocal(
   const base = (ua: string | null) => ({
     headless,
     ...size,
-    args: [...LOCAL_ARGS, ...(proxy ? PROXIED_ARGS : []), ...sizeArgs, ...uaArgs(ua)],
+    args: [
+      ...LOCAL_ARGS,
+      ...(proxy ? PROXIED_ARGS : []),
+      ...sizeArgs,
+      ...uaArgs(ua),
+      ...(headless ? [] : X11_ARGS),
+    ],
     ignoreDefaultArgs: ["--enable-automation"],
     ...(proxy ? { proxy } : {}),
     ...(tz ? { env: { ...process.env, TZ: tz } } : {}),

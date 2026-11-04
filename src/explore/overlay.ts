@@ -691,6 +691,10 @@ export async function geometryOf(page: Page): Promise<Geometry | null> {
   }
 }
 
+/** A host that draws but never finds Chrome's window: under Wayland, its windows are not X11's. */
+const NOT_FOUND = "the overlay cannot find Chrome's window (Wayland?)";
+const FOUND_MS = 3_000;
+
 export interface OverlayDeps {
   /** The window that draws; default the native host (macOS). */
   host?: (why: (reason: string) => void) => Promise<OverlayHost | null>;
@@ -722,32 +726,48 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   let sentN = -1;
   let host: OverlayHost | null = null;
   let opening: Promise<OverlayHost | null> | null = null;
-  /** Why nothing is drawn: no macOS, no swiftc. */
+  /** Why nothing is drawn: no host for this platform, Wayland, a host that died. */
   let why: string | null = null;
   /** The page the window follows, and the Chrome window it was matched to. */
   let followed: Page | null = null;
   let windowKey: string | null = null;
   let dpr = 0;
+  /** Targets sent, and the newest the host found: a gap past FOUND_MS sets `why`. */
+  let targets = 0;
+  let found = 0;
   const geometry = deps.geometry ?? geometryOf;
 
   const onEvent = (e: HostEvent) => {
     if (e.t === "js" && e.prefs && typeof e.prefs === "object") prefs = e.prefs as Prefs;
     // Chrome's window changed size (full screen, an infobar) or went: measure again.
     else if (e.t === "lost") windowKey = null;
+    else if (e.t === "found") {
+      found = targets;
+      if (why === NOT_FOUND) why = null;
+    }
     if ((e.t === "moved" || e.t === "lost") && followed) void place(followed);
   };
   const open = (): Promise<OverlayHost | null> => {
-    opening ??= (deps.host ?? nativeHost)((r) => {
+    if (opening) return opening;
+    const p: Promise<OverlayHost | null> = (deps.host ?? nativeHost)((r) => {
       why = r;
     }).then((h) => {
+      // closed while it started: this host is nobody's, so it goes
+      if (opening !== p) {
+        h?.close();
+        return null;
+      }
       host = h;
       if (h) {
         h.on(onEvent);
+        // toggled off while it started: that `hide` found no host
+        if (!enabled) h.send({ t: "hide" });
         h.send({ t: "html", html: panelHtml(prefs) });
       }
       return h;
     });
-    return opening;
+    opening = p;
+    return p;
   };
   const close = () => {
     host?.close();
@@ -768,14 +788,17 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     if (key !== windowKey) {
       windowKey = key;
       host.send({ t: "target", pid: g.pid, ...g.bounds });
+      const n = ++targets;
+      setTimeout(() => {
+        if (host && targets === n && found < n) why = NOT_FOUND;
+      }, FOUND_MS).unref();
     }
     host.send({ t: "view", ...g.view });
     dpr = g.view.dpr;
   };
   /** Each draw sends the state and the rows the window lacks. */
   const paint = async (page: Page): Promise<boolean> => {
-    const h = await open();
-    if (!h) return false;
+    // before the host starts: a context closed meanwhile still ends it
     if (followed !== page) {
       followed = page;
       windowKey = null;
@@ -784,6 +807,8 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       });
       page.context().once("close", close);
     }
+    const h = await open();
+    if (!h) return false;
     await place(page);
     const { trace, ...rest } = state;
     const words = PHASES[state.cmd ?? ""];
@@ -821,7 +846,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     get enabled() {
       return enabled;
     },
-    /** Why nothing is drawn while on (no macOS, no swiftc); null when it draws. */
+    /** Why nothing is drawn while on (no host, Wayland, a host that died); null when it draws. */
     get why() {
       return why;
     },

@@ -18,3 +18,7 @@ google_service_account.json
 *service_account*.json
 unshared.json
 __pycache__/
+
+# overlay host (native/overlay): cargo output; CI drops the prebuilt binaries in bin/
+native/overlay/target/
+assets/overlay/bin/

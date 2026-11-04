@@ -515,7 +515,7 @@ describe("headed overlay, out of the page", () => {
     }
   });
 
-  it("off, no window is made; no host (not macOS), set says why", async () => {
+  it("off, no window is made; no host for the platform, set says why", async () => {
     const browser = await chromium.launch();
     try {
       const h = await webHost(browser);
@@ -526,18 +526,84 @@ describe("headed overlay, out of the page", () => {
       expect(h.made).toBe(0);
       const none = overlayFor(true, {
         host: async (why) => {
-          why("the overlay draws on macOS only");
+          why("the overlay has no window host for freebsd");
           return null;
         },
       });
       expect(await none.set(page, { goal: "x" })).toEqual({
         drawn: false,
-        why: "the overlay draws on macOS only",
+        why: "the overlay has no window host for freebsd",
       });
     } finally {
       await browser.close();
     }
   });
+
+  it("a host still starting: off keeps it hidden, a closed context ends it", async () => {
+    const browser = await chromium.launch();
+    // a host that is ready only when told
+    const slow = (h: Awaited<ReturnType<typeof webHost>>) => {
+      let go = () => {};
+      const started = new Promise<void>((r) => {
+        go = r;
+      });
+      return {
+        go: () => go(),
+        factory: async (why: (r: string) => void) => {
+          await started;
+          return h.factory(why);
+        },
+      };
+    };
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const a = slow(h);
+      const o = overlayFor(true, { host: a.factory, geometry: geo() });
+      const drawing = o.set(page, { goal: "x" });
+      await o.toggle(page, false);
+      a.go();
+      await drawing;
+      const at = (t: string) => h.sent.findIndex((m) => m.t === t);
+      expect(at("hide")).toBeGreaterThanOrEqual(0);
+      expect(at("hide")).toBeLessThan(at("target"));
+
+      const h2 = await webHost(browser);
+      const ctx = await browser.newContext();
+      const b = slow(h2);
+      const o2 = overlayFor(true, { host: b.factory, geometry: geo() });
+      const drawing2 = o2.set(await ctx.newPage(), { goal: "x" });
+      await ctx.close();
+      b.go();
+      expect(await drawing2).toEqual({ drawn: false });
+      expect(h2.closed).toBe(true);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("a host that never finds Chrome's window says why; a later find clears it", async () => {
+    const browser = await chromium.launch();
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      await o.set(page, { goal: "x" });
+      h.emit({ t: "found" });
+      await wait(3_200);
+      expect(o.why).toBeNull();
+      // the window went; the new target is never found (Wayland)
+      h.emit({ t: "lost" });
+      await wait(3_200);
+      expect(h.sent.filter((m) => m.t === "target")).toHaveLength(2);
+      expect(o.why).toMatch(/cannot find Chrome's window/);
+      h.emit({ t: "found" });
+      expect(o.why).toBeNull();
+    } finally {
+      await browser.close();
+    }
+  }, 15_000);
 
   it("the page's context closing ends the window", async () => {
     const browser = await chromium.launch();

@@ -12,7 +12,11 @@ permissions:
   id-token: write
   contents: read
 jobs:
+  # the overlay host, one binary per platform, into the package (no compiler on the user's machine)
+  overlay:
+    uses: ./.github/workflows/overlay.yml
   publish:
+    needs: overlay
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +26,17 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: overlay-*
+          path: assets/overlay/bin
+      # artifacts drop the mode bits; every platform must be there
+      - run: |
+          cd assets/overlay/bin
+          for k in overlay-*; do mv "$k" "${k#overlay-}"; done
+          for k in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do chmod 755 "$k/overlay-host"; done
+          ls win32-x64/overlay-host.exe win32-arm64/overlay-host.exe
+          ls -lR
       # A tag for a version already on npm is history, not a release: stop quietly.
       - id: published
         run: |

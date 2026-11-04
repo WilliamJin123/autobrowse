@@ -2,8 +2,8 @@
 
 A visual for a person who watches a headed page: a panel and purple boxes.
 Two looks: a floating panel (light or dark) and the old terminal. The bar button switches them.
-It is a native macOS window over Chrome's window, not part of the page. The page, your acts, the aria tree and every screenshot never see it.
-macOS only: elsewhere it is off, and `overlay` says why. Nothing depends on it, so remove it freely.
+It is a native window over Chrome's window, not part of the page. The page, your acts, the aria tree and every screenshot never see it.
+macOS, Windows and Linux X11. On Wayland, with no host for the platform, or on Linux without the WebKitGTK 4.1 library or a compositor, it is off and `overlay` says why. In a checkout, the first use builds the host with cargo (minutes). Nothing depends on it, so remove it freely.
 
 ## Where it shows
 

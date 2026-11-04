@@ -1,0 +1,84 @@
+# The overlay's native host (designs/2026-11-04-overlay-out-of-page.md): one release binary per
+# platform, each proven live where the runner can (headed Chrome, real OS clicks, screenshots).
+# release.yml calls this and ships the binaries in the npm package.
+name: overlay
+on:
+  push:
+    branches: [main]
+    paths:
+      - native/overlay/**
+      - src/explore/overlay*.ts
+      - .github/workflows/overlay.yml
+  workflow_call:
+  workflow_dispatch:
+jobs:
+  host:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { key: darwin-arm64, runner: macos-latest, target: aarch64-apple-darwin, smoke: no-input }
+          # cross-built: Intel runners are going away; the code is the arm64 one's
+          - { key: darwin-x64, runner: macos-latest, target: x86_64-apple-darwin, smoke: none }
+          - { key: win32-x64, runner: windows-latest, target: x86_64-pc-windows-msvc, smoke: full }
+          - { key: win32-arm64, runner: windows-11-arm, target: aarch64-pc-windows-msvc, smoke: none }
+          - { key: linux-x64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, smoke: full }
+          - { key: linux-arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, smoke: full }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/overlay
+          key: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev xvfb openbox xcompmgr xdotool imagemagick
+      - name: build
+        shell: bash
+        run: |
+          cargo build --release --locked --manifest-path native/overlay/Cargo.toml --target ${{ matrix.target }}
+          ext=""; [ "${{ runner.os }}" = Windows ] && ext=".exe"
+          mkdir -p "assets/overlay/bin/${{ matrix.key }}"
+          cp "native/overlay/target/${{ matrix.target }}/release/overlay-host$ext" "assets/overlay/bin/${{ matrix.key }}/"
+          ls -l "assets/overlay/bin/${{ matrix.key }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: overlay-${{ matrix.key }}
+          path: assets/overlay/bin/${{ matrix.key }}
+          if-no-files-found: error
+      - if: matrix.smoke != 'none'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - if: matrix.smoke != 'none'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - if: matrix.smoke != 'none'
+        run: pnpm install --frozen-lockfile
+      - if: matrix.smoke != 'none'
+        run: pnpm exec playwright install chromium
+      # the shipped binary in assets/overlay/bin is the one under test
+      - name: smoke (Linux, X11 under Xvfb with a window manager and a compositor)
+        if: matrix.smoke != 'none' && runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1600x1000x24 & sleep 1
+          export DISPLAY=:99
+          openbox & xcompmgr & sleep 1
+          pnpm -s tsx native/overlay/smoke.ts smoke-out
+      - name: smoke
+        if: matrix.smoke != 'none' && runner.os != 'Linux'
+        shell: bash
+        run: pnpm -s tsx native/overlay/smoke.ts smoke-out ${{ matrix.smoke == 'no-input' && '--no-input' || '' }}
+      - if: always() && matrix.smoke != 'none'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.key }}
+          path: smoke-out
+          if-no-files-found: ignore
