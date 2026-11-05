@@ -28,6 +28,10 @@ export interface SiteCallRow {
   terminal: boolean;
   error: string | null;
   ms: number;
+  /** The leg that ran (from 2026-11-05); absent when the call ended before a leg began. */
+  via?: "api" | "browser";
+  /** The route's path as written, `{param}` and all: what `site paths --check` groups by. */
+  template?: string;
   /** Imported from an older record (Restate's history, the caps ledger), not written live. */
   from?: "restate" | "caps";
 }

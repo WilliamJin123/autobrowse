@@ -132,7 +132,27 @@ export interface SiteRoute<I = unknown, O = unknown> {
    * decides per request.
    */
   needs?: readonly string[] | ((input: I) => readonly string[]);
+  /**
+   * Why the browser answers, stated where the legs cannot say it (`sites/standing.ts` holds the
+   * rule, a test enforces it). `final`: for good, with the reason. `waits`: for now, until the
+   * site's blocker of that id clears. On an API-only route, `waits` names a better gated way
+   * (a webhook in review).
+   */
+  standing?: Standing;
   summary: string;
+}
+
+export type Standing = { final: string } | { waits: string };
+
+/** One thing outside our code that a site's routes wait on: a review, a grant, a beta. */
+export interface Blocker {
+  what: string;
+  /** The Backlog task that tracks it. */
+  task?: string;
+  /** The day the wait began (filed, or parked). */
+  since: string;
+  /** The grants (`SiteRoute.needs`) it gives: a route lacking one waits on this blocker. */
+  grants?: readonly string[];
 }
 
 /** Whether this request skips the API leg; with no request (a route listing), only a fixed "browser" does. */
@@ -265,6 +285,11 @@ export interface SiteApi {
   via?: IdentityProvider;
   /** A cheap who-am-I read on the API leg (a concrete GET path): `site check` calls it to prove the token works. */
   probe?: { path: string; input?: Record<string, unknown> };
+  /**
+   * What the site's routes wait on, by id (wren's review id where one exists, `app-reviews.ts`).
+   * A cleared blocker is deleted: the test then names each route that still points at it.
+   */
+  blockers?: Readonly<Record<string, Blocker>>;
   /** Most a route's `meter` may use per account per day, by bucket (`{ profile: 80, search: 25 }`). */
   caps?: Record<string, number>;
   /**

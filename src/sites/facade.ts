@@ -17,6 +17,7 @@ import type { Page } from "playwright";
 import {
   currentCall,
   type DoneActs,
+  markLeg,
   markReached,
   markSubmitted,
   type Reach,
@@ -53,6 +54,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 import { runLeg } from "../engine/leg.js";
 import type { RenewReport } from "./renew.js";
+import { standingOf } from "./standing.js";
 import {
   type ApiLeg,
   type Leg,
@@ -66,6 +68,7 @@ import {
   type SiteApi,
   SiteError,
   type SiteRoute,
+  type Standing,
   siteEnv,
 } from "./types.js";
 import { withLocalFile } from "./upload-file.js";
@@ -172,6 +175,8 @@ export interface RouteRow {
   /** How it answers right now: the API, the browser, or nothing yet (`missing` says what). */
   via: "api" | "browser" | "none";
   missing?: string;
+  /** Why this leg: for good, or what it waits on (`sites/standing.ts`). Absent: the API, nothing gated. */
+  standing?: Standing;
   irreversible: boolean;
   /** Can commit money: gated on the person before the API leg. */
   spends: boolean;
@@ -195,6 +200,8 @@ export interface SiteRow {
   /** A bearer can be minted now. */
   authed: boolean;
   routes: RouteRow[];
+  /** What its routes wait on, by id. */
+  blockers?: NonNullable<SiteApi["blockers"]>;
   setup: SetupRow[];
   probe?: SiteApi["probe"];
   /** Its tokens the platform refused, open incidents (`refused.ts`); absent when none are kept. */
@@ -626,16 +633,18 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
     r: SiteRoute<never, unknown>,
     account: string | null,
   ): Promise<RouteRow> => {
+    const lacks = lacking(s, r, account);
+    const standing = standingOf(s, r, hasToken(s, account), lacks);
     const base = {
       method: r.method,
       path: r.path,
       summary: r.summary,
+      ...(standing ? { standing } : {}),
       irreversible: r.irreversible ?? false,
       spends: Boolean(r.spends),
       request: jsonSchemaOf(r.request),
     };
     const recorded = r.browser ? Boolean(await legOf(r.browser)) : false;
-    const lacks = lacking(s, r, account);
     if (r.api && !prefersBrowser(r) && hasToken(s, account) && !lacks.length)
       return { ...base, via: "api" };
     if (r.browser) {
@@ -675,6 +684,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       origin: originOf(s, deps.env),
       authed: hasToken(s, as),
       routes: await Promise.all(s.routes.map((r) => routeRow(s, r, as))),
+      ...(s.blockers ? { blockers: s.blockers } : {}),
       setup: await Promise.all(s.setup.map(setupRow)),
       ...(s.probe ? { probe: s.probe } : {}),
     };
@@ -930,6 +940,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
             ...(deps.render ? { render: deps.render } : {}),
           });
           let out: unknown;
+          markLeg("api", r.path);
           try {
             out = await r.api(parsed.data as never, leg(token));
           } catch (e) {
@@ -964,6 +975,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
               501,
               `${method} ${r.path}: ${legName(r.browser)} not recorded yet; explore it`,
             );
+          markLeg("browser", r.path);
           if (slot?.waitMs) await (deps.sleep ?? sleep)(slot.waitMs);
           const input = r.browser.input
             ? r.browser.input(parsed.data as never, deps.env)

@@ -13,6 +13,7 @@ import { z } from "zod";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import type { Amount } from "../gates/spend.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { META_APP } from "./blockers.js";
 import { fields, resolve } from "./facets/core.js";
 import { INSTAGRAM_TAGS } from "./facets/sets.js";
 import { WEB_REDIRECT } from "./oauth.js";
@@ -602,6 +603,7 @@ export const metaOAuth: OAuthSpec = {
 
 export const meta: SiteApi = {
   site: "meta",
+  blockers: { "meta-app": META_APP },
   origin: META_ORIGIN,
   probe: { path: "/me" },
   auth: { oauth: metaOAuth },

@@ -70,6 +70,7 @@ import {
   loadDataLogins,
   shareKnownFor,
   sinkFor,
+  siteCallsDirFor,
   WORKFLOWS,
   workspaceInboxDepsFor,
 } from "./services.js";
@@ -776,7 +777,7 @@ program
   });
 
 registerRecordCommands(program, settings, local);
-registerSiteCommands(program, local, api);
+registerSiteCommands(program, local, api, siteCallsDirFor(settings));
 registerUnsubscribe(program, local);
 registerAwsCommands(program, local, settings);
 registerLangfuseCommands(program, () => envStoreFor(settings));

@@ -307,6 +307,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/by/username/{username}",
+      standing: { final: "the API bills each read; the signed-in page shows it free" },
       summary:
         "A user by handle: id, bio, location, link, follower counts (free: the signed-in page)",
       request: byUsername,
@@ -362,6 +363,10 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/me/following",
+      standing: {
+        final:
+          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+      },
       summary:
         "Who the account follows, newest first (`max_results`, default 1000): `data[]` of username, name, follows_you (free: the signed-in page; the free API tier has no follows)",
       request: following,
@@ -371,6 +376,10 @@ export const x: SiteApi = {
     route({
       method: "POST",
       path: "/2/users/me/following",
+      standing: {
+        final:
+          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+      },
       summary:
         "Follow a user by handle (`undo` unfollows): `data.following` (free: the signed-in page; the free API tier has no follows)",
       request: follow,
@@ -380,6 +389,10 @@ export const x: SiteApi = {
     route({
       method: "POST",
       path: "/2/users/me/likes",
+      standing: {
+        final:
+          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+      },
       summary:
         "Like a post (`id`; `undo` takes it back): `data.liked` (free: the signed-in page; the free API tier has no likes)",
       request: like,
@@ -409,6 +422,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/{id}/tweets",
+      standing: { final: "the API bills each read; the signed-in page shows it free" },
       summary:
         "A user's posts and replies, newest first (`max_results` up to 100, `since_id` cursor, `exclude=replies,retweets`; `id` may be a handle; free: the signed-in page). Each reply has `in_reply_to_status_id`, `referenced_tweets` and `in_reply_to` {username, name}",
       request: timeline,
@@ -420,6 +434,10 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/{id}/timelines/reverse_chronological",
+      standing: {
+        final:
+          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+      },
       summary:
         "The signed-in account's home: posts from the accounts it follows, newest first (the Following tab, scrolled to `max_results`; `since_id` cursor; ads left out). Browser only: the API bills each post read",
       request: timeline,
@@ -429,6 +447,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/tweets/search/recent",
+      standing: { final: "the API bills each read; the signed-in page shows it free" },
       summary: `Posts matching \`query\` (X search operators, \`max_results\`, \`since_id\` cursor; X's own \`sort_order\` recency (default)|relevancy, \`start_time\`, \`end_time\`; ${presetWords(X_SEARCH)}; free: the signed-in page)`,
       request: search,
       prefer: "browser",
@@ -447,6 +466,7 @@ export const x: SiteApi = {
     route({
       method: "POST",
       path: "/1.1/account/update_profile.json",
+      standing: { final: "v1.1 only, which wants OAuth 1.0a; our token is OAuth 2.0" },
       summary:
         "The account's display name (v1.1 wants OAuth 1.0a, so the Edit profile dialog in the browser): `name`; answers `{ before, name }`. The handle never changes",
       request: profileName,

@@ -11,6 +11,7 @@ import { z } from "zod";
 import { MAX_THREADS_SEARCH } from "../browser/flows/threads-act.js";
 import { type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { META_APP } from "./blockers.js";
 import { fields } from "./facets/core.js";
 import { THREADS_SEARCH } from "./facets/sets.js";
 import { WEB_REDIRECT } from "./oauth.js";
@@ -166,6 +167,7 @@ export const instagramOAuth: OAuthSpec = {
 
 export const instagram: SiteApi = {
   site: "instagram",
+  blockers: { "meta-app": META_APP },
   origin: INSTAGRAM_ORIGIN,
   probe: { path: "/me" },
   auth: { oauth: instagramOAuth },
@@ -250,6 +252,9 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/posts",
+      standing: {
+        final: "a fallback: the API posts from a public URL; this leg uploads a local file",
+      },
       summary:
         "A post from a local file with a caption (no official path: the API wants a public URL; the browser leg uploads)",
       request: webPost,
@@ -317,6 +322,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/{mediaId}/comments",
+      standing: { waits: "meta-app" },
       summary: "Comments on a post (`fields`, `limit`, `after`)",
       request: comments,
       api: async ({ mediaId, ...q }, leg) =>
@@ -405,6 +411,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/{username}/follow",
+      standing: { final: "the Graph API has no follow" },
       summary:
         "Follow another account (`undo` unfollows): `{ username, following, already? }` or `{ found: false }`",
       request: webFollow,
@@ -414,6 +421,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/p/{shortcode}/like",
+      standing: { final: "the Graph API has no like" },
       summary:
         "Like another account's post (`undo` takes it back): `{ shortcode, liked, already? }`",
       request: webLike,
@@ -423,6 +431,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/p/{shortcode}/comments",
+      standing: { final: "the Graph API comments on our own posts only" },
       summary:
         "Comment on another account's post (the API comments only on our own): `{ shortcode, commented }`",
       request: webComment,
@@ -455,6 +464,10 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/p/{shortcode}",
+      standing: {
+        final:
+          "the Graph API reads others' posts by account (business_discovery), never by shortcode",
+      },
       summary:
         "Any public post: owner `username`, caption, likes, comments, timestamp (the page's own tags)",
       request: z.object({ shortcode }),
@@ -464,6 +477,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/p/{shortcode}/comments",
+      standing: { final: "the Graph API reads comments on our own posts only" },
       summary:
         "The comments on any public post, read off the page (the API reads only our own): `{ shortcode, url, owner, viewer, comments: [{ id, username, userId, text, at, parentId, likes, mine }], more }`, newest first; Instagram ranks them, so `more` says some were not read (`max`, default 100). Reads only",
       request: webComments,
@@ -473,6 +487,10 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/search",
+      standing: {
+        final:
+          "the Graph API searches hashtags only (30 a week, after App Review); words have no API",
+      },
       summary:
         "Posts for words or a #hashtag as Instagram's search shows them, top first: `{ q, shortcodes }` (`max`); read each with `GET /web/p/{shortcode}`",
       request: webSearch,
@@ -482,6 +500,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/feed",
+      standing: { final: "the Graph API has no home feed" },
       summary:
         "The signed-in home feed: posts by the accounts ours follows, as Instagram orders them, with caption, counts and time, in one load scrolled deep: `{ data: [{ shortcode, url, username, caption, likes, comments, timestamp }], meta: { result_count } }` (`max`, default 20). Ads and suggested posts are left. Reads only",
       request: feed,
@@ -491,6 +510,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/following",
+      standing: { final: "the Graph API lists no follows" },
       summary:
         "Every account ours follows, as the signed-in Following list pages it (the API has no follows): `{ data: [{ username, name }], meta: { result_count } }` (`max`, default 1000). Reads only",
       request: following,
@@ -500,6 +520,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/threads/following",
+      standing: { final: "the Threads API lists no follows" },
       summary:
         "Every account ours follows on Threads, read off the Threads profile's Following tab (Threads signs in through Instagram; its API lists no follows): `{ data: [{ username, name }], meta: { result_count, listed } }`; `listed` is the profile's own count (`max`, default 1000). Reads only",
       request: following,
@@ -509,6 +530,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/threads/search",
+      standing: { waits: "meta-app" },
       summary:
         "Threads posts for words, off the search page (the API's search finds only our own until Meta's review); `search_type` RECENT (default, newest first) or TOP, or `preset` latest|top: `{ q, data: [{ code, url, username, text, at, likes, replies }] }` (`max`, default 30); replies to others are left. Reads only",
       request: threadsSearch,
@@ -518,6 +540,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/threads/{username}/post/{code}/like",
+      standing: { final: "the Threads API has no like" },
       summary: "Like a Threads post: `{ code, liked, already? }`",
       request: threadsPost,
       meter: () => ({ threads_like: 1 }),
@@ -526,6 +549,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/threads/{username}/post/{code}/reply",
+      standing: { waits: "meta-app" },
       summary:
         "Reply to another account's Threads post (the API needs a Graph id the web does not show; 500 characters): `{ code, replied }`",
       request: threadsPost.extend({ text: z.string().trim().min(1).max(500) }),
@@ -539,6 +563,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/threads/{username}/follow",
+      standing: { final: "the Threads API has no follow" },
       summary: "Follow an account on Threads from its profile: `{ username, following, already? }`",
       request: z.object({ username: z.string().regex(/^@?[\w.]{1,40}$/, "a Threads handle") }),
       meter: () => ({ threads_follow: 1 }),
@@ -547,6 +572,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/profile/name",
+      standing: { final: "no API sets the display name" },
       summary:
         "The account's display name (no API sets it; Accounts Center in the browser): `name`; answers `{ before, name }`. Twice in 14 days; the username never changes",
       request: profileName,

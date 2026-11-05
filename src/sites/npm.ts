@@ -83,6 +83,7 @@ export const npm: SiteApi = {
     route({
       method: "POST",
       path: "/orgs",
+      standing: { final: "an org is made on npmjs.com only" },
       summary:
         "Make a free org (unlimited public packages) so packages publish under its scope; the name is fixed once made",
       request: z.object({ name: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/) }),
@@ -95,6 +96,7 @@ export const npm: SiteApi = {
     route({
       method: "POST",
       path: "/packages/{package}/trust",
+      standing: { final: "a trusted publisher is set on npmjs.com only" },
       summary:
         "Trust a GitHub Actions workflow to publish the package over OIDC (no token in CI); owner, repo and workflow are fixed once made. `allowPublish` (default true; false = stage only) is set on a new or existing connection",
       request: z.object({

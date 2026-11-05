@@ -236,6 +236,10 @@ export const web: SiteApi = {
     route({
       method: "GET",
       path: "/google",
+      standing: {
+        final:
+          "Google has no API for its results page (Custom Search is another index, with no AI Overview)",
+      },
       summary:
         "Google's page for `q` (`n` results, default 10, up to 30; `gl` country, `hl` language; `qdr` h|d|w|m|y: Google's Tools time filter, or `preset` day|week|month|year): the AI Overview and its sources, every organic result, ads, People also ask. A browser leg: call it on the desk",
       request: z.object({
@@ -257,6 +261,7 @@ export const web: SiteApi = {
     route({
       method: "GET",
       path: "/place",
+      standing: { final: "the Places API bills each call; Maps shows the id free" },
       summary:
         "A business's Google Place ID from Google Maps, signed out (`q`: name and address, \"Northwind Plumbing, 12 Elm St, Springfield\"): `placeId` (null when no place carries the name), `name`, `address`, `url`, `via` (place, list or none) and the list's `candidates`. A browser leg: call it on the desk",
       request: z.object({ q: z.string().trim().min(3).max(300) }),
@@ -266,6 +271,10 @@ export const web: SiteApi = {
     route({
       method: "GET",
       path: "/place/reviews",
+      standing: {
+        final:
+          "the Places API gives 5 reviews; the Business Profile API reads only places we manage",
+      },
       summary:
         "A place's Google reviews off Google Maps, newest first (`placeId`, `limit` up to 50, default 20): `name`, `url` (the place on Maps) and `reviews`, each with `id`, `author`, `authorUrl`, `stars`, `text`, `at` (ISO), `ago`, `edited` and the owner's `reply`. Signed out Maps hides reviews, so it reads in the `google` profile. A browser leg: call it on the desk",
       request: z.object({

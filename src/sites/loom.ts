@@ -39,6 +39,7 @@ export const loom: SiteApi = {
     route({
       method: "POST",
       path: "/videos",
+      standing: { final: "Loom has no API for a workspace's videos" },
       request: z.object({
         /** A local path, or a URL the leg downloads first. */
         file: z.string().min(1),
@@ -52,6 +53,7 @@ export const loom: SiteApi = {
     route({
       method: "PATCH",
       path: "/videos/{id}",
+      standing: { final: "Loom has no API for a workspace's videos" },
       request: z.object({ id, title }),
       meter: () => ({ edits: 1 }),
       browser: { flow: "loom/rename" },
@@ -60,6 +62,7 @@ export const loom: SiteApi = {
     route({
       method: "DELETE",
       path: "/videos/{id}",
+      standing: { final: "Loom has no API for a workspace's videos" },
       request: z.object({ id }),
       irreversible: true,
       verify: { none: "a delete is idempotent: a repeat finds the video gone and changes nothing" },

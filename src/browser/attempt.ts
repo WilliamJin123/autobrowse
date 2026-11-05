@@ -88,6 +88,24 @@ export const markSubmitted = (): void => {
   t.submitted = true;
 };
 
+/** Which leg a site call ran, and the route's path as written (`{param}`), for the call ledger. */
+export interface LegTaken {
+  via?: "api" | "browser";
+  template?: string;
+}
+
+const legs = new AsyncLocalStorage<LegTaken>();
+
+export const withLeg = <T>(l: LegTaken, fn: () => Promise<T>): Promise<T> => legs.run(l, fn);
+
+/** The facade says which leg it starts. */
+export const markLeg = (via: "api" | "browser", template: string): void => {
+  const l = legs.getStore();
+  if (!l) return;
+  l.via = via;
+  l.template = template;
+};
+
 /**
  * The leg answers with no act because the thing is already there: a keyed irreversible call
  * then settles as sent. Without it, such a call's answer with no submit step is `not_sent`.

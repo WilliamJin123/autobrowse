@@ -8,11 +8,13 @@
  */
 
 import type { Command } from "commander";
+import { readSiteCalls } from "../runs/calls.js";
 import { RETRY_BUFFER } from "../sites/caps.js";
 import type { CapsReport, LimitsRow } from "../sites/facade.js";
-import { type CheckRow, checkSite, type Method } from "../sites/index.js";
+import { type CheckRow, checkSite, type Method, SITES } from "../sites/index.js";
 import type { SiteLimits } from "../sites/limits.js";
 import { refusedLine, utcOf } from "../sites/refused.js";
+import { CONNECT, drift, type PathsReport, pathsReport } from "../sites/standing.js";
 import { accent, bad, bold, columns, dim, good, warn } from "../style.js";
 import type { LocalBackend } from "./backend.js";
 import { readJson } from "./cli-json.js";
@@ -167,7 +169,49 @@ function registerLimitCommands(program: Command, local: LocalBackend): void {
     );
 }
 
-export function registerSiteCommands(program: Command, local: LocalBackend, box?: Ingress): void {
+/** What is settled, then what waits and on what; `waiting` leaves the settled part out. */
+export function printPaths(r: PathsReport, waiting: boolean): void {
+  const count = (n: number) => `${n} route${n === 1 ? "" : "s"}`;
+  if (!waiting) {
+    const api = r.settled.reduce((n, s) => n + s.api, 0);
+    console.log(bold(`Settled: ${count(api + r.final.length)}`));
+    const rows = r.settled.map((s) => [
+      `  ${accent(s.site)}`,
+      s.api ? good(`${s.api} API`) : "",
+      s.browser ? `${s.browser} browser for good` : "",
+    ]);
+    for (const line of columns(rows)) console.log(line);
+    console.log("");
+  }
+  const routes = r.waiting.reduce((n, w) => n + w.routes.length, 0);
+  console.log(bold(`Waiting: ${count(routes)}`));
+  for (const w of r.waiting) {
+    const what =
+      w.id === CONNECT
+        ? `no token: ours to run (autobrowse site status ${w.site})`
+        : (w.blocker?.what ?? "no blocker names this grant");
+    const meta = w.blocker
+      ? dim(`  since ${w.blocker.since}${w.blocker.task ? `, ${w.blocker.task}` : ""}`)
+      : "";
+    console.log(`  ${warn(w.id)} ${accent(w.site)}${meta}`);
+    console.log(`    ${what}`);
+    for (const x of w.routes)
+      console.log(
+        `    ${x.route}${x.via === "api" ? dim("  (the API answers; a better way is gated)") : x.via === "none" ? dim("  (no leg until then)") : ""}`,
+      );
+  }
+  if (!r.none.length) return;
+  console.log(`\n${bold(`No leg now: ${count(r.none.length)}`)}`);
+  for (const line of columns(r.none.map((n) => [`  ${accent(n.site)}`, n.route, warn(n.missing)])))
+    console.log(line);
+}
+
+export function registerSiteCommands(
+  program: Command,
+  local: LocalBackend,
+  box?: Ingress,
+  callsDir?: string,
+): void {
   registerLimitCommands(program, local);
   const site = program
     .command("site")
@@ -206,7 +250,7 @@ export function registerSiteCommands(program: Command, local: LocalBackend, box?
       const routes = s.routes.map((r) => [
         `  ${r.irreversible ? warn("!") : " "} ${r.method}`,
         r.path,
-        dim(r.via),
+        dim(r.standing && "waits" in r.standing ? `${r.via}, waits ${r.standing.waits}` : r.via),
         r.missing ? warn(r.missing) : r.summary,
       ]);
       for (const line of columns(routes)) console.log(line);
@@ -225,6 +269,56 @@ export function registerSiteCommands(program: Command, local: LocalBackend, box?
       ]);
       for (const line of columns(steps)) console.log(line);
     });
+  site
+    .command("paths [site]")
+    .description(
+      "Each route's path, for good or for now: the API, the browser for good, or what a route waits on",
+    )
+    .option("--waiting", "only what waits, by blocker")
+    .option("--final", "each browser-for-good route and why")
+    .option("--check", "name each route whose calls of the last 7 days ran another leg; exit 1")
+    .option("--json", "the report as JSON")
+    .action(
+      async (
+        name: string | undefined,
+        o: { waiting?: boolean; final?: boolean; check?: boolean; json?: boolean },
+      ) => {
+        const sites = local().backend.sites;
+        if (!sites) throw new Error("no site apis here");
+        const rows = name ? [await sites.status(name)] : await sites.list();
+        const report = pathsReport(rows);
+        // A route that picks its leg by request runs both: no drift.
+        const perRequest = (s: string, route: string) =>
+          SITES.find((x) => x.site === s)?.routes.some(
+            (r) =>
+              `${r.method} ${r.path}` === route &&
+              (typeof r.prefer === "function" || typeof r.needs === "function"),
+          ) ?? false;
+        const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+        const ran = o.check && callsDir ? readSiteCalls(callsDir, since).filter((r) => r.via) : [];
+        const drifted = drift(rows, ran, perRequest);
+        if (o.json) console.log(JSON.stringify(o.check ? { ...report, drift: drifted } : report));
+        else if (o.final)
+          for (const line of columns(
+            report.final.map((f) => [accent(f.site), f.route, dim(f.why)]),
+          ))
+            console.log(line);
+        else printPaths(report, Boolean(o.waiting));
+        if (!o.check) return;
+        if (!o.json) {
+          console.log(
+            drifted.length
+              ? `\n${bold(`Drift: ${drifted.length}`)}`
+              : dim(`\nno drift: ${ran.length} calls of the last 7 days ran their stated leg`),
+          );
+          for (const d of drifted)
+            console.log(
+              `  ${accent(d.site)} ${d.route}: stated ${d.stated}, ran api ${d.ran.api}, browser ${d.ran.browser} (last ${d.last.slice(0, 10)})`,
+            );
+        }
+        if (drifted.length) process.exitCode = 1;
+      },
+    );
   site
     .command("check [site]")
     .description("Prove each site's token with one who-am-I call; every site by default")

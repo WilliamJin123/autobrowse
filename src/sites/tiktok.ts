@@ -10,6 +10,7 @@ import { MAX_SEARCH } from "../browser/flows/tiktok-act.js";
 import { MAX_COMMENTS } from "../browser/flows/tiktok-comments.js";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { TIKTOK_DIRECT_POST } from "./blockers.js";
 import { pollWaits } from "./poll.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead } from "./verdict.js";
@@ -228,6 +229,7 @@ export const tiktokOAuth: OAuthSpec = {
 
 export const tiktok: SiteApi = {
   site: "tiktok",
+  blockers: { "tiktok-direct-post": TIKTOK_DIRECT_POST },
   origin: TIKTOK_ORIGIN,
   probe: { path: "/v2/user/info/" },
   auth: { oauth: tiktokOAuth },
@@ -362,6 +364,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/posts",
+      standing: { waits: "tiktok-direct-post" },
       summary:
         "A post from a video file (a path, or a URL it downloads) with a caption, on TikTok Studio (a fallback; `/v2/post/publish/video/init/` posts by the API): `privacy` everyone|friends|only-me (default everyone), `comments`, `reuse` (default on), `aiGenerated`; answers `{ id, url, profile, note? }`, id null when the post went out but the profile does not list it yet",
       request: webPost,
@@ -378,6 +381,7 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/following",
+      standing: { final: "no TikTok API lists follows" },
       summary:
         "Every account ours follows, read off the signed-in profile's Following dialog (no public API lists follows): `{ data: [{ username, name }], meta: { result_count, listed } }`; `listed` is the profile's own count (`max`, default 1000). Reads only",
       request: following,
@@ -387,6 +391,7 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/search",
+      standing: { final: "no TikTok API searches (the Research API is for academics)" },
       summary:
         "Videos for words as TikTok's search shows them, read from the page's own search call (no API searches): `{ q, data: [{ id, url, username, name, bio, text, at, likes, comments }] }` (`max`, default 30). Reads only",
       request: webSearch,
@@ -396,6 +401,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/videos/{videoId}/like",
+      standing: { final: "no TikTok API likes" },
       summary: "Like another account's video (no API likes): `{ videoId, liked, already? }`",
       request: video,
       meter: () => ({ like: 1 }),
@@ -404,6 +410,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/{username}/follow",
+      standing: { final: "no TikTok API follows" },
       summary:
         "Follow an account from its profile (no API follows): `{ username, following, already? }`",
       request: webFollow,
@@ -413,6 +420,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/videos/{videoId}/comments",
+      standing: { final: "no TikTok API comments" },
       summary:
         "Comment on another account's video (no API comments there; 150 characters): `{ videoId, commented, id }`",
       request: webComment,
@@ -446,6 +454,7 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/videos/{videoId}/comments",
+      standing: { final: "no TikTok API reads comments" },
       summary:
         "Comments on a video, read from the page's own comment calls (no public API; browser): `username` (the video's handle, optional), `max` (default 50, at most 100); answers `{ videoId, url, comments: [{ id, text, at, author, authorName, authorId, parentId, creator, likes }] }`, newest first. Reads only",
       request: postComments,
@@ -455,6 +464,9 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/videos/{videoId}/analytics",
+      standing: {
+        final: "the Display API gives counts only; Studio adds viewers, watch time and sources",
+      },
       summary:
         "A video's numbers off its TikTok Studio analytics page, read from the page's own insight calls (no API; browser; our own videos only): durationSecs, views, uniqueViewers, totalPlaySecs, avgWatchSecs, finishRate, newFollowers, retention, sources, searchTerms, age, gender, location (lists of `{ key, value }`, TikTok's keys and shares), followerShare, nonFollowerShare, newViewerShare, returnViewerShare; null when TikTok shows none (most fields wait for 100 views); `other` names unmapped fields with data. Reads only",
       request: z.object({ videoId: z.string().regex(/^\d+$/, "a video id") }),
@@ -464,6 +476,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/videos/{videoId}/comments/{commentId}/replies",
+      standing: { final: "no TikTok API comments" },
       summary: "Reply to a comment (no public API; browser)",
       request: reply,
       irreversible: true,
@@ -498,6 +511,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/profile/name",
+      standing: { final: "no API sets the nickname" },
       summary:
         "The account's nickname (no API sets it; Edit profile in the browser): `name`; answers `{ before, name, note }`, note = TikTok's lock line. Once every 7 days; the username never changes",
       request: profileName,

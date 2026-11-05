@@ -73,6 +73,7 @@ export const fbPublic: SiteApi = {
     route({
       method: "GET",
       path: "/ads",
+      standing: { final: "Meta's Ad Library API gives political ads only" },
       summary:
         "Ads running now for keyword `q` in `country` (default US), newest layout first: Library ID, advertiser, its page, start date, text, call to action, the link it sends to (`url`, every one in `urls`), the shown domain (`caption`), and the card's whole text (`all`). A browser leg: call it on the desk",
       request: z.object({
@@ -91,6 +92,7 @@ export const fbPublic: SiteApi = {
     route({
       method: "GET",
       path: "/groups",
+      standing: { final: "Meta has no Groups API (closed 2024)" },
       summary:
         "Facebook groups about `q` through Google (`site:facebook.com/groups`, `n` results, default 10, up to 30): each group's id, name and link, with the public posts Google showed (link, title, snippet); `serp` is Google's whole page. A browser leg: call it on the desk",
       request: z.object({
@@ -107,6 +109,7 @@ export const fbPublic: SiteApi = {
     route({
       method: "GET",
       path: "/groups/{group}",
+      standing: { final: "Meta has no Groups API (closed 2024)" },
       summary:
         "A group's About as a visitor sees it: name, privacy, members, the About text (cut where Facebook cuts it), place, created date, posts today and last month, total members, admins, and the panel's whole text (`all`). A private group shows this too. A browser leg: call it on the desk",
       request: z.object({ group: id }),
@@ -119,6 +122,7 @@ export const fbPublic: SiteApi = {
     route({
       method: "GET",
       path: "/groups/{group}/posts/{post}",
+      standing: { final: "Meta has no Groups API (closed 2024)" },
       summary:
         "One public group post as a visitor sees it: author (no profile link signed out), badge, time, Meta's AI title, text, reaction, comment and share counts, links out, the whole text (`all`); and the top comments shown (author, text, age, reactions). A browser leg: call it on the desk",
       request: z.object({ group: id, post: z.string().regex(/^\d{5,25}$/) }),

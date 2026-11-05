@@ -114,11 +114,11 @@ describe("autobrowse env", () => {
   });
   it("sets a new value from the clipboard into the store and .env, cleaned of a pasted line or quotes", async () => {
     const t = setup({});
-    t.paste("  TWILIO_AUTH_TOKEN='k1'\n");
+    t.paste("  TWILIO_AUTH_TOKEN='k-1'\n");
     await t.run("set", "TWILIO_AUTH_TOKEN", "--clipboard");
-    expect(await t.store.get("TWILIO_AUTH_TOKEN")).toBe("k1");
-    expect(readFileSync(join(t.dir, ".env"), "utf8")).toMatch(/^TWILIO_AUTH_TOKEN=k1$/m);
-    expect(t.said.join("\n")).not.toContain("k1");
+    expect(await t.store.get("TWILIO_AUTH_TOKEN")).toBe("k-1");
+    expect(readFileSync(join(t.dir, ".env"), "utf8")).toMatch(/^TWILIO_AUTH_TOKEN=k-1$/m);
+    expect(t.said.join("\n")).not.toContain("k-1");
     t.paste("");
     await expect(t.run("set", "X", "--clipboard")).rejects.toThrow(/empty/);
     t.paste("a\nb");

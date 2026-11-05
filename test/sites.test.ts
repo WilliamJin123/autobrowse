@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { type LegTaken, withLeg } from "../src/browser/attempt.js";
 import { defineFlow } from "../src/browser/flow.js";
 import { linkedinCreatePost } from "../src/browser/flows/linkedin-create-post.js";
 import { googleOauthConsent } from "../src/browser/flows/oauth-consent.js";
@@ -108,7 +109,12 @@ describe("site facade", () => {
       runner: browser,
       flow: () => null,
     });
-    expect(await sites.call("linkedin", "GET", "/v2/userinfo", {})).toEqual({ sub: "abc" });
+    // The leg that ran is marked for the call ledger, with the path as the route writes it.
+    const took: LegTaken = {};
+    expect(await withLeg(took, () => sites.call("linkedin", "GET", "/v2/userinfo", {}))).toEqual({
+      sub: "abc",
+    });
+    expect(took).toEqual({ via: "api", template: "/v2/userinfo" });
     expect(
       await sites.call("linkedin", "POST", "/rest/posts", { author: person, commentary: "hi" }),
     ).toEqual({ id: "urn:li:share:1" });
@@ -149,7 +155,17 @@ describe("site facade", () => {
         "linkedin-whoami": async () => ({ sub: "browser-sub" }),
       }),
     });
-    expect(await sites.call("linkedin", "GET", "/v2/userinfo", {})).toEqual({ sub: "browser-sub" });
+    const took: LegTaken = {};
+    expect(await withLeg(took, () => sites.call("linkedin", "GET", "/v2/userinfo", {}))).toEqual({
+      sub: "browser-sub",
+    });
+    expect(took).toEqual({ via: "browser", template: "/v2/userinfo" });
+    // No token: a route with both legs waits on a connect; one the page answers for good says why.
+    const routes = (await sites.status("linkedin")).routes;
+    expect(routes.find((r) => r.path === "/v2/userinfo")?.standing).toEqual({ waits: "connect" });
+    expect(routes.find((r) => r.path === "/feed")?.standing).toEqual({
+      final: "no LinkedIn API reads the home feed",
+    });
     expect(
       await sites.call("linkedin", "POST", "/rest/posts", { author: person, commentary: "hello" }),
     ).toEqual({ url: "https://www.linkedin.com/feed/update/urn:li:activity:9/" });

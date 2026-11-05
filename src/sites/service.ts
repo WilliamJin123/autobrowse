@@ -23,7 +23,7 @@
 import * as restate from "@restatedev/restate-sdk";
 import { z } from "zod";
 import { KeyError } from "../auth/keys.js";
-import { type CallTry, withCall } from "../browser/attempt.js";
+import { type CallTry, type LegTaken, withCall, withLeg } from "../browser/attempt.js";
 import { profileBusyOf } from "../browser/browsers.js";
 import {
   MAY_HAVE_GONE_THROUGH,
@@ -245,10 +245,12 @@ async function recorded<T>(
 ): Promise<T> {
   const t0 = Date.now();
   const at = new Date(t0).toISOString();
+  const leg: LegTaken = {};
   try {
-    const out = await fn();
+    const out = await withLeg(leg, fn);
     calls?.record({
       ...base,
+      ...leg,
       at,
       attempt,
       ok: true,
@@ -264,6 +266,7 @@ async function recorded<T>(
     const error = err instanceof Error ? err.message : String(err);
     calls?.record({
       ...base,
+      ...leg,
       at,
       attempt,
       ok: false,

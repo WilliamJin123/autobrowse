@@ -11,6 +11,7 @@ export const proofShotRoute = () =>
   route({
     method: "GET",
     path: "/proof/shot",
+    standing: { final: "a screenshot: only a browser makes one" },
     summary:
       "A comment's screenshot with its post's title (`url` the permalink, `ref` the comment's id (Reddit `t1_…`) or `text` its words): `found`, `url` landed, `title`, `text`, `jpeg` (base64), `width`, `height`. Not found, the top of the page. A browser leg: call it on the desk",
     request: z

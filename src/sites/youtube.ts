@@ -952,6 +952,7 @@ export const youtube: SiteApi = {
     route({
       method: "POST",
       path: "/studio/communityPosts",
+      standing: { final: "the Data API has no community posts" },
       summary:
         "! A community post (no official API; YouTube in the browser); image is a path or URL; answers {url} (null when the list didn't show it)",
       request: communityPost,
@@ -973,6 +974,7 @@ export const youtube: SiteApi = {
     route({
       method: "GET",
       path: "/studio/videos/{videoId}/analytics",
+      standing: { final: "the Analytics API lacks a Short's viewed against swiped away" },
       summary:
         "A video's totals off its Studio analytics page (browser; the page's own calls): `viewedPct` (a Short's viewed vs swiped away, percent viewed; the Analytics API lacks it), `avgViewSecs`, `avgViewPct`, `views`, each null when the page has none. Reads only",
       request: z.object({ videoId: z.string().regex(/^[\w-]{6,20}$/, "a video id") }),
@@ -982,6 +984,7 @@ export const youtube: SiteApi = {
     route({
       method: "POST",
       path: "/studio/thumbnail",
+      standing: { final: "thumbnails.set refuses Shorts" },
       summary:
         "! A video's custom thumbnail through Studio, Shorts too (thumbnails.set refuses them); file is a path or URL, dry stages then undoes; answers {videoId,saved,dry?}",
       request: studioThumbnail,

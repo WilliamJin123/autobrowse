@@ -9,6 +9,7 @@
  * capped per account like a person posting.
  */
 import { z } from "zod";
+import { REDDIT_DEVVIT } from "./blockers.js";
 import { fields, presetWords, resolve } from "./facets/core.js";
 import { REDDIT_SEARCH } from "./facets/sets.js";
 import { route, type SiteApi, SiteError } from "./types.js";
@@ -173,6 +174,7 @@ const read = "reddit/read";
 
 export const reddit: SiteApi = {
   site: "reddit",
+  blockers: { "reddit-devvit": REDDIT_DEVVIT },
   origin: REDDIT_ORIGIN,
   // No client: every route is a browser leg, signed in as the account's own profile.
   auth: { open: true },
@@ -183,6 +185,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/api/v1/me",
+      standing: { waits: "reddit-devvit" },
       request: z.object({}),
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: () => ({ path: "/api/me" }) },
@@ -191,6 +194,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/user/{username}/submitted",
+      standing: { waits: "reddit-devvit" },
       request: submitted,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -202,6 +206,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/user/{username}/comments",
+      standing: { waits: "reddit-devvit" },
       request: submitted,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -213,6 +218,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/user/{username}/overview",
+      standing: { waits: "reddit-devvit" },
       request: submitted,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -225,6 +231,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/api/user_data_by_account_ids",
+      standing: { waits: "reddit-devvit" },
       request: userData,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -237,6 +244,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/user/{username}/about",
+      standing: { waits: "reddit-devvit" },
       request: about,
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: ({ username }) => ({ path: `/user/${username}/about` }) },
@@ -246,6 +254,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/new",
+      standing: { waits: "reddit-devvit" },
       request: listing,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -258,6 +267,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/search",
+      standing: { waits: "reddit-devvit" },
       request: srSearch,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -272,6 +282,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/top",
+      standing: { waits: "reddit-devvit" },
       request: top,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -283,6 +294,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/about",
+      standing: { waits: "reddit-devvit" },
       request: sr,
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: ({ subreddit }) => ({ path: `/r/${subreddit}/about` }) },
@@ -292,6 +304,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/subreddits/search",
+      standing: { waits: "reddit-devvit" },
       request: srFind,
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: (q) => ({ path: "/subreddits/search", query: query(q) }) },
@@ -300,6 +313,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/subreddits/mine/subscriber",
+      standing: { waits: "reddit-devvit" },
       request: mine,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -311,6 +325,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/api/v1/{subreddit}/post_requirements",
+      standing: { waits: "reddit-devvit" },
       request: sr,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -323,6 +338,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/api/link_flair_v2",
+      standing: { waits: "reddit-devvit" },
       request: sr,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -334,6 +350,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/search",
+      standing: { waits: "reddit-devvit" },
       request: search,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -345,6 +362,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/message/{where}",
+      standing: { waits: "reddit-devvit" },
       request: inbox,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -357,6 +375,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/api/info",
+      standing: { waits: "reddit-devvit" },
       request: info,
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: ({ id }) => ({ path: "/api/info", query: { id } }) },
@@ -365,6 +384,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/comments/{article}",
+      standing: { waits: "reddit-devvit" },
       request: comments,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -376,6 +396,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/about/rules",
+      standing: { waits: "reddit-devvit" },
       request: rules,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -387,6 +408,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/api/submit",
+      standing: { waits: "reddit-devvit" },
       request: submit,
       irreversible: true,
       verify: {
@@ -423,6 +445,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/api/comment",
+      standing: { waits: "reddit-devvit" },
       request: comment,
       irreversible: true,
       verify: {
@@ -449,6 +472,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/api/compose",
+      standing: { waits: "reddit-devvit" },
       request: compose,
       irreversible: true,
       verify: {
@@ -475,6 +499,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/api/subscribe",
+      standing: { waits: "reddit-devvit" },
       request: subscribe,
       irreversible: true,
       verify: {
@@ -491,6 +516,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/web/profile/name",
+      standing: { final: "no Data API call sets the display name" },
       summary:
         "The profile's display name (new Reddit settings in the browser): `name`; answers `{ before, name }`. The username never changes",
       request: profileName,
@@ -525,6 +551,7 @@ const CLOSED_SIGNED_OUT = new Set(["/user/{username}/about"]);
  */
 export const redditPublic: SiteApi = {
   site: "reddit-public",
+  blockers: { "reddit-devvit": REDDIT_DEVVIT },
   origin: REDDIT_ORIGIN,
   auth: { open: true },
   signedOut: true,
@@ -536,7 +563,7 @@ export const redditPublic: SiteApi = {
     .filter((r) => r.method === "GET" && !OWN.has(r.path))
     .map((r) => {
       if (CLOSED_SIGNED_OUT.has(r.path)) {
-        const { meter: _spends, browser: _loads, ...rest } = r;
+        const { meter: _spends, browser: _loads, standing: _waits, ...rest } = r;
         return {
           ...rest,
           summary: `${r.summary}. Signed out: refused at once (403), no read spent; use the signed-in \`reddit\` site`,

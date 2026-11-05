@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { currentCall, markSubmitted } from "../src/browser/attempt.js";
+import { currentCall, markLeg, markSubmitted } from "../src/browser/attempt.js";
 import { ProfileBusy } from "../src/browser/browsers.js";
 import { forgetRuns } from "../src/browser/joined-run.js";
 import { HttpError } from "../src/clients/http.js";
@@ -48,6 +48,7 @@ const facade: SiteFacade = {
     if (path === "/rest/broke") throw new HttpError("CALL", "https://x.test/rest/broke", 402);
     if (path === "/rest/busy") throw new HttpError("CALL", "https://x.test/rest/busy", 429);
     if (path === "/rest/down") throw new HttpError("CALL", "https://x.test/rest/down", 503);
+    markLeg("api", path);
     return { id: "urn:li:share:1" };
   },
   setup: async () => ({ made: ["LINKEDIN_ACCESS_TOKEN"] }),
@@ -213,6 +214,13 @@ describe("sites service", () => {
       ["desk", "GET /rest/posts", null, 1, true, null, false],
     ]);
     expect(ledger.rows[0]).toMatchObject({ invocation: "inv_9", error: "socket hang up" });
+    // The leg that ran; a call that ended before one began names none.
+    expect(ledger.rows.map((r) => [r.via, r.template])).toEqual([
+      [undefined, undefined],
+      [undefined, undefined],
+      [undefined, undefined],
+      ["api", "/rest/posts"],
+    ]);
   });
 
   it("is named sites by default; the Mac serves the same handlers as desk", async () => {

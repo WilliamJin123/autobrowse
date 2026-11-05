@@ -751,6 +751,9 @@ domain-wide delegation stays the path for those).
 ```sh
 pnpm autobrowse site                        # sites, token state, setup left
 pnpm autobrowse site status linkedin        # every route: api | browser | none (why)
+pnpm autobrowse site paths [site]           # which path each route takes: settled (API, or browser for good) or waiting, by blocker
+pnpm autobrowse site paths --waiting        # only what waits: each blocker, since when, its task, the routes it holds; --final lists each browser-for-good route and why
+pnpm autobrowse site paths --check          # names each route whose calls of the last 7 days ran another leg than stated; exit 1
 pnpm autobrowse site route youtube POST /upload/youtube/v3/videos   # one route's inputs; --template for a body file
 pnpm autobrowse site check                    # one who-am-I call per site: is each token alive; refused ones listed with since when
 pnpm autobrowse site renew                    # probe each site, then make again every refused token and every one lapsing within 14 days
