@@ -17,7 +17,10 @@
  *
  * The eyes are any model that can see (`Eyes`): the picture is the captcha
  * box alone, cut from the page in memory, never written to disk. Without
- * eyes only the checkbox kind is solved; the rest is a person's.
+ * eyes only the checkbox kind is solved; the rest is a person's. A panel of
+ * eyes looks at once and votes (squares by majority, the rest by the answer
+ * most others match); the first is the lead and breaks ties. Each look is
+ * kept on the outcome (`looks`) for the solve record.
  *
  * This folder imports nothing from autobrowse but the hands: Playwright's
  * types and `../human`.
@@ -35,17 +38,35 @@ export interface Captcha {
 
 /** A model that can see: a PNG and a question in, its answer (JSON text) out. */
 export interface Eyes {
+  /** Who looks, for the record: `anthropic/claude-sonnet-5-5`. */
+  name?: string;
   look(png: Buffer, question: string): Promise<string>;
 }
 
-export type CaptchaOutcome =
+/** One look by the panel: each model's answer, and what the vote chose. */
+export interface Look {
+  kind: CaptchaKind;
+  round: number;
+  /** The lead first. `said` null: no answer, or one that did not parse. `agreed`: matched the choice. */
+  answers: { eyes: string; ms: number; said: unknown; agreed: boolean; error?: string }[];
+  /** null: no answer to act on. */
+  chose: unknown;
+  /** Answers that match the choice, of `of` that parsed. */
+  agree: number;
+  of: number;
+}
+
+export type CaptchaOutcome = (
   | { solved: true; kind: CaptchaKind; vendor: CaptchaVendor; rounds: number }
-  | { solved: false; kind: CaptchaKind | null; vendor: CaptchaVendor | null; reason: string };
+  | { solved: false; kind: CaptchaKind | null; vendor: CaptchaVendor | null; reason: string }
+) & { looks?: Look[] };
 
 export interface SolveOptions {
   hands: Hands;
-  /** Absent: checkboxes only. */
-  eyes?: Eyes | null;
+  /** Absent: checkboxes only. A list is a panel, the lead first. */
+  eyes?: Eyes | readonly Eyes[] | null;
+  /** How long one model may look before the panel goes on without it. Default 20s. */
+  lookMs?: number;
   /** Challenge rounds before handing it to a person. Default 6. */
   rounds?: number;
   /** How long a tick or a new challenge takes to show. Default 8s. */
@@ -203,8 +224,15 @@ export async function findCaptcha(page: Page): Promise<Captcha | null> {
 
 /** Solve whatever captcha the page shows, a round at a time, until it is gone or the rounds run out. */
 export async function solveCaptcha(page: Page, o: SolveOptions): Promise<CaptchaOutcome> {
+  const looks: Look[] = [];
+  const out = await solveRounds(page, o, looks);
+  return looks.length ? { ...out, looks } : out;
+}
+
+async function solveRounds(page: Page, o: SolveOptions, looks: Look[]): Promise<CaptchaOutcome> {
   const rounds = o.rounds ?? 6;
   const settle = o.settleMs ?? 8_000;
+  const eyes = o.eyes ? ([] as Eyes[]).concat(o.eyes) : [];
   let last: Captcha | null = null;
   for (let round = 1; round <= rounds; round++) {
     let now = await findCaptcha(page);
@@ -217,12 +245,15 @@ export async function solveCaptcha(page: Page, o: SolveOptions): Promise<Captcha
       if (!now) return { solved: true, ...last, rounds: round - 1 };
     }
     last = now;
-    if (now.kind !== "checkbox" && now.kind !== "hold" && !o.eyes)
+    if (now.kind !== "checkbox" && now.kind !== "hold" && !eyes.length)
       return {
         solved: false,
         ...now,
         reason: `a ${now.kind} captcha needs eyes (a model that sees)`,
       };
+    const panel = panelOf(eyes, o.lookMs ?? 20_000, (look) =>
+      looks.push({ kind: (now as Captcha).kind, round, ...look }),
+    );
     let done: Step;
     try {
       done =
@@ -231,10 +262,10 @@ export async function solveCaptcha(page: Page, o: SolveOptions): Promise<Captcha
           : now.kind === "hold"
             ? await hold(page, o.hands, settle)
             : now.kind === "grid"
-              ? await pickSquares(page, now.vendor, o.hands, o.eyes as Eyes, settle)
+              ? await pickSquares(page, now.vendor, o.hands, panel, settle)
               : now.kind === "text"
-                ? await readLetters(page, o.hands, o.eyes as Eyes)
-                : await slide(page, o.hands, o.eyes as Eyes, settle);
+                ? await readLetters(page, o.hands, panel)
+                : await slide(page, o.hands, panel, settle);
     } catch (err) {
       // A model that cannot see, a part that moved: the person's, with the reason.
       const why = err instanceof Error ? (err.message.split("\n")[0] ?? "") : String(err);
@@ -252,6 +283,107 @@ export async function solveCaptcha(page: Page, o: SolveOptions): Promise<Captcha
     reason: `still there after ${rounds} rounds`,
   };
 }
+
+/** The answer to act on, and which answers match it (in the order given). */
+export interface Vote<T> {
+  chose: T | null;
+  agrees: boolean[];
+}
+
+/** Every model looks at once; the vote picks the answer to act on. */
+interface Panel {
+  ask<T>(
+    png: Buffer,
+    question: string,
+    read: (answer: string) => T | null,
+    pick: (said: T[]) => Vote<T>,
+  ): Promise<T | null>;
+}
+
+function panelOf(
+  eyes: readonly Eyes[],
+  lookMs: number,
+  record: (look: Omit<Look, "kind" | "round">) => void,
+): Panel {
+  return {
+    async ask(png, question, read, pick) {
+      const answers = await Promise.all(
+        eyes.map(async (e, i) => {
+          const t0 = Date.now();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const text = await Promise.race([
+              e.look(png, question),
+              new Promise<never>((_, no) => {
+                timer = setTimeout(() => no(new Error(`no answer in ${lookMs} ms`)), lookMs);
+              }),
+            ]);
+            return { eyes: e.name ?? `eyes ${i + 1}`, ms: Date.now() - t0, said: read(text) };
+          } catch (err) {
+            return {
+              eyes: e.name ?? `eyes ${i + 1}`,
+              ms: Date.now() - t0,
+              said: null,
+              error: err instanceof Error ? err.message.slice(0, 160) : String(err),
+            };
+          } finally {
+            clearTimeout(timer);
+          }
+        }),
+      );
+      const said = answers.flatMap((a) => (a.said === null ? [] : [a.said]));
+      // No model answered at all: the lead's error is the reason.
+      if (!said.length && answers.every((a) => a.error)) {
+        record({
+          answers: answers.map((a) => ({ ...a, agreed: false })),
+          chose: null,
+          agree: 0,
+          of: 0,
+        });
+        throw new Error(answers[0]?.error ?? "no eyes");
+      }
+      const { chose, agrees } = said.length ? pick(said) : { chose: null, agrees: [] };
+      let j = 0;
+      const marked = answers.map((a) => ({
+        ...a,
+        agreed: a.said === null ? false : (agrees[j++] ?? false),
+      }));
+      record({
+        answers: marked,
+        chose,
+        agree: agrees.filter(Boolean).length,
+        of: said.length,
+      });
+      return chose;
+    },
+  };
+}
+
+/** Each square kept by a majority of the answers; a tie goes to the lead's pick. */
+export function voteSquares(said: number[][]): Vote<number[]> {
+  const lead = said[0];
+  if (!lead) return { chose: null, agrees: [] };
+  const all = [...new Set(said.flat())].sort((a, b) => a - b);
+  const chose = all.filter((n) => {
+    const votes = said.filter((s) => s.includes(n)).length * 2;
+    return votes > said.length || (votes === said.length && lead.includes(n));
+  });
+  const same = (s: number[]) => s.length === chose.length && s.every((n) => chose.includes(n));
+  return { chose, agrees: said.map(same) };
+}
+
+/** The answer most others match; a tie goes to the earlier one (the lead first). */
+export const mostAlike =
+  <T>(alike: (a: T, b: T) => boolean) =>
+  (said: T[]): Vote<T> => {
+    let chose: T | null = null;
+    let most = 0;
+    for (const a of said) {
+      const n = said.filter((b) => alike(a, b)).length;
+      if (n > most) [chose, most] = [a, n];
+    }
+    return { chose, agrees: said.map((b) => chose !== null && alike(chose, b)) };
+  };
 
 type Step = "ticked" | "again" | "gave-up";
 
@@ -331,7 +463,7 @@ async function pickSquares(
   page: Page,
   vendor: CaptchaVendor,
   hands: Hands,
-  eyes: Eyes,
+  panel: Panel,
   settleMs: number,
 ): Promise<Step> {
   const parts = vendor === "hcaptcha" ? HCAPTCHA : RECAPTCHA;
@@ -340,7 +472,7 @@ async function pickSquares(
   for (let look = 0; look < 4; look++) {
     const tiles = frame.locator(parts.tiles);
     const count = await tiles.count();
-    if (!count && vendor === "hcaptcha") return canvasTask(page, frame, hands, eyes, settleMs);
+    if (!count && vendor === "hcaptcha") return canvasTask(page, frame, hands, panel, settleMs);
     if (!count) return "gave-up";
     const ask = (
       await frame
@@ -356,11 +488,12 @@ async function pickSquares(
       .first()
       .screenshot({ ...T, type: "png" });
     const side = Math.round(Math.sqrt(count));
-    const answer = await eyes.look(
+    const squares = await panel.ask(
       png,
       `A captcha: ${ask || "select the matching squares"}. The picture is a grid of ${count} squares (${side} by ${Math.ceil(count / side)}), numbered 1 to ${count} left to right, top to bottom. Which squares match? Reply {"squares":[numbers]}; [] when none do.`,
+      (answer) => parseSquares(answer, count),
+      voteSquares,
     );
-    const squares = parseSquares(answer, count);
     if (!squares) return "gave-up";
     for (const n of squares) {
       await hands.click(tiles.nth(n - 1), T);
@@ -437,7 +570,7 @@ async function canvasTask(
   page: Page,
   frame: Inside,
   hands: Hands,
-  eyes: Eyes,
+  panel: Panel,
   settleMs: number,
 ): Promise<Step> {
   const canvas = frame.locator("canvas").first();
@@ -455,11 +588,22 @@ async function canvasTask(
     .trim();
   const png = await canvas.screenshot({ ...T, type: "png" });
   const scale = pngWidth(png) / box.width || 1;
-  const answer = await eyes.look(
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y) <= Math.max(box.width, box.height) * 0.08;
+  const move = await panel.ask(
     png,
     `A captcha: ${ask || "solve the task in the picture"}. The picture is ${Math.round(box.width * scale)} by ${Math.round(box.height * scale)} pixels, x from the left, y from the top. Reply with pixel points in it: {"clicks":[[x,y],...]} for a task that says click or select; {"drag":{"from":[x,y],"to":[x,y]}} for one that says drag, move or place (from = the middle of the piece, to = the middle of where it goes); {"skip":true} when unsure.`,
+    (answer) => parseCanvasMove(answer, scale, box.width, box.height),
+    mostAlike<CanvasMove>((a, b) =>
+      "skip" in a
+        ? "skip" in b
+        : "clicks" in a
+          ? "clicks" in b &&
+            a.clicks.length === b.clicks.length &&
+            a.clicks.every((p, i) => near(p, b.clicks[i] as { x: number; y: number }))
+          : "drag" in b && near(a.drag.from, b.drag.from) && near(a.drag.to, b.drag.to),
+    ),
   );
-  const move = parseCanvasMove(answer, scale, box.width, box.height);
   const submit = frame.locator(HCAPTCHA.verify).first();
   if (!move || "skip" in move) {
     await hands.click(submit, T); // reads "Skip" before any move
@@ -482,23 +626,24 @@ async function canvasTask(
   return "again";
 }
 
-async function readLetters(page: Page, hands: Hands, eyes: Eyes): Promise<Step> {
+async function readLetters(page: Page, hands: Hands, panel: Panel): Promise<Step> {
   const picture = await shown(page, GENERIC.picture);
   const input = await shown(page, GENERIC.input);
   if (!picture || !input) return "gave-up";
   const png = await picture.screenshot({ ...T, type: "png" });
-  const answer = await eyes.look(
+  const text = await panel.ask(
     png,
     'A text captcha: the letters and digits in the picture, exactly as shown (case matters). Reply {"text":"..."}.',
+    (answer) => /"text"\s*:\s*"([^"]{1,20})"/.exec(answer)?.[1]?.trim() || null,
+    mostAlike<string>((a, b) => a === b),
   );
-  const text = /"text"\s*:\s*"([^"]{1,20})"/.exec(answer)?.[1]?.trim();
   if (!text) return "gave-up";
   await hands.type(input, text, T);
   // The form's own submit is the flow's to press: a text captcha is one field of it.
   return "ticked";
 }
 
-async function slide(page: Page, hands: Hands, eyes: Eyes, settleMs: number): Promise<Step> {
+async function slide(page: Page, hands: Hands, panel: Panel, settleMs: number): Promise<Step> {
   const handle = await shown(page, GENERIC.slider);
   const puzzle = await shown(page, GENERIC.puzzle);
   if (!handle || !puzzle) return "gave-up";
@@ -506,12 +651,16 @@ async function slide(page: Page, hands: Hands, eyes: Eyes, settleMs: number): Pr
   const grip = await handle.boundingBox(T);
   if (!box || !grip) return "gave-up";
   const png = await puzzle.screenshot({ ...T, type: "png" });
-  const answer = await eyes.look(
+  const px = await panel.ask(
     png,
     `A slider captcha ${Math.round(box.width)} pixels wide: a puzzle piece at the left must be dragged right into its gap. How many pixels right from where the piece is now does it go? Reply {"pixels":n}.`,
+    (answer) => {
+      const n = Number(/"pixels"\s*:\s*(-?\d+(?:\.\d+)?)/.exec(answer)?.[1]);
+      return Number.isFinite(n) && n > 0 && n <= box.width ? n : null;
+    },
+    mostAlike<number>((a, b) => Math.abs(a - b) <= box.width * 0.04),
   );
-  const px = Number(/"pixels"\s*:\s*(-?\d+(?:\.\d+)?)/.exec(answer)?.[1]);
-  if (!Number.isFinite(px) || px <= 0 || px > box.width) return "gave-up";
+  if (px === null) return "gave-up";
   const from = { x: grip.width / 2, y: grip.height / 2 };
   await hands.drag(handle, from, { x: from.x + px, y: from.y }, T);
   const until = Date.now() + settleMs;

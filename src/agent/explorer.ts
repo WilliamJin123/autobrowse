@@ -298,7 +298,7 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
           purpose: "agent-step",
           system,
           prompt,
-          maxTokens: 400 + 200 * maxBatch,
+          maxTokens: Math.max(3_000, 400 + 200 * maxBatch),
         }),
       );
       usage.inputTokens += reply.usage.inputTokens;

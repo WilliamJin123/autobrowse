@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseDotenv } from "credvault";
 import { z } from "zod";
 import { DEFAULT_DB } from "../devices/phone.js";
+import { PROVIDERS } from "../llm/index.js";
 import { checkOwner, isDefaultOwner, OWNER_NAME, operator } from "../owner.js";
 
 /** An IANA zone Chrome knows (`America/New_York`, or an alias like `Asia/Kolkata`); a typo would leave the browser on UTC unsaid. */
@@ -195,18 +196,32 @@ const schema = z.object({
   /** The bearer on every feed post. */
   feedToken: z.string().min(1).optional(),
   /** Model behind the compiler's polish and the locator repairer. No key = both off. */
-  llmProvider: z.enum(["anthropic", "openai", "cohere", "claude-code"]).default("anthropic"),
+  llmProvider: z.enum(PROVIDERS).default("anthropic"),
   llmModel: z.string().min(1).optional(),
   anthropicApiKey: z.string().min(1).optional(),
   openaiApiKey: z.string().min(1).optional(),
   openaiBaseUrl: z.string().url().optional(),
   cohereApiKey: z.string().optional(),
+  /** Google AI Studio, through its OpenAI-compatible door. */
+  geminiApiKey: z.string().min(1).optional(),
   /**
    * The model that looks at captcha pictures. Unset: Anthropic when its key
    * is here (Claude sees), else the model above (which may be text only).
    */
-  eyesProvider: z.enum(["anthropic", "openai", "cohere", "claude-code"]).optional(),
+  eyesProvider: z.enum(PROVIDERS).optional(),
   eyesModel: z.string().min(1).optional(),
+  /**
+   * Captcha eyes as a panel that votes, the lead first: `provider:model`,
+   * comma separated (`anthropic:claude-sonnet-5-5,gemini:gemini-3.1-flash-lite`).
+   * A member with no key is left out. Set: replaces the two above.
+   */
+  eyesPanel: z
+    .string()
+    .regex(
+      /^\s*(anthropic|openai|cohere|claude-code|gemini):[^,\s]+(\s*,\s*(anthropic|openai|cohere|claude-code|gemini):[^,\s]+)*\s*$/,
+      "provider:model, comma separated",
+    )
+    .optional(),
   /** Tokens (in + out) every model call may spend per UTC day, all processes together; 0 = no cap. */
   llmDailyTokens: z.coerce.number().int().min(0).default(3_000_000),
   /**
@@ -460,8 +475,10 @@ export const ENV_KEYS = {
   openaiApiKey: "OPENAI_API_KEY",
   openaiBaseUrl: "OPENAI_BASE_URL",
   cohereApiKey: "COHERE_API_KEY",
+  geminiApiKey: "GEMINI_API_KEY",
   eyesProvider: "EYES_PROVIDER",
   eyesModel: "EYES_MODEL",
+  eyesPanel: "EYES_PANEL",
   llmDailyTokens: "LLM_DAILY_TOKENS",
   captchaAttempts: "CAPTCHA_ATTEMPTS",
   watchFlows: "WATCH_FLOWS",

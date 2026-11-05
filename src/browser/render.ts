@@ -59,7 +59,7 @@ export const looksWalled = (page: RenderedPage): boolean =>
 export interface RenderCaptcha {
   hands: Hands;
   /** Absent or null: checkboxes only. */
-  eyes: Eyes | null;
+  eyes: Eyes | readonly Eyes[] | null;
   /** Solver tries per render; 0 turns it off. */
   attempts: number;
 }

@@ -125,7 +125,7 @@ export async function pickAbility(
     purpose: "do-pick",
     system: SYSTEM,
     prompt: `REQUEST: ${req.goal}\n\nNAMED INPUTS:\n${named || "(none)"}\n\nABILITIES:\n${shown.map(line).join("\n") || "(none)"}\n\nSITES WITH A LOGIN: ${sites.join(", ") || "(none)"}${earlier ? `\n\nEARLIER PICKS:\n${earlier}` : ""}`,
-    maxTokens: 600,
+    maxTokens: 3_000,
   });
   const ability = value.ability ? (abilities.find((a) => a.name === value.ability) ?? null) : null;
   const site =

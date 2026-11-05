@@ -1,10 +1,13 @@
 import type { Page } from "playwright";
 import { describe, expect, it } from "vitest";
 import {
+  type Eyes,
   findCaptcha,
+  mostAlike,
   parseCanvasMove,
   parseSquares,
   solveCaptcha,
+  voteSquares,
 } from "../src/browser/captcha/index.js";
 import type { Hands } from "../src/browser/human/index.js";
 
@@ -169,5 +172,57 @@ describe("parseCanvasMove", () => {
     expect(parseCanvasMove('{"clicks":[[500,5]]}', 1, 100, 100)).toBeNull();
     expect(parseCanvasMove('{"clicks":[]}', 1, 100, 100)).toBeNull();
     expect(parseCanvasMove("no idea", 1, 100, 100)).toBeNull();
+  });
+
+  it("a panel keeps each square most answers name; a tie goes to the lead", () => {
+    expect(voteSquares([[1, 2], [2, 3], [2]])).toEqual({
+      chose: [2],
+      agrees: [false, false, true],
+    });
+    expect(voteSquares([[1, 4], [4]])).toEqual({ chose: [1, 4], agrees: [true, false] });
+    expect(voteSquares([])).toEqual({ chose: null, agrees: [] });
+    const near = mostAlike<number>((a, b) => Math.abs(a - b) <= 5);
+    expect(near([100, 180, 182])).toEqual({ chose: 180, agrees: [false, true, true] });
+  });
+
+  it("a text captcha goes by the panel's vote, every look kept", async () => {
+    const shows = ['img[src*="captcha" i]', 'input[name*="captcha" i]'];
+    const loc = (sel: string) => ({
+      first: () => ({
+        isVisible: async () => shows.some((s) => sel.includes(s)),
+        screenshot: async () => Buffer.from("png"),
+      }),
+    });
+    const page = {
+      locator: loc,
+      frames: () => [{ url: () => "https://example.com/", locator: loc }],
+      waitForTimeout: async () => undefined,
+    } as unknown as Page;
+    const typed: string[] = [];
+    const panelHands = {
+      type: async (_: unknown, text: string) => typed.push(text),
+    } as unknown as Hands;
+    const eye = (name: string, text: string | Error): Eyes => ({
+      name,
+      look: async () => {
+        if (text instanceof Error) throw text;
+        return JSON.stringify({ text });
+      },
+    });
+    const got = await solveCaptcha(page, {
+      hands: panelHands,
+      eyes: [eye("lead", "XY99"), eye("b", "AB12"), eye("c", "AB12"), eye("d", new Error("429"))],
+    });
+    expect(got).toMatchObject({ solved: true, kind: "text" });
+    expect(typed).toEqual(["AB12"]);
+    const look = got.looks?.[0];
+    expect(look).toMatchObject({ kind: "text", round: 1, chose: "AB12", agree: 2, of: 3 });
+    expect(look?.answers.map((a) => [a.eyes, a.agreed])).toEqual([
+      ["lead", false],
+      ["b", true],
+      ["c", true],
+      ["d", false],
+    ]);
+    expect(look?.answers[3]?.error).toBe("429");
   });
 });

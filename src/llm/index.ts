@@ -8,7 +8,10 @@ import { countedLlm, fileLlmCalls, type LlmCalls } from "./ledger.js";
 import { openaiLlm } from "./openai.js";
 import type { Llm } from "./types.js";
 
-export type LlmProvider = "anthropic" | "openai" | "cohere" | "claude-code";
+export const PROVIDERS = ["anthropic", "openai", "cohere", "claude-code", "gemini"] as const;
+export type LlmProvider = (typeof PROVIDERS)[number];
+
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 
 export interface LlmSettings {
   provider: LlmProvider;
@@ -17,6 +20,7 @@ export interface LlmSettings {
   openaiApiKey: string | undefined;
   openaiBaseUrl: string | undefined;
   cohereApiKey: string | undefined;
+  geminiApiKey?: string | undefined;
 }
 
 export const DEFAULT_MODELS: Record<LlmProvider, string> = {
@@ -26,6 +30,8 @@ export const DEFAULT_MODELS: Record<LlmProvider, string> = {
   cohere: "command-a-plus-05-2026",
   /** Headless Claude Code on the person's subscription: no key needed. */
   "claude-code": "sonnet",
+  /** Cheap, sees; free keys run out of daily quota fast (designs/2026-11-05-captcha-panel.md). */
+  gemini: "gemini-3.1-flash-lite",
 };
 
 /**
@@ -49,6 +55,10 @@ function providerLlm(s: LlmSettings, http: HttpClient): Llm | null {
   if (s.provider === "claude-code") return claudeCodeLlm({ model });
   if (s.provider === "anthropic")
     return s.anthropicApiKey ? anthropicLlm({ apiKey: s.anthropicApiKey, model, http }) : null;
+  if (s.provider === "gemini")
+    return s.geminiApiKey
+      ? openaiLlm({ apiKey: s.geminiApiKey, model, http, baseUrl: GEMINI_URL })
+      : null;
   if (s.provider === "cohere") {
     const apiKey = s.cohereApiKey ?? s.openaiApiKey;
     return apiKey ? cohereLlm({ apiKey, model, http }) : null;

@@ -116,6 +116,40 @@ describe("flow runs", () => {
     expect(formatFlowRunReport(r).join("\n")).toMatch(/4 runs, 2 failed \(50%\)/);
   });
 
+  it("reports each captcha wall, whether the run then passed, and each model's share of the vote", () => {
+    const look = (lead: boolean) => ({
+      kind: "grid" as const,
+      round: 1,
+      answers: [
+        { eyes: "sonnet", ms: 3_000, said: [1], agreed: lead },
+        { eyes: "flash", ms: 1_000, said: [2], agreed: !lead },
+      ],
+      chose: lead ? [1] : [2],
+      agree: 1,
+      of: 2,
+    });
+    const solve = (solved: boolean, lead: boolean) => ({
+      kind: "grid" as const,
+      vendor: "recaptcha" as const,
+      solved,
+      page: "https://www.linkedin.com/checkpoint/challenge",
+      ms: 9_000,
+      looks: [look(lead)],
+    });
+    const r = flowRunReport([
+      row({ captchas: [solve(true, true)] }),
+      row({ outcome: "human", captchas: [solve(true, false), solve(false, true)] }),
+    ]);
+    expect(r.captcha.byWall).toEqual([
+      { wall: "grid recaptcha www.linkedin.com", n: 3, cleared: 2, passed: 1 },
+    ]);
+    expect(r.captcha.byEyes).toEqual([
+      { eyes: "sonnet", looks: 3, answered: 3, agreed: 2, p50Ms: 3_000 },
+      { eyes: "flash", looks: 3, answered: 3, agreed: 1, p50Ms: 1_000 },
+    ]);
+    expect(formatFlowRunReport(r).join("\n")).toContain("grid recaptcha www.linkedin.com");
+  });
+
   it("keeps rows in month files and reads back a window", () => {
     const dir = mkdtempSync(join(tmpdir(), "autobrowse-flow-file-"));
     const f = fileFlowRuns(dir);

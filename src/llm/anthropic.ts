@@ -7,6 +7,7 @@ const URL = "https://api.anthropic.com/v1/messages";
 interface MessagesResponse {
   model: string;
   content: Array<{ type: string; text?: string }>;
+  stop_reason?: string;
   usage: AnthropicUsage;
 }
 
@@ -58,8 +59,14 @@ export function anthropicLlm(opts: { apiKey: string; model: string; http: HttpCl
         },
       });
       if (!r.ok || !r.body) throw new Error(`anthropic: HTTP ${r.status}`);
+      const text = r.body.content.map((c) => c.text ?? "").join("");
+      // Sonnet 5.5 thinks first: a small cap can end before any text.
+      if (!text && r.body.stop_reason === "max_tokens")
+        throw new Error(
+          `${opts.model}: all ${req.maxTokens ?? 2048} tokens went to thinking; raise maxTokens`,
+        );
       return {
-        text: r.body.content.map((c) => c.text ?? "").join(""),
+        text,
         usage: usageOf(r.body.usage),
         model: r.body.model,
       };

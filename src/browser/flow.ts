@@ -22,7 +22,13 @@ import { type OverlayDeps, overlayFor, traceRow } from "../explore/overlay.js";
 import { expandHome } from "../google/auth.js";
 import { tallied } from "../llm/ledger.js";
 import { redactAria, redactText } from "../recorder/redact.js";
-import { type FlowOutcome, type FlowRunRow, type FlowRuns, fileFlowRuns } from "../runs/flows.js";
+import {
+  type CaptchaSolve,
+  type FlowOutcome,
+  type FlowRunRow,
+  type FlowRuns,
+  fileFlowRuns,
+} from "../runs/flows.js";
 import { shareOff, shareTrace } from "../share/share.js";
 import { failureShape, firstTraceOfShape } from "../shots/traces.js";
 import { currentCall, currentReach, type DoneActs, markReached, markSubmitted } from "./attempt.js";
@@ -344,7 +350,7 @@ export interface RunnerOptions {
    * every captcha is a person's. `attempts` whole solves before that
    * (`CAPTCHA_ATTEMPTS`, default 3; 0 = straight to a person).
    */
-  captcha?: { eyes: Eyes | null; attempts?: number };
+  captcha?: { eyes: Eyes | readonly Eyes[] | null; attempts?: number };
   /** Repair misses on irreversible acts too (the `irreversible` guard is off). */
   repairIrreversible?: boolean;
   /** Every repair, tried or not, so the flow's source can be fixed for good. */
@@ -415,6 +421,26 @@ function runRow(
     endedAt: new Date().toISOString(),
     ms: Date.now() - startedAt,
     ...r,
+  };
+}
+
+/** One solve for the run's row: the page without its query, each model's answers. */
+function solveRow(got: CaptchaOutcome, url: string, ms: number): CaptchaSolve {
+  let page = url;
+  try {
+    const u = new URL(url);
+    page = `${u.origin}${u.pathname}`;
+  } catch {
+    // not a URL: kept as is
+  }
+  return {
+    kind: got.kind,
+    vendor: got.vendor,
+    solved: got.solved,
+    ...(got.solved ? { rounds: got.rounds } : { reason: got.reason }),
+    page,
+    ms,
+    ...(got.looks ? { looks: got.looks } : {}),
   };
 }
 
@@ -728,6 +754,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
         let triedCaptcha = false;
         let captchaTries = 0;
         let captchaSolved: boolean | null = null;
+        const captchas: CaptchaSolve[] = [];
         const startedAt = Date.now();
         const seed = fixedSeed ?? freshSeed();
         const hands = handsOn(seed);
@@ -1110,10 +1137,12 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             reason: "captcha attempts are 0 (CAPTCHA_ATTEMPTS)",
           };
           for (let n = 1; n <= attempts; n++) {
+            const t0 = Date.now();
             got = await solveCaptcha(active, { hands, eyes });
             if (got.kind) {
               captchaTries++;
               captchaSolved = got.solved;
+              captchas.push(solveRow(got, active.url(), Date.now() - t0));
             }
             // Nothing there, or a picture with no eyes: another try would say the same.
             if (got.solved || !got.kind || (!eyes && got.kind !== "checkbox")) break;
@@ -1347,6 +1376,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               acts,
               captchaTries,
               captchaSolved,
+              ...(captchas.length ? { captchas } : {}),
               llmCalls: run.tally.calls,
               inputTokens: run.tally.inputTokens,
               outputTokens: run.tally.outputTokens,

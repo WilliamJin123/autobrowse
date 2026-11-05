@@ -137,7 +137,7 @@ export async function writeRecords(o: WriteRecords): Promise<Written> {
     {
       system: EYE,
       prompt: `Rows of: ${o.goal}\nFields:\n${fieldLines(o)}\n\nPage ${o.fp.url()}:\n${await o.fp.text()}`,
-      maxTokens: 1_200,
+      maxTokens: 3_000,
       purpose: "records-eye",
     },
   );
@@ -167,7 +167,7 @@ export async function writeRecords(o: WriteRecords): Promise<Written> {
           `The DOM (${o.fp.url()}):\n${skeleton}`,
           ...(last ? [`Your last code:\n${last.code}\nIt failed: ${last.problem}. Fix it.`] : []),
         ].join("\n\n"),
-        maxTokens: 2_500,
+        maxTokens: 3_000,
         purpose: "records-write",
       },
     );

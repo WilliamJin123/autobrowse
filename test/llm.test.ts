@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { HttpClient } from "../src/clients/http.js";
+import { anthropicLlm } from "../src/llm/anthropic.js";
 import { fakeLlm } from "../src/llm/fake.js";
 import { openaiLlm } from "../src/llm/openai.js";
 import { completeJson, extractJson, LlmOutputInvalid } from "../src/llm/types.js";
@@ -59,5 +60,24 @@ describe("openaiLlm", () => {
     expect((await llm.complete({ system: "s", prompt: "p", maxTokens: 20_000 })).text).toBe("hi");
     await llm.complete({ system: "s", prompt: "p", maxTokens: 20_000 });
     expect(asked).toEqual([20_000, 8192, 8192]);
+  });
+
+  it("names an Anthropic answer lost to thinking, not an empty text", async () => {
+    const http = {
+      json: async () => ({
+        status: 200,
+        ok: true,
+        body: {
+          model: "m",
+          stop_reason: "max_tokens",
+          content: [{ type: "thinking" }],
+          usage: { output_tokens: 300 },
+        },
+      }),
+    } as unknown as HttpClient;
+    const llm = anthropicLlm({ apiKey: "k", model: "m", http });
+    await expect(llm.complete({ system: "s", prompt: "p", maxTokens: 300 })).rejects.toThrow(
+      "all 300 tokens went to thinking",
+    );
   });
 });

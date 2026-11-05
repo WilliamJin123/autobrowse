@@ -133,7 +133,7 @@ export function llmRepairer(llm: Llm): Repairer {
           req.snapshot,
           'Reply: {"hints": {...}, "reason": "...", "detour": false, "giveUp": false}',
         ].join("\n"),
-        maxTokens: 400,
+        maxTokens: 3_000,
       });
       if (value.giveUp) return null;
       const hints: Hints = {};
@@ -169,7 +169,7 @@ export function llmScreenReader(llm: Llm): ScreenReader {
           req.snapshot,
           'Reply: {"screen": "<name>" | null, "click": {...} | null, "reason": "..."}',
         ].join("\n"),
-        maxTokens: 300,
+        maxTokens: 3_000,
       });
       const click: Hints = {};
       for (const [k, v] of Object.entries(value.click ?? {}))

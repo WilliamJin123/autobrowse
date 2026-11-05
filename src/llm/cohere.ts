@@ -40,8 +40,6 @@ export function cohereLlm(opts: {
   return {
     id: `cohere/${opts.model}`,
     async complete(req: LlmRequest): Promise<LlmReply> {
-      if (req.images?.length)
-        throw new Error(`cohere/${opts.model}: this driver cannot see images`);
       const maxTokens = req.maxTokens ?? 2048;
       const r = await opts.http.json<ChatResponse>(url, {
         method: "POST",
@@ -53,7 +51,19 @@ export function cohereLlm(opts: {
           ...(req.json ? { response_format: { type: "json_object" } } : {}),
           messages: [
             { role: "system", content: req.system },
-            { role: "user", content: req.prompt },
+            {
+              role: "user",
+              // Vision models (command-a-vision, command-a-plus) take images as content parts.
+              content: req.images?.length
+                ? [
+                    ...req.images.map((i) => ({
+                      type: "image_url",
+                      image_url: { url: `data:${i.mediaType};base64,${i.data}` },
+                    })),
+                    { type: "text", text: req.prompt },
+                  ]
+                : req.prompt,
+            },
           ],
         },
       });

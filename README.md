@@ -91,7 +91,10 @@ compiled irreversible step opens one) is always asked: `approve <workflow>
 <key> send`. What stays human: hardware keys, adding a payment method,
 a captcha the solver cannot read (`src/browser/captcha`: checkboxes by a
 human click, squares, letters and sliders by the configured model when it
-sees; `CAPTCHA_ATTEMPTS` tries, default 3, before it is yours).
+sees, or by a panel of models that votes (`EYES_PANEL`); `CAPTCHA_ATTEMPTS`
+tries, default 3, before it is yours). Each solve, with every model's
+answer, goes in the run's row; `autobrowse success` shows each wall and
+whether the run then passed.
 
 **The bar for asking.** Try it first. `NEEDS-WILLIAM.md` and the `needs`
 rows are only for what a machine cannot hold: your password or passkey,

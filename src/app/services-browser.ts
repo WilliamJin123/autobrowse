@@ -175,24 +175,43 @@ function flushAtExit(s: TraceSink): void {
 /** A model writing a whole file takes minutes, not the 30 s a JSON API gets. */
 const LLM_TIMEOUT_MS = 180_000;
 
-/** Captcha walls solved before they go to a person: checkboxes always, pictures when the model can see. */
+/**
+ * Captcha walls solved before they go to a person: checkboxes always, pictures when a model can see.
+ * `eyesPanel` set: every member with a key looks, and they vote (`browser/captcha`).
+ */
 export function captchaFor(
   settings: Settings,
   http?: HttpClient,
-): { eyes: Eyes | null; attempts: number } {
+): { eyes: Eyes[] | null; attempts: number } {
+  const one = (provider: Settings["llmProvider"], model: string | undefined) =>
+    llmFor(
+      {
+        ...settings,
+        llmProvider: provider,
+        ...(model ? { llmModel: model } : { llmModel: undefined }),
+      },
+      http,
+    );
+  const llms = settings.eyesPanel
+    ? settings.eyesPanel.split(",").map((m) => {
+        const [provider, model] = m.trim().split(/:(.*)/) as [Settings["llmProvider"], string];
+        return one(provider, model);
+      })
+    : [eyesAlone(settings, one)];
+  const eyes = llms.flatMap((l) => (l ? [eyesOf(l)] : []));
+  return { eyes: eyes.length ? eyes : null, attempts: settings.captchaAttempts };
+}
+
+/** No panel: `eyesProvider`, else Anthropic when its key is here (Claude sees), else the main model. */
+function eyesAlone(
+  settings: Settings,
+  one: (p: Settings["llmProvider"], m: string | undefined) => ReturnType<typeof llmFor>,
+) {
   const provider =
     settings.eyesProvider ?? (settings.anthropicApiKey ? "anthropic" : settings.llmProvider);
   const model =
     settings.eyesModel ?? (provider === settings.llmProvider ? settings.llmModel : undefined);
-  const llm = llmFor(
-    {
-      ...settings,
-      llmProvider: provider,
-      ...(model ? { llmModel: model } : { llmModel: undefined }),
-    },
-    http,
-  );
-  return { eyes: llm ? eyesOf(llm) : null, attempts: settings.captchaAttempts };
+  return one(provider, model);
 }
 
 export function llmFor(
@@ -208,6 +227,7 @@ export function llmFor(
       openaiApiKey: settings.openaiApiKey,
       openaiBaseUrl: settings.openaiBaseUrl,
       cohereApiKey: settings.cohereApiKey,
+      geminiApiKey: settings.geminiApiKey,
     },
     http,
     // Every call is counted (the token report); a trace, when there is a collector, sees the same call.

@@ -7,6 +7,7 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { CaptchaKind, CaptchaVendor, Look } from "../browser/captcha/index.js";
 
 export type FlowOutcome = "ok" | "human" | "interrupted" | "failed";
 
@@ -26,12 +27,27 @@ export interface FlowRunRow {
   /** Whole captcha solves tried; `captchaSolved` null when no captcha was met. */
   captchaTries: number;
   captchaSolved: boolean | null;
+  /** Each solve: what it met, what each model said, what the vote chose. The run's outcome says if the site then let it on. */
+  captchas?: CaptchaSolve[];
   /** Counted model calls made inside the run (`countedLlm`), the captcha's eyes and repairs included. */
   llmCalls: number;
   inputTokens: number;
   outputTokens: number;
   /** The human motions' seed: `AUTOBROWSE_SEED=<it>` replays them on the same page. Absent: no browser opened. */
   seed?: number;
+}
+
+export interface CaptchaSolve {
+  kind: CaptchaKind | null;
+  vendor: CaptchaVendor | null;
+  /** The challenge went away; not yet that the site let the run on. */
+  solved: boolean;
+  rounds?: number;
+  reason?: string;
+  /** Origin and path, no query. */
+  page: string;
+  ms: number;
+  looks?: Look[];
 }
 
 export interface FlowRuns {
@@ -102,7 +118,15 @@ export interface FlowRunReport extends FlowGroup {
   bySite: (FlowGroup & { site: string })[];
   /** Failed runs by outcome and the step that broke, most first. */
   byFailure: { outcome: FlowOutcome; goal: string | null; n: number; example: string | null }[];
-  captcha: { runs: number; tries: number; solved: number };
+  captcha: {
+    runs: number;
+    tries: number;
+    solved: number;
+    /** By kind, vendor and host: solves, challenges cleared, cleared and the run then ok. */
+    byWall: { wall: string; n: number; cleared: number; passed: number }[];
+    /** By model: looks, answers that parsed, answers the vote chose, p50 ms. */
+    byEyes: { eyes: string; looks: number; answered: number; agreed: number; p50Ms: number }[];
+  };
   /** UTC days, oldest first. */
   byDay: (FlowGroup & { day: string })[];
 }
@@ -137,6 +161,47 @@ function groupsBy<K extends string>(
   return [...m].map(([k, rs]) => ({ [name]: k, ...groupOf(rs) }) as FlowGroup & Record<K, string>);
 }
 
+function captchaGroups(
+  rows: readonly FlowRunRow[],
+): Pick<FlowRunReport["captcha"], "byWall" | "byEyes"> {
+  const walls = new Map<string, FlowRunReport["captcha"]["byWall"][number]>();
+  const eyes = new Map<string, { looks: number; answered: number; agreed: number; ms: number[] }>();
+  for (const r of rows)
+    for (const c of r.captchas ?? []) {
+      let host = c.page;
+      try {
+        host = new URL(c.page).host;
+      } catch {
+        // kept as is
+      }
+      const wall = `${c.kind ?? "?"} ${c.vendor ?? "?"} ${host}`;
+      const w = walls.get(wall) ?? { wall, n: 0, cleared: 0, passed: 0 };
+      w.n++;
+      if (c.solved) w.cleared++;
+      if (c.solved && r.outcome === "ok") w.passed++;
+      walls.set(wall, w);
+      for (const look of c.looks ?? [])
+        for (const a of look.answers) {
+          const e = eyes.get(a.eyes) ?? { looks: 0, answered: 0, agreed: 0, ms: [] };
+          e.looks++;
+          if (a.said !== null) e.answered++;
+          if (a.agreed) e.agreed++;
+          e.ms.push(a.ms);
+          eyes.set(a.eyes, e);
+        }
+    }
+  return {
+    byWall: [...walls.values()].sort((a, b) => b.n - a.n),
+    byEyes: [...eyes].map(([name, e]) => ({
+      eyes: name,
+      looks: e.looks,
+      answered: e.answered,
+      agreed: e.agreed,
+      p50Ms: pct(e.ms, 50),
+    })),
+  };
+}
+
 export function flowRunReport(rows: readonly FlowRunRow[]): FlowRunReport {
   const fails = (g: FlowGroup) => g.runs - g.ok;
   const failures = new Map<string, FlowRunReport["byFailure"][number]>();
@@ -159,6 +224,7 @@ export function flowRunReport(rows: readonly FlowRunRow[]): FlowRunReport {
       runs: met.length,
       tries: met.reduce((a, r) => a + r.captchaTries, 0),
       solved: met.filter((r) => r.captchaSolved).length,
+      ...captchaGroups(rows),
     },
     byDay: groupsBy(rows, "day", (r) => r.startedAt.slice(0, 10)).sort((a, b) =>
       a.day.localeCompare(b.day),
@@ -180,6 +246,20 @@ export function formatFlowRunReport(r: FlowRunReport): string[] {
     "  by flow                       runs  fail     p50     p95    tokens",
     ...r.byFlow.map((g) => row(g.flow, g)),
   ];
+  if (r.captcha.byWall.length) {
+    out.push("  captcha walls                              n  cleared  run ok");
+    for (const w of r.captcha.byWall.slice(0, 10))
+      out.push(
+        `    ${w.wall.padEnd(38)} ${String(w.n).padStart(4)} ${String(w.cleared).padStart(8)} ${String(w.passed).padStart(7)}`,
+      );
+  }
+  if (r.captcha.byEyes.length) {
+    out.push("  captcha eyes                           looks  answered  chosen     p50");
+    for (const e of r.captcha.byEyes)
+      out.push(
+        `    ${e.eyes.padEnd(36)} ${String(e.looks).padStart(5)} ${String(e.answered).padStart(9)} ${String(e.agreed).padStart(7)} ${secs(e.p50Ms).padStart(7)}`,
+      );
+  }
   if (r.byFailure.length) {
     out.push("  why runs failed");
     for (const f of r.byFailure.slice(0, 10))
