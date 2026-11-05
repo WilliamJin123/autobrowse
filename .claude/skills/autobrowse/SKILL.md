@@ -29,10 +29,11 @@ The files sit in `${CLAUDE_SKILL_DIR}/`. Read only the one the job needs; read i
 again after a context summary. Every command: `README.md` (Run, Site APIs).
 Changing autobrowse's code: `map/CLAUDE.md`.
 
-A long worker call (a desk or sites handler) you need later, not now:
-`autobrowse job start <service> <handler> '<json>' --by <your id> --why "…"` prints
-`{id}` at once. Do other work, then `job wait <id...>`. `job peek <id>` never waits;
-`job list` shows the ledger. The same call twice is one job.
+A long worker call you need later, not now: start it as a job, do other work, collect.
+- Services: `sites` (site APIs, the box), `desk` (the same on this Mac's home IP), `do` (one verb, handler `run`), `browser` (compiled flows by name). Handlers of `sites`/`desk`: `call` (`{site, method, path, input}`), `status`, `watch`, `caps`, `keys`; all in `src/sites/service.ts`.
+- `autobrowse job start desk call '{"site":"…","method":"GET","path":"/…","input":{}}' --by <your id> --why "…"` prints `{id}` at once. `--delay <s>` starts it later; `--key` makes a new job of the same call.
+- `job wait <id...> --timeout <s>` prints each result as it lands, `{done:false}` at the timeout (the job runs on); exit 1 if one failed. `job peek <id>` never waits. `job list` shows the ledger (`~/.config/autobrowse/jobs.jsonl`).
+- The same call twice is one job. A write through a job is still a write: the same yes rules apply.
 
 ## Always
 

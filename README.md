@@ -495,6 +495,8 @@ pnpm autobrowse workflows                      # what this worker can run
 pnpm autobrowse tools reddit                    # every workflow and leg on a site: the routes on each, proof, then walks
 pnpm autobrowse workflows bootstrap            # its steps (! = irreversible) and every input: type, default, what it is
 pnpm autobrowse workflows bootstrap --template > plan.json   # fill in, then: run bootstrap cf --plan plan.json
+pnpm autobrowse job start desk call '{"site":"…","method":"GET","path":"/…"}' --why "…"   # a worker call by key: prints {id} at once
+pnpm autobrowse job wait <id...> --timeout 600    # collect; peek <id> never waits; list shows the ledger
 pnpm autobrowse runs --limit 20                # the registry, newest first (--before <cursor> pages)
 pnpm autobrowse explored google                # explore runs kept for good: driver, goal, outcome, answer tokens (show <run>: its shape, no values)
 pnpm autobrowse walks build google admin-sso --goal-like "sso"   # runs that reached a goal → a walk, run as google/walk-admin-sso
