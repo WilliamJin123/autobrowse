@@ -47,6 +47,10 @@ Measured 2026-11-05:
 - `job wait <id...> [--timeout s]`: attaches; prints each result as it lands. `job peek <id>`: done or not, never waits.
 - `job list`: the ledger, `~/.config/autobrowse/jobs.jsonl` (id, service, handler, key, by, why, at).
 - Any handler of the desk, the box or the sites facade can be a job. wren's services are on the same Restate, so later the CLI can start a wren job by its service name too.
+- `--delay <s>`: a Restate delayed send; the job starts later.
+
+Built (WA-1088): `app/jobs.ts` (start, peek, wait, list), `app/cli-jobs.ts`, the Restate calls in `app/client.ts` (one door).
+Measured 2026-11-05 on Restate Cloud: `desk status` started, peeked done, waited; a repeat start answered `PreviouslyAccepted` with one ledger row; a delayed job peeked `done:false`, a 3 s wait timed out, a 60 s wait returned the result; a handler's error came back `ok:false` with its message.
 
 ## 3. Batch judgments
 
@@ -98,4 +102,5 @@ Measured 2026-11-05:
 - 2026-11-05: Batch lives in the engine's models package; birdwatch dev builds it.
 - 2026-11-05: A worker reuses its tab across items (my call): fewer tab opens a person would see.
 - 2026-11-05: Tabs do no fill or select: the money gate is explore's, per `fp.act`; a read has no need of it (search by URL).
+- 2026-11-05: `peek` reads Restate's `/output` (470 = still running), not the admin API: same ingress, same token.
 - 2026-11-05: `fp` throws while `each` runs: one cursor per page keeps every key clear of the order tabs finish in.

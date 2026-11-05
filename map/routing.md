@@ -57,6 +57,7 @@ Each word below has one meaning. A thing that used to share a word has its own w
 | operator | the person who runs this install (`AUTOBROWSE_OPERATOR`, default `me`); the UI token with all rights is their scope | `OPERATOR` (`src/access/keys.ts:40`) |
 | opener | the process that opened a browser: `desk`, `explore:<port>`, `cli`, `orphan` | `Opener` (`src/browser/browsers.ts`) |
 | billing profile | a person or company a card bills to: address, contacts, tax id (`autobrowse profile`, `wallet bill-to`) | `Profile` (`src/money/profile.ts`), `Card.profile` |
+| job | a worker handler started by key, collected later (`autobrowse job`); the UI server's in-process prove and heal tasks are `src/ui/jobs.ts`, not jobs | `jobs` (`src/app/jobs.ts`) |
 | need | one thing only the person can give, with a check | `Need` |
 | owed | the list of needs with done-marks | `Owed` |
 

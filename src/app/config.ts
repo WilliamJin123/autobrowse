@@ -143,6 +143,8 @@ const schema = z.object({
   screensFile: z.string().min(1).default("~/.config/autobrowse/screens.json"),
   /** Today's use of each site's daily caps, per account (LinkedIn reads). */
   capsFile: z.string().min(1).default("~/.config/autobrowse/caps.json"),
+  /** Jobs started by `autobrowse job start`: id, handler, key, who, why. */
+  jobsFile: z.string().min(1).default("~/.config/autobrowse/jobs.jsonl"),
   /** The operator's own caps, account caps and pace per site, over the code's defaults (`sites/limits.ts`). */
   limitsFile: z.string().min(1).default("~/.config/autobrowse/limits.json"),
   /** Raw Playwright codegen output from `record --flow`; may hold typed secrets, never committed. */
@@ -429,6 +431,7 @@ export const ENV_KEYS = {
   fixesFile: "FIXES_FILE",
   screensFile: "SCREENS_FILE",
   capsFile: "CAPS_FILE",
+  jobsFile: "JOBS_FILE",
   limitsFile: "LIMITS_FILE",
   recordingsDir: "RECORDINGS_DIR",
   shotsBucket: "SHOTS_BUCKET",
@@ -541,6 +544,7 @@ export const OWNER_PATHS = {
   credentialsFile: "credentials.json",
   accountsFile: "accounts.json",
   capsFile: "caps.json",
+  jobsFile: "jobs.jsonl",
   limitsFile: "limits.json",
   accessFile: "access.json",
   needsDoneFile: "needs-done.json",

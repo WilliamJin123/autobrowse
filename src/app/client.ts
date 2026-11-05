@@ -41,6 +41,42 @@ export function ingress(opts: IngressOptions) {
     /** The same facade on the Mac (`desk/*`): prod's tokens since the box was retired. */
     desk: () =>
       conn.serviceClient<SitesService>({ name: named(DESK_SERVICE, owner) } as SitesService),
+    /** Jobs (`app/jobs.ts`): a send by key, then attach, or a look at the output that never waits. */
+    job: {
+      send: async (
+        service: string,
+        handler: string,
+        input: unknown,
+        o: { key: string; delayMs?: number },
+      ): Promise<clients.Send> => {
+        const client = conn.serviceSendClient({ name: named(service, owner) }) as unknown as Record<
+          string,
+          (i: unknown, opts: unknown) => Promise<clients.Send>
+        >;
+        const send = client[handler];
+        if (!send) throw new Error(`job: no handler ${handler}`);
+        return send(
+          input,
+          clients.rpc.sendOpts({
+            idempotencyKey: o.key,
+            ...(o.delayMs ? { delay: o.delayMs } : {}),
+          }),
+        );
+      },
+      result: (id: string): Promise<unknown> =>
+        conn.result({ invocationId: id, status: "Accepted", attachable: true }),
+      /** Restate answers 470 while the invocation runs: `{done: false}`. */
+      output: async (
+        id: string,
+        http: typeof fetch = fetch,
+      ): Promise<{ done: false } | { done: true; status: number; body: string }> => {
+        const r = await http(`${opts.url}/restate/invocation/${encodeURIComponent(id)}/output`, {
+          headers: opts.authToken ? { authorization: `Bearer ${opts.authToken}` } : {},
+        });
+        if (r.status === 470) return { done: false };
+        return { done: true, status: r.status, body: await r.text() };
+      },
+    },
   };
 }
 

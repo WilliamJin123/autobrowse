@@ -32,6 +32,7 @@ import { registerDoCommands } from "./cli-do.js";
 import { registerEnvCommands } from "./cli-env.js";
 import { registerFilesCommands } from "./cli-files.js";
 import { registerFilmCommand } from "./cli-film.js";
+import { registerJobCommands } from "./cli-jobs.js";
 import { readJson } from "./cli-json.js";
 import { registerLangfuseCommands } from "./cli-langfuse.js";
 import { registerModsCommands } from "./cli-mods.js";
@@ -977,6 +978,7 @@ registerDesktopCommands(program, tmpdir());
 registerWalletCommands(program, settings);
 registerFilesCommands(program, settings);
 registerCallsCommands(program, settings);
+registerJobCommands(program, settings);
 registerAutotrackCommands(program, settings);
 registerAccessCommands(program, settings);
 

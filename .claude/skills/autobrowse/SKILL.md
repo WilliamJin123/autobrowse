@@ -29,6 +29,11 @@ The files sit in `${CLAUDE_SKILL_DIR}/`. Read only the one the job needs; read i
 again after a context summary. Every command: `README.md` (Run, Site APIs).
 Changing autobrowse's code: `map/CLAUDE.md`.
 
+A long worker call (a desk or sites handler) you need later, not now:
+`autobrowse job start <service> <handler> '<json>' --by <your id> --why "…"` prints
+`{id}` at once. Do other work, then `job wait <id...>`. `job peek <id>` never waits;
+`job list` shows the ledger. The same call twice is one job.
+
 ## Always
 
 - Secrets never pass through you. Never type a password, TOTP or code:
