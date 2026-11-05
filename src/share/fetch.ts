@@ -5,7 +5,7 @@
  * ENOTFOUND the call goes again with the host resolved by public resolvers.
  */
 import { Resolver } from "node:dns/promises";
-import { Agent, fetch as undiciFetch } from "undici";
+import type { Agent } from "undici";
 
 const MISSING = new Set(["ENOTFOUND", "EAI_AGAIN"]);
 
@@ -15,11 +15,11 @@ const codeOf = (err: unknown): string | undefined =>
 let agent: Agent | undefined;
 
 /** An agent whose lookup asks 1.1.1.1 and 8.8.8.8, not this machine's cache. */
-function publicAgent(): Agent {
+function publicAgent(Make: typeof Agent): Agent {
   if (agent) return agent;
   const dns = new Resolver();
   dns.setServers(["1.1.1.1", "8.8.8.8"]);
-  agent = new Agent({
+  agent = new Make({
     connect: {
       lookup: (host, opts, cb) => {
         dns.resolve4(host).then(
@@ -41,9 +41,11 @@ export const shareFetch: typeof fetch = async (input, init) => {
     return await fetch(input, init);
   } catch (err) {
     if (!MISSING.has(codeOf(err) ?? "")) throw err;
-    return (await undiciFetch(input as string, {
+    // Loaded on this path only: undici costs every CLI start ~80 ms.
+    const undici = await import("undici");
+    return (await undici.fetch(input as string, {
       ...(init as object),
-      dispatcher: publicAgent(),
+      dispatcher: publicAgent(undici.Agent),
     })) as unknown as Response;
   }
 };

@@ -11,15 +11,14 @@ import { getDomain } from "tldts";
 import type { BrowserFlow, FlowPage, FlowRunner } from "../browser/flow.js";
 
 export class SecretLeak extends Error {
-  constructor(
-    readonly credential: string,
-    readonly host: string,
-    what = "password",
-    fix?: string,
-  ) {
+  readonly credential: string;
+  readonly host: string;
+  constructor(credential: string, host: string, what = "password", fix?: string) {
     super(
       `${credential}'s ${what} is not typed on ${host}: not one of its origins${fix ? ` (${fix})` : ""}`,
     );
+    this.credential = credential;
+    this.host = host;
     this.name = "SecretLeak";
   }
 }

@@ -44,7 +44,9 @@ export class InstantlyReader implements InboxReader {
   /** The last listing's messages: the sync asks for each id right after. */
   private listed = new Map<string, InstantlyEmail>();
 
-  constructor(private readonly opts: InstantlyReaderOptions) {
+  private readonly opts: InstantlyReaderOptions;
+  constructor(opts: InstantlyReaderOptions) {
+    this.opts = opts;
     this.fetch = opts.fetch ?? fetch;
   }
 

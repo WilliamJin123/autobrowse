@@ -19,12 +19,12 @@ export const pkceChallenge = (verifier: string) =>
 
 /** A refusal from a sign-in or a token endpoint. `revoked`: the grant is gone; connect again. */
 export class OAuthError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly revoked: boolean,
-  ) {
+  readonly code: string;
+  readonly revoked: boolean;
+  constructor(code: string, message: string, revoked: boolean) {
     super(message);
+    this.code = code;
+    this.revoked = revoked;
     this.name = "OAuthError";
   }
 }

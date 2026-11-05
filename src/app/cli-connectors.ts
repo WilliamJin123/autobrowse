@@ -7,7 +7,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { GetParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
+import type { SSMClient } from "@aws-sdk/client-ssm";
 import type { Command } from "commander";
 import type { EnvStore } from "credvault";
 import type { BrowserFlow, FlowRunner } from "../browser/flow.js";
@@ -47,8 +47,12 @@ const appOf = (s: string): ConnectorApp => {
 export async function mergeIntoWrenEnv(
   store: EnvStore,
   names: readonly string[],
-  ssm = new SSMClient(awsConfigFromEnv()),
+  client?: Pick<SSMClient, "send">,
 ): Promise<{ added: string[]; changed: string[]; size: number }> {
+  const { GetParameterCommand, PutParameterCommand, SSMClient } = await import(
+    "@aws-sdk/client-ssm"
+  );
+  const ssm = client ?? new SSMClient(awsConfigFromEnv());
   const got = await store.getMany([...names]);
   const missing = names.filter((n) => !got[n]);
   if (missing.length) throw new Error(`not in the store: ${missing.join(", ")}`);

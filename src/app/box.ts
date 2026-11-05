@@ -5,12 +5,7 @@
  * stays up; any other start (a deploy, a caller waking it) is ours to end,
  * and the tag is cleared on the way down.
  */
-import {
-  DeleteTagsCommand,
-  DescribeInstancesCommand,
-  type EC2Client,
-  StopInstancesCommand,
-} from "@aws-sdk/client-ec2";
+import type { EC2Client } from "@aws-sdk/client-ec2";
 
 export const STARTED_BY_TAG = "autobrowse:started-by";
 
@@ -22,11 +17,13 @@ export interface Ec2Port {
 export function ec2Port(client: EC2Client): Ec2Port {
   return {
     async startedBy(id) {
+      const { DescribeInstancesCommand } = await import("@aws-sdk/client-ec2");
       const out = await client.send(new DescribeInstancesCommand({ InstanceIds: [id] }));
       const tags = out.Reservations?.[0]?.Instances?.[0]?.Tags ?? [];
       return tags.find((t) => t.Key === STARTED_BY_TAG)?.Value ?? null;
     },
     async stop(id) {
+      const { DeleteTagsCommand, StopInstancesCommand } = await import("@aws-sdk/client-ec2");
       await client.send(
         new DeleteTagsCommand({ Resources: [id], Tags: [{ Key: STARTED_BY_TAG }] }),
       );

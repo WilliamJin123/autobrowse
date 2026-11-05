@@ -111,7 +111,9 @@ export class Recorder {
   private readonly path: string;
   private readonly dir: string;
 
-  constructor(private readonly d: RecorderDeps) {
+  private readonly d: RecorderDeps;
+  constructor(d: RecorderDeps) {
+    this.d = d;
     this.now = d.now ?? (() => new Date());
     this.path = d.path ?? statePath();
     this.dir = d.dir ?? callsDir();

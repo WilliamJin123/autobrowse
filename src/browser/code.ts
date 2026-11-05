@@ -77,10 +77,12 @@ export interface CodeResult {
 
 /** The code failed on a call or by itself: the rows so far and where, for the agent to fix. */
 export class CodeFailed extends Error {
-  constructor(readonly result: CodeResult & { failed: CodeFailure }) {
+  readonly result: CodeResult & { failed: CodeFailure };
+  constructor(result: CodeResult & { failed: CodeFailure }) {
     super(
       `code failed${result.failed.call ? ` at ${result.failed.call} #${result.failed.i}` : ""}: ${result.failed.error}`,
     );
+    this.result = result;
   }
 }
 
@@ -165,12 +167,14 @@ const tabSurface = (t: ReadTab, pace: () => Promise<void>): Surface => ({
 
 /** An item of `fp.each` failed: which, and on what call. */
 class ItemFailed extends Error {
-  constructor(
-    readonly item: number,
-    readonly row: CodeCall | null,
-    override readonly cause: unknown,
-  ) {
+  readonly item: number;
+  readonly row: CodeCall | null;
+  override readonly cause: unknown;
+  constructor(item: number, row: CodeCall | null, cause: unknown) {
     super(`item ${item}: ${firstLine(cause)}`);
+    this.item = item;
+    this.row = row;
+    this.cause = cause;
   }
 }
 

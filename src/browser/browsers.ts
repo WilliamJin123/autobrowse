@@ -194,15 +194,23 @@ export function warnings(v: BrowsersView): string[] {
  * (`browser/profile-wait`), never calls it a failure of the act it was about to do.
  */
 export class ProfileBusy extends Error {
+  readonly profile: string;
+  readonly pid: number;
+  readonly opener: Opener;
+  readonly profileDir: string;
   constructor(
-    readonly profile: string,
-    readonly pid: number,
+    profile: string,
+    pid: number,
     /** `explore:<port>`, `desk`, `cli`, … (`openerOf`). */
-    readonly opener: Opener,
+    opener: Opener,
     /** The profile's directory: where its `SingletonLock` is. */
-    readonly profileDir: string,
+    profileDir: string,
   ) {
     super(`profile ${profile} is open in pid ${pid} (${opener})`);
+    this.profile = profile;
+    this.pid = pid;
+    this.opener = opener;
+    this.profileDir = profileDir;
     this.name = "ProfileBusy";
   }
 }

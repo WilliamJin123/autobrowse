@@ -288,12 +288,10 @@ export interface HeldTab {
  * wrong, so the host retries the whole flow with a fresh session.
  */
 export class FlowInterrupted extends Error {
-  constructor(
-    flow: string,
-    cause: unknown,
-    readonly artifacts: Artifacts,
-  ) {
+  readonly artifacts: Artifacts;
+  constructor(flow: string, cause: unknown, artifacts: Artifacts) {
     super(`${flow}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.artifacts = artifacts;
     this.name = "FlowInterrupted";
   }
 }
@@ -312,12 +310,10 @@ export function isTransientBrowserError(err: unknown): boolean {
 
 /** A flow threw something other than NeedsHuman; the artifacts say where. */
 export class FlowFailed extends Error {
-  constructor(
-    flow: string,
-    cause: unknown,
-    readonly artifacts: Artifacts,
-  ) {
+  readonly artifacts: Artifacts;
+  constructor(flow: string, cause: unknown, artifacts: Artifacts) {
     super(`${flow}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.artifacts = artifacts;
     this.name = "FlowFailed";
   }
 }

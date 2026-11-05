@@ -37,12 +37,14 @@ const chromium = async () =>
 export class NeedsHuman extends Error {
   /** Set by the runner, not the flow: where the screenshot and trace went. */
   artifacts: Artifacts = {};
+  readonly wall?: Wall["kind"] | undefined;
   constructor(
     reason: string,
     /** The wall that stopped the flow, when one did: a read maps it to an access code. */
-    readonly wall?: Wall["kind"],
+    wall?: Wall["kind"],
   ) {
     super(safeUrls(reason));
+    this.wall = wall;
     this.name = "NeedsHuman";
   }
 }
@@ -61,11 +63,10 @@ export type AccessCode = (typeof ACCESS_CODES)[number];
 
 /** A flow's read the site refused for a known reason; the runner passes it on unwrapped. */
 export class AccessRefused extends Error {
-  constructor(
-    readonly code: AccessCode,
-    reason: string,
-  ) {
+  readonly code: AccessCode;
+  constructor(code: AccessCode, reason: string) {
     super(safeUrls(reason));
+    this.code = code;
     this.name = "AccessRefused";
   }
 }

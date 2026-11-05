@@ -45,13 +45,19 @@ export interface Llm {
 }
 
 export class LlmOutputInvalid extends Error {
+  readonly issues: string;
+  readonly text: string;
+  readonly usage: LlmUsage;
   constructor(
-    readonly issues: string,
-    readonly text: string,
+    issues: string,
+    text: string,
     /** What the refused replies cost: the spend is real even when the reply is not. */
-    readonly usage: LlmUsage = { inputTokens: 0, outputTokens: 0 },
+    usage: LlmUsage = { inputTokens: 0, outputTokens: 0 },
   ) {
     super(`model output did not match the schema: ${issues}`);
+    this.issues = issues;
+    this.text = text;
+    this.usage = usage;
     this.name = "LlmOutputInvalid";
   }
 }

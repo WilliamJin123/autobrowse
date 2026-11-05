@@ -3,7 +3,7 @@
  * inboxes means appending `[[senders]]` entries; nothing already there is
  * rewritten, so comments and the signature survive.
  */
-import { GetParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
+import type { SSMClient } from "@aws-sdk/client-ssm";
 import { parse } from "smol-toml";
 import type { AwsConfig } from "../owner.js";
 
@@ -20,15 +20,23 @@ export interface RosterStore {
 
 /** One SecureString parameter read and written whole: the roster, the mailbox logins. */
 export function ssmTextStore(opts: { param: string; aws: AwsConfig }): RosterStore {
-  const ssm = new SSMClient(opts.aws);
+  // The SDK loads at the first read or write, not with this module.
+  let made: SSMClient | undefined;
+  const sdk = async () => {
+    const m = await import("@aws-sdk/client-ssm");
+    made ??= new m.SSMClient(opts.aws);
+    return { ssm: made, ...m };
+  };
   return {
     async read() {
+      const { ssm, GetParameterCommand } = await sdk();
       const r = await ssm.send(new GetParameterCommand({ Name: opts.param, WithDecryption: true }));
       const value = r.Parameter?.Value;
       if (typeof value !== "string") throw new Error(`SSM ${opts.param} has no value`);
       return value;
     },
     async write(text) {
+      const { ssm, PutParameterCommand } = await sdk();
       await ssm.send(
         new PutParameterCommand({
           Name: opts.param,

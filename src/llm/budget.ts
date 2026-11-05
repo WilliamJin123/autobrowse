@@ -22,13 +22,14 @@ export interface Ledger {
 }
 
 export class BudgetExceeded extends Error {
-  constructor(
-    readonly used: number,
-    readonly cap: number,
-  ) {
+  readonly used: number;
+  readonly cap: number;
+  constructor(used: number, cap: number) {
     super(
       `model budget: ${used} of ${cap} tokens used today; resets at UTC midnight, or raise LLM_DAILY_TOKENS`,
     );
+    this.used = used;
+    this.cap = cap;
     this.name = "BudgetExceeded";
   }
 }

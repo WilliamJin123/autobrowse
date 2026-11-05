@@ -4,8 +4,6 @@
  * The server calls the desk back through the box's Cloudflare hop (wren
  * deploy/scripts/box-restate.sh), so the URL it is given is that hop on its loopback.
  */
-import { DescribeInstancesCommand, EC2Client } from "@aws-sdk/client-ec2";
-import { GetCommandInvocationCommand, SendCommandCommand, SSMClient } from "@aws-sdk/client-ssm";
 import type { AwsConfig } from "../owner.js";
 
 /** The desk as the box's Restate server dials it: the cloudflared hop, not the Mac. */
@@ -16,6 +14,11 @@ export async function registerOnBox(
   aws: AwsConfig,
   sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
 ): Promise<{ id: string; services: string[] }> {
+  const [{ DescribeInstancesCommand, EC2Client }, ssmSdk] = await Promise.all([
+    import("@aws-sdk/client-ec2"),
+    import("@aws-sdk/client-ssm"),
+  ]);
+  const { GetCommandInvocationCommand, SendCommandCommand, SSMClient } = ssmSdk;
   const found = await new EC2Client(aws).send(
     new DescribeInstancesCommand({
       Filters: [

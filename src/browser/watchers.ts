@@ -143,7 +143,9 @@ export class Watchers {
   private readonly beatMs: number;
   private readonly specs: Record<string, WatchSpec>;
 
-  constructor(private readonly d: WatchersDeps) {
+  private readonly d: WatchersDeps;
+  constructor(d: WatchersDeps) {
+    this.d = d;
     this.now = d.now ?? Date.now;
     this.everyMs = d.everyMs ?? 20_000;
     this.reloadMs = d.reloadMs ?? 3 * 60 * 60_000;

@@ -20,8 +20,10 @@ export interface Known {
 }
 
 export class ScrubLeak extends Error {
-  constructor(readonly kind: string) {
+  readonly kind: string;
+  constructor(kind: string) {
     super(`scrubbed trace still holds a ${kind} value`);
+    this.kind = kind;
   }
 }
 

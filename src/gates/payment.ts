@@ -151,10 +151,9 @@ export type GateReason = "no-approver" | "denied" | "no-answer" | "asked";
 
 export class PaymentGate extends Error {
   readonly gate = "payment" as const;
-  constructor(
-    readonly what: string,
-    readonly reason: GateReason,
-  ) {
+  readonly what: string;
+  readonly reason: GateReason;
+  constructor(what: string, reason: GateReason) {
     super(
       reason === "no-approver"
         ? `payment step needs a person: ${what}; no channel to ask on (set PHONE_NUMBER, LINQ_* or NOTIFY_TO)`
@@ -164,6 +163,8 @@ export class PaymentGate extends Error {
             ? `payment step asked: ${what}; the person has been texted; to hold until they answer, send the same command to ?wait=1 (cmd.sh does), or send it again after they answer`
             : `payment step unanswered: ${what}; no reply in time, send the same command again to ask again`,
     );
+    this.what = what;
+    this.reason = reason;
   }
 }
 
@@ -177,7 +178,10 @@ export class PendingApprovals {
     string,
     { promise: Promise<boolean | null>; answer: boolean | null | undefined }
   >();
-  constructor(private readonly approve: Approver) {}
+  private readonly approve: Approver;
+  constructor(approve: Approver) {
+    this.approve = approve;
+  }
 
   /** True to proceed; throws PaymentGate("asked") when the answer is not in yet and `wait` is off. */
   async decide(key: string, ask: Approval, wait: boolean): Promise<void> {
@@ -223,10 +227,12 @@ export function paymentFlowOf(url: string): string {
  * flow's site and when its yes runs out.
  */
 export class PaymentFlowYes {
-  constructor(
-    private readonly file: string,
-    private readonly now: () => number = Date.now,
-  ) {}
+  private readonly file: string;
+  private readonly now: () => number;
+  constructor(file: string, now: () => number = Date.now) {
+    this.file = file;
+    this.now = now;
+  }
 
   private read(): Record<string, number> {
     try {

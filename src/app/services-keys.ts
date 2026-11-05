@@ -1,6 +1,6 @@
 /** Secrets in SSM: one client per owner and region, the env store, API keys and their keeper, memory. */
 import { dirname, join } from "node:path";
-import { SSMClient } from "@aws-sdk/client-ssm";
+import type { SSMClient } from "@aws-sdk/client-ssm";
 import {
   applyProjection,
   type EnvEntry,
@@ -22,7 +22,7 @@ import { type KeysDep, ownerKeysIn, reachEnv, vaultSource } from "../reach/key-s
 import { type KeyAdmin, keyAdmin } from "../sites/keys.js";
 import type { Settings } from "./config.js";
 import { awsFor } from "./owner.js";
-import { lazy } from "./services-kit.js";
+import { lateSsm } from "./services-kit.js";
 import { auditFor, credentialsFor } from "./services-state.js";
 
 export function sinkFor(
@@ -54,7 +54,7 @@ export function ssmFor(settings: Settings): SSMClient {
   const key = `${settings.owner}|${settings.awsRegion}`;
   let c = ssmClients.get(key);
   if (!c) {
-    c = lazy(() => new SSMClient(awsFor(settings)));
+    c = lateSsm(() => awsFor(settings));
     ssmClients.set(key, c);
   }
   return c;

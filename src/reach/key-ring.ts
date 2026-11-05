@@ -111,10 +111,13 @@ export const outOfCredit = (status: number, body: string): boolean =>
  */
 export class NoLiveKey extends Error {
   readonly account: string | undefined;
+  readonly base: string;
+  readonly held: number;
+  readonly until: number | null;
   constructor(
-    readonly base: string,
-    readonly held: number,
-    readonly until: number | null,
+    base: string,
+    held: number,
+    until: number | null,
     o: { account?: string; message?: string } = {},
   ) {
     super(
@@ -123,6 +126,9 @@ export class NoLiveKey extends Error {
           ? `every ${base} key is out of credit (${held} held) until ${new Date(until ?? 0).toISOString().slice(0, 10)}`
           : `no ${base}_API_KEY`),
     );
+    this.base = base;
+    this.held = held;
+    this.until = until;
     this.name = "NoLiveKey";
     this.account = o.account;
   }

@@ -57,7 +57,7 @@ publishing). `walkthrough/` is the guided path with demos that run now.
 
 ## One verb
 
-In this checkout, `bin/autobrowse` is the same CLI without pnpm: it runs the repo HEAD from any folder, and `cmd` answers in ~0.1 s. Link it once: `ln -s "$PWD/bin/autobrowse" ~/.local/bin/autobrowse`.
+In this checkout, `bin/autobrowse` is the same CLI without pnpm: it runs the repo HEAD from any folder (Node runs the TypeScript itself, no build; a start is ~0.5 s), and `cmd` answers in ~0.1 s. Link it once: `ln -s "$PWD/bin/autobrowse" ~/.local/bin/autobrowse`.
 
 ```sh
 pnpm autobrowse do "upload this to youtube" --input file=talk.mp4 --input title="Talk"

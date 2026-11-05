@@ -72,11 +72,10 @@ const secretSite = (key: string, site: string) =>
 
 /** A refused mod: every reason, not just the first. */
 export class ModRefused extends Error {
-  constructor(
-    name: string,
-    readonly reasons: string[],
-  ) {
+  readonly reasons: string[];
+  constructor(name: string, reasons: string[]) {
     super(`${name}: refused\n  ${reasons.join("\n  ")}`);
+    this.reasons = reasons;
     this.name = "ModRefused";
   }
 }

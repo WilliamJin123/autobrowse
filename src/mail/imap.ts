@@ -47,10 +47,9 @@ export class ImapReader implements InboxReader {
   /** The last listing's metadata: the sync asks for each id right after. */
   private listed = new Map<string, MessageMetadata>();
 
-  constructor(
-    private readonly login: Login,
-    opts: ImapReaderOptions = {},
-  ) {
+  private readonly login: Login;
+  constructor(login: Login, opts: ImapReaderOptions = {}) {
+    this.login = login;
     this.client = opts.imap ?? imapClient;
   }
 
@@ -131,10 +130,12 @@ async function folders(client: ImapFlow): Promise<Map<Tag, string>> {
 
 /** Each sender's own reader, else the fallback (Gmail). */
 export class RoutedReader implements InboxReader {
-  constructor(
-    private readonly fallback: InboxReader,
-    private readonly routes: ReadonlyMap<string, InboxReader>,
-  ) {}
+  private readonly fallback: InboxReader;
+  private readonly routes: ReadonlyMap<string, InboxReader>;
+  constructor(fallback: InboxReader, routes: ReadonlyMap<string, InboxReader>) {
+    this.fallback = fallback;
+    this.routes = routes;
+  }
 
   private readerOf(sender: string): InboxReader {
     return this.routes.get(sender.toLowerCase()) ?? this.fallback;

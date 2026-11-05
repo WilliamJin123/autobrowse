@@ -28,7 +28,10 @@ export class SessionPark {
   private readonly parked = new Map<string, Parked>();
   private readonly pins = new Map<string, number>();
 
-  constructor(private readonly o: ParkOptions) {}
+  private readonly o: ParkOptions;
+  constructor(o: ParkOptions) {
+    this.o = o;
+  }
 
   get size(): number {
     return this.parked.size;

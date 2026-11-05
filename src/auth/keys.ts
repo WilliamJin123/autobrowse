@@ -16,11 +16,10 @@ import {
 
 /** A caller's mistake with a status: 400 bad input, 404 no such key, 501 no mint flow for the vendor. */
 export class KeyError extends Error {
-  constructor(
-    readonly status: 400 | 404 | 501,
-    message: string,
-  ) {
+  readonly status: 400 | 404 | 501;
+  constructor(status: 400 | 404 | 501, message: string) {
     super(message);
+    this.status = status;
     this.name = "KeyError";
   }
 }

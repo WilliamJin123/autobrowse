@@ -41,7 +41,7 @@ Deps are made in one file so the CLI, the worker and tests share the same wiring
 |---|---|
 | worker (`tsx src/app/main.ts`, `deploy/worker-entry.sh`) | builds once |
 | desk (`pnpm desk`, launchd on the Mac) | builds once, serves `desk`, `claude`, `studio` and `calls`; runs `wren video watch` each minute and the call recorder every 15 s |
-| CLI | builds what a verb needs |
+| CLI (`bin/autobrowse`, `pnpm autobrowse`: Node runs `src/` through `bin/ts-loader.mjs`, no tsx) | builds what a verb needs; heavy packages load at first use (`test/cli-loads.test.ts`) |
 
 ## See
 

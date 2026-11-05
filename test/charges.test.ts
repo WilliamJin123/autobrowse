@@ -119,18 +119,18 @@ describe("charges", () => {
     expect(await r.invoice).toBe(false);
     expect(looks).toBe(3);
   });
-  it("reads headers from a raw message, folded lines joined", () => {
+  it("reads headers from a raw message, folded lines joined", async () => {
     const raw = Buffer.from("From: a@x.co\r\nSubject: Your\r\n  receipt\r\n\r\nSubject: body");
-    expect(rawHeader(raw, "subject")).toBe("Your receipt");
-    expect(rawHeader(raw, "to")).toBe("");
+    expect(await rawHeader(raw, "subject")).toBe("Your receipt");
+    expect(await rawHeader(raw, "to")).toBe("");
   });
-  it("decodes RFC 2047 encoded words in a header", () => {
+  it("decodes RFC 2047 encoded words in a header", async () => {
     const b64 = Buffer.from("Votre reçu n°42").toString("base64");
     const raw = Buffer.from(
       `From: =?UTF-8?Q?Caf=C3=A9_Billing?= <b@x.example>\r\nSubject: =?UTF-8?B?${b64}?=\r\n =?ISO-8859-1?Q?_=E9t=E9?=\r\n\r\nbody`,
     );
-    expect(rawHeader(raw, "subject")).toBe("Votre reçu n°42 été");
-    expect(rawHeader(raw, "from")).toBe("Café Billing <b@x.example>");
+    expect(await rawHeader(raw, "subject")).toBe("Votre reçu n°42 été");
+    expect(await rawHeader(raw, "from")).toBe("Café Billing <b@x.example>");
   });
   it("mail with a file is multipart/mixed; without, plain text", async () => {
     const base = { from: "a@x.co", to: "b@x.co", subject: "s", text: "hi" };

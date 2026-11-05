@@ -6,11 +6,7 @@
  * profile; a checkout's billing fields come from that profile's address.
  */
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import {
-  GetParametersByPathCommand,
-  PutParameterCommand,
-  type SSMClient,
-} from "@aws-sdk/client-ssm";
+import type { SSMClient } from "@aws-sdk/client-ssm";
 import type { Cipher } from "credvault";
 import { z } from "zod";
 import { localPhone } from "../auth/phone.js";
@@ -226,6 +222,7 @@ export const PROFILES_SSM_PATH = "/wallet/profiles";
 export function ssmProfiles(ssm: Pick<SSMClient, "send">, path = PROFILES_SSM_PATH): ProfileStore {
   return {
     async list() {
+      const { GetParametersByPathCommand } = await import("@aws-sdk/client-ssm");
       const out: Profile[] = [];
       let NextToken: string | undefined;
       do {
@@ -239,6 +236,7 @@ export function ssmProfiles(ssm: Pick<SSMClient, "send">, path = PROFILES_SSM_PA
       return out;
     },
     async put(p) {
+      const { PutParameterCommand } = await import("@aws-sdk/client-ssm");
       await ssm.send(
         new PutParameterCommand({
           Name: `${path}/${p.id}`,

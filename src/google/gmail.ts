@@ -5,8 +5,6 @@
  * non-2xx, fetch failures passed through untouched). It adds no time limit and no retry: a caller
  * that needs either wraps its `fetch`.
  */
-import libmime from "libmime";
-import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import type { FetchLike } from "../clients/http.js";
 import {
   GMAIL_MODIFY_SCOPE,
@@ -24,12 +22,14 @@ export const SEND_AND_READ_SCOPES: readonly string[] = [GMAIL_SEND_SCOPE, GMAIL_
 
 /** A non-2xx from the Gmail API. The bearer travels in a header, so the excerpt is safe to print. */
 export class GmailApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly bodyExcerpt: string,
-    readonly sender: string,
-  ) {
+  readonly status: number;
+  readonly bodyExcerpt: string;
+  readonly sender: string;
+  constructor(status: number, bodyExcerpt: string, sender: string) {
     super(`gmail HTTP ${status} for ${sender}: ${bodyExcerpt}`);
+    this.status = status;
+    this.bodyExcerpt = bodyExcerpt;
+    this.sender = sender;
     this.name = "GmailApiError";
   }
 }
@@ -271,12 +271,14 @@ export interface WholeMessage {
 }
 
 /** A header from raw RFC 822 text (folded lines joined, RFC 2047 words decoded by libmime); "" when absent. */
-export function rawHeader(raw: Buffer, name: string): string {
+export async function rawHeader(raw: Buffer, name: string): Promise<string> {
   const head = raw.toString("utf8").split(/\r?\n\r?\n/)[0] ?? "";
   const unfolded = head.replace(/\r?\n[ \t]+/g, " ");
   const re = new RegExp(`^${name}:[ \\t]*(.*)$`, "im");
   const value = re.exec(unfolded)?.[1]?.trim() ?? "";
   try {
+    // Loaded here: libmime and nodemailer cost every CLI start ~100 ms.
+    const { default: libmime } = await import("libmime");
     return libmime.decodeWords(value);
   } catch {
     return value;
@@ -427,8 +429,8 @@ export function gmailClient(opts: {
           if (!m || typeof m.raw !== "string" || !m.raw) return null;
           const raw = Buffer.from(m.raw, "base64url");
           return {
-            from: rawHeader(raw, "from"),
-            subject: rawHeader(raw, "subject"),
+            from: await rawHeader(raw, "from"),
+            subject: await rawHeader(raw, "subject"),
             at: new Date(Number(m.internalDate ?? 0)),
             raw,
           };
@@ -452,6 +454,7 @@ function newestFirst<T extends { at: Date }>(got: (T | null)[]): T[] {
  * file names are encoded words, and no file or URL is ever read.
  */
 export async function mimeMessage(mail: Parameters<GmailUserClient["send"]>[0]): Promise<string> {
+  const { default: MailComposer } = await import("nodemailer/lib/mail-composer/index.js");
   const composer = new MailComposer({
     from: mail.from,
     to: mail.to,

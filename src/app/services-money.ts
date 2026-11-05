@@ -1,7 +1,7 @@
 /** The operator's money and papers: wallet, billing profiles, files, the cards explore may place, charges. */
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { SSMClient } from "@aws-sdk/client-ssm";
+import type { SSMClient } from "@aws-sdk/client-ssm";
 import { aesGcmCipher, chainedFile, keychainKey, tailJson } from "credvault";
 import { registrable } from "../auth/guard.js";
 import { WALLET_KEYCHAIN } from "../auth/keep.js";
@@ -16,7 +16,7 @@ import { type Charge, type ChargeRow, reportCharge } from "../money/charges.js";
 import { isDefaultOwner } from "../owner.js";
 import type { Settings } from "./config.js";
 import { awsFor } from "./owner.js";
-import { lazy } from "./services-kit.js";
+import { lateSsm } from "./services-kit.js";
 import { spendGrantsFor } from "./services-reach.js";
 import { linqFor, phoneFor } from "./services-signin.js";
 import { credentialsFor, ledgerPath } from "./services-state.js";
@@ -34,7 +34,7 @@ function operatorOnly(settings: Settings, what: string): void {
  */
 export async function walletFor(
   settings: Settings,
-  ssm: SSMClient = lazy(() => new SSMClient(awsFor(settings))),
+  ssm: SSMClient = lateSsm(() => awsFor(settings)),
 ) {
   operatorOnly(settings, "cards");
   if (process.platform !== "darwin") throw new Error("the wallet lives on the Mac only");
@@ -48,7 +48,7 @@ export async function walletFor(
 /** The person's own details, sealed beside the wallet (same keychain item), backed up to SSM /wallet/profiles. */
 export async function profilesFor(
   settings: Settings,
-  ssm: SSMClient = lazy(() => new SSMClient(awsFor(settings))),
+  ssm: SSMClient = lateSsm(() => awsFor(settings)),
 ) {
   operatorOnly(settings, "profiles");
   if (process.platform !== "darwin") throw new Error("profiles live on the Mac only");

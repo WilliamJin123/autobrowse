@@ -131,12 +131,10 @@ export function nextRung(tier: Tier, block: string | null): Tier | null {
 
 /** The host or the line failed before a page came. `reset` climbs; `unreachable` stops. */
 export class Transport extends Error {
-  constructor(
-    readonly kind: "reset" | "unreachable",
-    message: string,
-    cause?: unknown,
-  ) {
+  readonly kind: "reset" | "unreachable";
+  constructor(kind: "reset" | "unreachable", message: string, cause?: unknown) {
     super(message, { cause });
+    this.kind = kind;
     this.name = "Transport";
   }
 }
@@ -182,11 +180,18 @@ export const HOST_GAP_MS = 2_000;
 /** At least `gapMs` between two requests to one host, across rungs. In process. */
 export class HostGap {
   private readonly next = new Map<string, number>();
+  private readonly gapMs: number;
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
   constructor(
-    private readonly gapMs = HOST_GAP_MS,
-    private readonly now: () => number = Date.now,
-    private readonly sleep: (ms: number) => Promise<void> = sleepFor,
-  ) {}
+    gapMs: number = HOST_GAP_MS,
+    now: () => number = Date.now,
+    sleep: (ms: number) => Promise<void> = sleepFor,
+  ) {
+    this.gapMs = gapMs;
+    this.now = now;
+    this.sleep = sleep;
+  }
 
   /** Books the host's next slot at once, so callers that overlap queue instead of racing. */
   async wait(host: string): Promise<void> {

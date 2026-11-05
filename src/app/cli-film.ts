@@ -4,7 +4,6 @@
  */
 import type { Command } from "commander";
 import { takePanes } from "../browser/film.js";
-import { filmTape } from "../film/director.js";
 import { loadTape } from "../film/tape.js";
 import { expandHome } from "../google/auth.js";
 
@@ -22,6 +21,8 @@ export function registerFilmCommand(program: Command): void {
         process.exitCode = 1;
         return;
       }
+      // Playwright loads here, not at every CLI start.
+      const { filmTape } = await import("../film/director.js");
       const take = await filmTape(await loadTape(file), {
         tape: file,
         dir,

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The autobrowse CLI from this checkout: always its HEAD, no build. Symlink it onto
 # your PATH: ln -s "$PWD/bin/autobrowse" ~/.local/bin/autobrowse
-# `cmd` skips the CLI's imports (bin/explore-cmd.mjs): ~0.1 s, not ~1.4 s.
+# Node runs the TypeScript itself (bin/ts-loader.mjs): no tsx, and compiled code is cached per file.
+# `cmd` skips the CLI's imports (bin/explore-cmd.mjs): ~0.1 s, not ~0.5 s.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 if [ "${1:-}" = "cmd" ]; then
@@ -10,4 +11,4 @@ if [ "${1:-}" = "cmd" ]; then
 fi
 # The repo root as cwd, as `pnpm -s autobrowse` gives: compile, env file and recordings resolve there.
 cd "$ROOT"
-exec node --import tsx "$ROOT/src/app/cli.ts" "$@"
+exec node --disable-warning=ExperimentalWarning --import "$ROOT/bin/ts-loader.mjs" "$ROOT/src/app/cli.ts" "$@"

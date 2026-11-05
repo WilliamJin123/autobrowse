@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { EnvStore } from "credvault";
 import type { FlowRunner } from "../browser/flow.js";
-import { awsDomain } from "../clients/aws-domain.js";
 import { cloudflare, verifyCloudflareToken } from "../clients/cloudflare.js";
 import { dynadot } from "../clients/dynadot.js";
 import { type HttpClient, httpClient, safeUrl } from "../clients/http.js";
@@ -24,7 +23,7 @@ import type { Consents, WorkspaceInboxDeps } from "../workflows/workspace-inbox/
 import type { Settings } from "./config.js";
 import { awsFor } from "./owner.js";
 import { envStoreFor, ssmFor } from "./services-keys.js";
-import { lazy, required } from "./services-kit.js";
+import { later, lazy, required } from "./services-kit.js";
 import { gmailFor, googleAdminFor } from "./services-reach.js";
 import { credentialsFor, identitiesFor } from "./services-state.js";
 
@@ -96,7 +95,8 @@ export function inboxFleetDepsFor(
       dynadot: required((await key("DYNADOT_API_KEY")) ?? undefined, "DYNADOT_API_KEY"),
       instantly: required((await key("INSTANTLY_API_KEY")) ?? undefined, "INSTANTLY_API_KEY"),
     }),
-    aws: lazy(() => awsDomain(awsFor(settings))),
+    // Three AWS clients (ACM, CloudFront, Route 53) load at the first domain call.
+    aws: later(async () => (await import("../clients/aws-domain.js")).awsDomain(awsFor(settings))),
     credentials: credentialsFor(settings),
     mailboxes: {
       async merge(rows) {

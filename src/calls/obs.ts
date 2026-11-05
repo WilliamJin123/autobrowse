@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import OBSWebSocket from "obs-websocket-js";
+import type OBSWebSocket from "obs-websocket-js";
 import type { Booth } from "./recorder.js";
 import { OBS_URL } from "./setup.js";
 
@@ -44,7 +44,8 @@ export async function connectObs(
   password: string,
   o: { launch?: boolean; waitMs?: number } = {},
 ): Promise<{ obs: Obs; launched: boolean }> {
-  const obs = new OBSWebSocket();
+  const { default: Socket } = await import("obs-websocket-js");
+  const obs = new Socket();
   // Connected and past OBS's start-up: requests answer 207 "not ready" until its scenes load.
   const once = async () => {
     const up = await obs.connect(OBS_URL, password).then(

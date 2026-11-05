@@ -13,15 +13,7 @@
  * - Every charge is texted and emailed with its receipt (money/charges.ts).
  */
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import {
-  DeleteParameterCommand,
-  GetParameterCommand,
-  GetParameterHistoryCommand,
-  GetParametersByPathCommand,
-  ParameterNotFound,
-  PutParameterCommand,
-  type SSMClient,
-} from "@aws-sdk/client-ssm";
+import type { SSMClient } from "@aws-sdk/client-ssm";
 import type { Cipher } from "credvault";
 import { z } from "zod";
 import { type Address, addressField } from "./profile.js";
@@ -260,7 +252,10 @@ export interface VersionedWallet extends Wallet {
 }
 
 export function ssmWallet(ssm: Pick<SSMClient, "send">, path = WALLET_SSM_PATH): VersionedWallet {
+  // The SDK loads at the first call, not with this module.
+  const sdk = () => import("@aws-sdk/client-ssm");
   async function list(): Promise<Card[]> {
+    const { GetParametersByPathCommand } = await sdk();
     const out: Card[] = [];
     let NextToken: string | undefined;
     do {
@@ -277,6 +272,7 @@ export function ssmWallet(ssm: Pick<SSMClient, "send">, path = WALLET_SSM_PATH):
     get: async (l) => (await list()).find((c) => c.label === l) ?? null,
     /** Every stored version of a label: number, brand and kind (the description), when. */
     async history(l: string) {
+      const { GetParameterHistoryCommand } = await sdk();
       const out: { version: number; about: string; at: string }[] = [];
       let NextToken: string | undefined;
       do {
@@ -299,12 +295,14 @@ export function ssmWallet(ssm: Pick<SSMClient, "send">, path = WALLET_SSM_PATH):
     },
     /** One earlier version of a label, whole. */
     async version(l: string, v: number) {
+      const { GetParameterCommand } = await sdk();
       const r = await ssm.send(
         new GetParameterCommand({ Name: `${path}/${l}:${v}`, WithDecryption: true }),
       );
       return cardSchema.parse(JSON.parse(r.Parameter?.Value ?? ""));
     },
     async put(card) {
+      const { PutParameterCommand } = await sdk();
       const c = cardSchema.parse(card);
       await ssm.send(
         new PutParameterCommand({
@@ -318,12 +316,12 @@ export function ssmWallet(ssm: Pick<SSMClient, "send">, path = WALLET_SSM_PATH):
       );
     },
     async remove(l) {
+      const { DeleteParameterCommand } = await sdk();
       try {
         await ssm.send(new DeleteParameterCommand({ Name: `${path}/${l}` }));
         return true;
       } catch (err) {
-        if (err instanceof ParameterNotFound || (err as Error).name === "ParameterNotFound")
-          return false;
+        if ((err as Error).name === "ParameterNotFound") return false;
         throw err;
       }
     },

@@ -38,11 +38,12 @@ export interface GateAnswer {
 
 /** Thrown by a step whose gate has no answer yet. */
 export class GateOpen extends Error {
-  constructor(
-    readonly gate: GateName,
-    readonly prompt: string,
-  ) {
+  readonly gate: GateName;
+  readonly prompt: string;
+  constructor(gate: GateName, prompt: string) {
     super(`gate ${gate} is open`);
+    this.gate = gate;
+    this.prompt = prompt;
     this.name = "GateOpen";
   }
 }

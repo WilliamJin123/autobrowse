@@ -247,7 +247,9 @@ export class NetLog {
   private readonly now: () => number;
   readonly personal: boolean;
 
-  constructor(private readonly o: NetLogOptions) {
+  private readonly o: NetLogOptions;
+  constructor(o: NetLogOptions) {
+    this.o = o;
     this.now = o.now ?? Date.now;
     this.t0 = this.now();
     this.personal = o.personal ?? isPersonalProfile(o.site);
