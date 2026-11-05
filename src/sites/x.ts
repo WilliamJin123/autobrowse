@@ -365,7 +365,7 @@ export const x: SiteApi = {
       path: "/2/users/me/following",
       standing: {
         final:
-          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+          "the API bills each read, with no free tier since 2026-02; the signed-in page shows it free (William's cost call, 11-03)",
       },
       summary:
         "Who the account follows, newest first (`max_results`, default 1000): `data[]` of username, name, follows_you (free: the signed-in page; the free API tier has no follows)",
@@ -377,8 +377,7 @@ export const x: SiteApi = {
       method: "POST",
       path: "/2/users/me/following",
       standing: {
-        final:
-          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+        final: "X took follow off every self-serve API tier (2026-04-16): Enterprise only",
       },
       summary:
         "Follow a user by handle (`undo` unfollows): `data.following` (free: the signed-in page; the free API tier has no follows)",
@@ -390,8 +389,7 @@ export const x: SiteApi = {
       method: "POST",
       path: "/2/users/me/likes",
       standing: {
-        final:
-          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+        final: "X took like off every self-serve API tier (2026-04-16): Enterprise only",
       },
       summary:
         "Like a post (`id`; `undo` takes it back): `data.liked` (free: the signed-in page; the free API tier has no likes)",
@@ -436,7 +434,7 @@ export const x: SiteApi = {
       path: "/2/users/{id}/timelines/reverse_chronological",
       standing: {
         final:
-          "the free API tier has none; the paid tier bills each call (William's cost call, 11-03)",
+          "the API bills each read, with no free tier since 2026-02; the signed-in page shows it free (William's cost call, 11-03)",
       },
       summary:
         "The signed-in account's home: posts from the accounts it follows, newest first (the Following tab, scrolled to `max_results`; `since_id` cursor; ads left out). Browser only: the API bills each post read",

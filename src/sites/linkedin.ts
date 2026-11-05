@@ -738,7 +738,10 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/company/{company}",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: {
+        final:
+          "of a Page we do not run the API gives only name, website, logo and locations: no industry, size or founding year",
+      },
       summary: "A company's About page: website, phone, industry, size, headquarters, founded",
       request: z.object({ company: handle }),
       meter: () => ({ company: 1 }),
@@ -835,7 +838,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/in/{vanity}/activity",
-      standing: { final: "no self-serve API reads another member's posts" },
+      standing: { final: "no LinkedIn API reads another member's posts" },
       summary:
         "A member's posts, reposts and comments, newest first (`max`, default 20): urn, kind, text, age label and approximate time, reactions, comments, url, raw. Reads only",
       request: activity,

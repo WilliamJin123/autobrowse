@@ -172,6 +172,10 @@ const NO_NAME = "the account's name did not come back";
 
 const read = "reddit/read";
 
+/** Why a read or an act the Devvit app will never do stays on the browser for good. */
+const DEVVIT_NOT =
+  "Reddit refused the Data API 3 times (never apply again), and our Devvit app only posts, answers and reads our own posts and inbox";
+
 export const reddit: SiteApi = {
   site: "reddit",
   blockers: { "reddit-devvit": REDDIT_DEVVIT },
@@ -231,7 +235,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/api/user_data_by_account_ids",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: userData,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -244,7 +248,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/user/{username}/about",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: about,
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: ({ username }) => ({ path: `/user/${username}/about` }) },
@@ -254,7 +258,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/new",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: listing,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -267,7 +271,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/search",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: srSearch,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -282,7 +286,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/r/{subreddit}/top",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: top,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -304,7 +308,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/subreddits/search",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: srFind,
       meter: () => ({ reads: 1 }),
       browser: { flow: read, input: (q) => ({ path: "/subreddits/search", query: query(q) }) },
@@ -313,7 +317,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/subreddits/mine/subscriber",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: mine,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -350,7 +354,7 @@ export const reddit: SiteApi = {
     route({
       method: "GET",
       path: "/search",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: search,
       meter: () => ({ reads: 1 }),
       browser: {
@@ -472,7 +476,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/api/compose",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: compose,
       irreversible: true,
       verify: {
@@ -499,7 +503,7 @@ export const reddit: SiteApi = {
     route({
       method: "POST",
       path: "/api/subscribe",
-      standing: { waits: "reddit-devvit" },
+      standing: { final: DEVVIT_NOT },
       request: subscribe,
       irreversible: true,
       verify: {
@@ -551,7 +555,6 @@ const CLOSED_SIGNED_OUT = new Set(["/user/{username}/about"]);
  */
 export const redditPublic: SiteApi = {
   site: "reddit-public",
-  blockers: { "reddit-devvit": REDDIT_DEVVIT },
   origin: REDDIT_ORIGIN,
   auth: { open: true },
   signedOut: true,
@@ -580,6 +583,8 @@ export const redditPublic: SiteApi = {
       const input = leg.input;
       return {
         ...r,
+        // signed-out discovery reads: the Devvit app reads our own posts only
+        standing: { final: DEVVIT_NOT },
         ...(r.path === "/comments/{article}" ? { meter: () => ({ threads: 1 }) } : {}),
         browser: {
           ...leg,

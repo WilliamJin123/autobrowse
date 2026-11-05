@@ -142,6 +142,11 @@ export interface SiteRoute<I = unknown, O = unknown> {
   summary: string;
 }
 
+/**
+ * `final`: the browser answers for good, and why (no API has the call; the API bills it; a
+ * program closed to new apps). `waits`: a blocker's id. A call an API gives after a review, an
+ * audit or a beta we can ask for always `waits`, filed or not (William, 11-05).
+ */
 export type Standing = { final: string } | { waits: string };
 
 /** One thing outside our code that a site's routes wait on: a review, a grant, a beta. */

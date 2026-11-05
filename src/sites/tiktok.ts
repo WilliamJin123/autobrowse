@@ -10,7 +10,7 @@ import { MAX_SEARCH } from "../browser/flows/tiktok-act.js";
 import { MAX_COMMENTS } from "../browser/flows/tiktok-comments.js";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
-import { TIKTOK_DIRECT_POST } from "./blockers.js";
+import { TIKTOK_BUSINESS, TIKTOK_DIRECT_POST } from "./blockers.js";
 import { pollWaits } from "./poll.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead } from "./verdict.js";
@@ -229,7 +229,7 @@ export const tiktokOAuth: OAuthSpec = {
 
 export const tiktok: SiteApi = {
   site: "tiktok",
-  blockers: { "tiktok-direct-post": TIKTOK_DIRECT_POST },
+  blockers: { "tiktok-direct-post": TIKTOK_DIRECT_POST, "tiktok-business": TIKTOK_BUSINESS },
   origin: TIKTOK_ORIGIN,
   probe: { path: "/v2/user/info/" },
   auth: { oauth: tiktokOAuth },
@@ -391,7 +391,10 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/search",
-      standing: { final: "no TikTok API searches (the Research API is for academics)" },
+      standing: {
+        final:
+          "no TikTok API searches words: the Business API finds posts that name our account only, and the Research API is for academics",
+      },
       summary:
         "Videos for words as TikTok's search shows them, read from the page's own search call (no API searches): `{ q, data: [{ id, url, username, name, bio, text, at, likes, comments }] }` (`max`, default 30). Reads only",
       request: webSearch,
@@ -420,7 +423,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/videos/{videoId}/comments",
-      standing: { final: "no TikTok API comments" },
+      standing: { final: "the Business API comments on our own videos only" },
       summary:
         "Comment on another account's video (no API comments there; 150 characters): `{ videoId, commented, id }`",
       request: webComment,
@@ -454,7 +457,7 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/videos/{videoId}/comments",
-      standing: { final: "no TikTok API reads comments" },
+      standing: { waits: "tiktok-business" },
       summary:
         "Comments on a video, read from the page's own comment calls (no public API; browser): `username` (the video's handle, optional), `max` (default 50, at most 100); answers `{ videoId, url, comments: [{ id, text, at, author, authorName, authorId, parentId, creator, likes }] }`, newest first. Reads only",
       request: postComments,
@@ -464,9 +467,7 @@ export const tiktok: SiteApi = {
     route({
       method: "GET",
       path: "/web/videos/{videoId}/analytics",
-      standing: {
-        final: "the Display API gives counts only; Studio adds viewers, watch time and sources",
-      },
+      standing: { waits: "tiktok-business" },
       summary:
         "A video's numbers off its TikTok Studio analytics page, read from the page's own insight calls (no API; browser; our own videos only): durationSecs, views, uniqueViewers, totalPlaySecs, avgWatchSecs, finishRate, newFollowers, retention, sources, searchTerms, age, gender, location (lists of `{ key, value }`, TikTok's keys and shares), followerShare, nonFollowerShare, newViewerShare, returnViewerShare; null when TikTok shows none (most fields wait for 100 views); `other` names unmapped fields with data. Reads only",
       request: z.object({ videoId: z.string().regex(/^\d+$/, "a video id") }),
@@ -476,7 +477,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/videos/{videoId}/comments/{commentId}/replies",
-      standing: { final: "no TikTok API comments" },
+      standing: { waits: "tiktok-business" },
       summary: "Reply to a comment (no public API; browser)",
       request: reply,
       irreversible: true,

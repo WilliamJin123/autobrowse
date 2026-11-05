@@ -33,6 +33,13 @@ describe("path standing", () => {
     expect(standingFaults([site([{ browser: leg, standing: { final: " " } }])])).toHaveLength(1);
   });
 
+  it("a `final` that names a review is a wait stated wrong", () => {
+    const gated = { browser: leg, standing: { final: "hashtags only, after App Review" } };
+    expect(standingFaults([site([gated])])).toEqual([
+      "s GET /a: `final` names a review: a call a review gives states `waits` on its blocker",
+    ]);
+  });
+
   it("a wait names a blocker the site lists, and each blocker has a route or grants", () => {
     const waits = { browser: leg, standing: { waits: "review" } };
     expect(standingFaults([site([waits])])).toEqual([

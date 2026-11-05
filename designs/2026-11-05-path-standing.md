@@ -31,7 +31,8 @@ Priorities, in order: cannot drift, costs a person nothing to keep, answers "wha
 ## Shape
 
 - `SiteRoute.standing?: { final: string } | { waits: string }`.
-  - `final`: why the browser is the answer for good (no API has this call; the API bills what the page shows free).
+  - `final`: why the browser is the answer for good (no API has this call; the API bills what the page shows free; a program closed to new apps).
+  - Never `final`: a call an API gives after a review, an audit or a beta we can ask for. That route `waits`, filed or not (William, 11-05). A `final` reason that names a review fails the test.
   - `waits`: a blocker's id. The route is a fallback for now. On an API route: a better way is gated (a webhook).
 - `SiteApi.blockers?: Record<string, { what; task?; since; grants? }>`: the short list of things a site waits on. One blocker covers many routes. The entries live in `src/sites/blockers.ts`; an id is wren's review id where one exists (`meta-app`, `tiktok-direct-post`, `linkedin-pages`).
 - `grants`: the grants a blocker gives when it clears. It ties a route's `needs` to the blocker.
@@ -48,6 +49,7 @@ Priorities, in order: cannot drift, costs a person nothing to keep, answers "wha
 | Any `waits` | names a blocker the site lists |
 | A fixed `needs` grant | a blocker of the site gives it |
 | A blocker | a route waits on it, or it gives grants |
+| Any `final` | a reason that names no review, audit, approval or beta |
 
 Code: `standingFaults` in `src/sites/standing.ts`; `test/standing.test.ts` runs it on every site.
 
@@ -65,13 +67,14 @@ When a blocker clears: delete it from `blockers.ts`. The test then names each ro
 
 ## State on 2026-11-05
 
-209 routes settled, 55 waiting, 1 with no leg.
+229 routes settled (85 of them the browser for good), 36 waiting, 0 with no leg. Each `final` was checked against the site's API docs on 11-05 (WA-1109).
 
 | Blocker | Waits on | Routes |
 |---|---|---|
-| `reddit-devvit` | Reddit's external-endpoints beta (WA-fdxh, filed 10-24) | 36 |
+| `reddit-devvit` | Reddit's external-endpoints beta (WA-fdxh, filed 10-24): our own posts, replies and inbox only | 13 |
 | `linkedin-pages` | Community Management review (WA-1032, filed 10-09) | 6 |
-| `meta-app` | Meta App Review, after business verification (WA-1048) | 5 |
+| `meta-app` | Meta App Review, after business verification (WA-1048) | 6 |
+| `tiktok-business` | TikTok API for Business, Accounts API: not filed (WA-1030) | 3 |
 | `tiktok-direct-post` | Direct Post audit, not filed | 1 |
 | `connect` | our own setup: no Outlook token | 7 |
 
@@ -84,3 +87,7 @@ When a blocker clears: delete it from `blockers.ts`. The test then names each ro
 - 2026-11-05: A route with both legs may state `waits`: the API leg works, and a better way is gated (Instagram comments: a webhook after review).
 - 2026-11-05: The ledger records `template` beside `via`. A row's route holds real ids, so drift could not match it to a route without the template.
 - 2026-11-05: X's paid-tier routes state `final` (William's cost call of 11-03). A changed call moves them by an edit of one line each.
+- 2026-11-05 (WA-1109, William): "for any things that exist after review … they should not be stated final". Instagram search moved to `meta-app` (hashtag search comes with Instagram Public Content Access).
+- 2026-11-05 (WA-1109): the docs check found one gated API the 11-03 audit missed: TikTok's Accounts API reads and answers comments on our own videos and gives video insights. 3 routes wait on `tiktok-business`.
+- 2026-11-05 (WA-1109): Reddit split. The Devvit app posts, answers and reads our own posts and inbox, so 13 routes wait. Subreddit and search reads, other users, messages and joins are `final`: the Data API is refused for good and the app does none of them. All of `reddit-public` is `final`.
+- 2026-11-05 (WA-1109): cost and a closed program stay `final`: X reads (billed), X follow and like (off every self-serve tier since 2026-04-16), Google Places (billed), LinkedIn partner programs (closed to new apps).

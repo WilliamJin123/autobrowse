@@ -487,10 +487,7 @@ export const instagram: SiteApi = {
     route({
       method: "GET",
       path: "/web/search",
-      standing: {
-        final:
-          "the Graph API searches hashtags only (30 a week, after App Review); words have no API",
-      },
+      standing: { waits: "meta-app" },
       summary:
         "Posts for words or a #hashtag as Instagram's search shows them, top first: `{ q, shortcodes }` (`max`); read each with `GET /web/p/{shortcode}`",
       request: webSearch,

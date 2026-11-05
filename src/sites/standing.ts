@@ -10,6 +10,9 @@ type AnyRoute = SiteRoute<never, unknown>;
 /** What a route with both legs waits on when no token is held: a setup step, ours to run. */
 export const CONNECT = "connect";
 
+/** A `final` reason that names a gate we could pass is a `waits` stated wrong. */
+const GATED = /\b(review|audit|approval|approved|beta|waitlist|verification)\b/i;
+
 /** The site's blocker that gives grant `g`. */
 export const blockerFor = (s: Pick<SiteApi, "blockers">, g: string): string | undefined =>
   Object.entries(s.blockers ?? {}).find(([, b]) => b.grants?.includes(g))?.[0];
@@ -21,6 +24,7 @@ export const blockerFor = (s: Pick<SiteApi, "blockers">, g: string): string | un
  *   `prefer: "browser"` `final`
  *   both legs           nothing: derived from `needs` and the token; or `waits` as below
  *   an API leg          nothing, or `waits` for a better gated way (a webhook in review)
+ *   `final`             a reason, which names no review, audit or beta (that is a `waits`)
  *   `waits`             a blocker the site lists; a fixed `needs` grant has a blocker that gives it
  *   a blocker           a route waits on it, or it gives grants
  */
@@ -37,6 +41,8 @@ export function standingFaults(sites: readonly SiteApi[]): string[] {
         if (!blockers[st.waits]) say(`waits on "${st.waits}", which ${s.site} does not list`);
       }
       if (st && "final" in st && !st.final.trim()) say("`final` gives no reason");
+      if (st && "final" in st && GATED.test(st.final))
+        say("`final` names a review: a call a review gives states `waits` on its blocker");
       if (r.browser && !r.api && !st)
         say("browser only: state `final` (why for good) or `waits` (a blocker)");
       if (r.browser && r.api) {

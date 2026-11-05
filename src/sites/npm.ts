@@ -96,7 +96,10 @@ export const npm: SiteApi = {
     route({
       method: "POST",
       path: "/packages/{package}/trust",
-      standing: { final: "a trusted publisher is set on npmjs.com only" },
+      standing: {
+        final:
+          "`npm trust` (npm 11.15) takes no automation token: its first call wants the account's 2FA, as the page does",
+      },
       summary:
         "Trust a GitHub Actions workflow to publish the package over OIDC (no token in CI); owner, repo and workflow are fixed once made. `allowPublish` (default true; false = stage only) is set on a new or existing connection",
       request: z.object({
