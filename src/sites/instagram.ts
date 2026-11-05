@@ -11,7 +11,7 @@ import { z } from "zod";
 import { MAX_THREADS_SEARCH } from "../browser/flows/threads-act.js";
 import { type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
-import { META_APP } from "./blockers.js";
+import { INSTAGRAM_LOCAL_UPLOAD, META_APP } from "./blockers.js";
 import { fields } from "./facets/core.js";
 import { THREADS_SEARCH } from "./facets/sets.js";
 import { WEB_REDIRECT } from "./oauth.js";
@@ -167,7 +167,7 @@ export const instagramOAuth: OAuthSpec = {
 
 export const instagram: SiteApi = {
   site: "instagram",
-  blockers: { "meta-app": META_APP },
+  blockers: { "meta-app": META_APP, "instagram-local-upload": INSTAGRAM_LOCAL_UPLOAD },
   origin: INSTAGRAM_ORIGIN,
   probe: { path: "/me" },
   auth: { oauth: instagramOAuth },
@@ -252,9 +252,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/posts",
-      standing: {
-        final: "a fallback: the API posts from a public URL; this leg uploads a local file",
-      },
+      standing: { waits: "instagram-local-upload" },
       summary:
         "A post from a local file with a caption (no official path: the API wants a public URL; the browser leg uploads)",
       request: webPost,
@@ -466,7 +464,7 @@ export const instagram: SiteApi = {
       path: "/web/p/{shortcode}",
       standing: {
         final:
-          "the Graph API reads others' posts by account (business_discovery), never by shortcode",
+          "no API reads a post by its shortcode. First pass by API where the account is known: business_discovery lists its posts",
       },
       summary:
         "Any public post: owner `username`, caption, likes, comments, timestamp (the page's own tags)",

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { POST_URN } from "../browser/flows/linkedin-post-analytics.js";
 import { type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
-import { LINKEDIN_PAGES } from "./blockers.js";
+import { LINKEDIN_PAGES, LINKEDIN_PARTNER } from "./blockers.js";
 import { fields, presetWords } from "./facets/core.js";
 import { LINKEDIN_PEOPLE, LINKEDIN_POSTS } from "./facets/sets.js";
 import { pollWaits } from "./poll.js";
@@ -348,7 +348,7 @@ const INVITE_LIMIT_WAIT_S = 86_400;
 
 export const linkedin: SiteApi = {
   site: "linkedin",
-  blockers: { "linkedin-pages": LINKEDIN_PAGES },
+  blockers: { "linkedin-pages": LINKEDIN_PAGES, "linkedin-partner": LINKEDIN_PARTNER },
   origin: LINKEDIN_ORIGIN,
   probe: { path: "/v2/userinfo" },
   auth: { oauth: linkedinOAuth },
@@ -718,7 +718,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/search/results/people",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "People search (`keywords`, `page`, `pages`; LinkedIn's own filters, `autobrowse facets linkedin`: `network` F/S/O, `currentCompany` ids): name, headline, location, the role that matched, profile handle",
       request: peopleSearch,
@@ -728,7 +728,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/in/{vanity}",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "One profile: headline, location, about; `experience=true` adds every role, `company=true` also the current employer's page (website, size)",
       request: profile,
@@ -740,7 +740,7 @@ export const linkedin: SiteApi = {
       path: "/company/{company}",
       standing: {
         final:
-          "of a Page we do not run the API gives only name, website, logo and locations: no industry, size or founding year",
+          "no API gives industry, size or founding year of a Page we do not run. First pass by API once Community Management clears: name, website, logo, locations and follower count (WA-1113)",
       },
       summary: "A company's About page: website, phone, industry, size, headquarters, founded",
       request: z.object({ company: handle }),
@@ -750,7 +750,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/company/{company}/jobs",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "A company's open roles, worldwide: title, location, posted date, URL (`max`, default 50)",
       request: companyJobs,
@@ -760,7 +760,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/company/{company}/people",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary: "A company's people (`keywords` narrows: founder, partner; `max`, default 30)",
       request: companyPeople,
       meter: () => ({ company: 1 }),
@@ -769,7 +769,7 @@ export const linkedin: SiteApi = {
     route({
       method: "POST",
       path: "/in/{vanity}/connect",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "Invite to connect, with an optional note (200 characters; five notes a month free): `{ sent: true, note }`, or `{ sent: false, relationship }` when no invite is offered (connected, pending, follow-only)",
       request: connect,
@@ -877,7 +877,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/in/{vanity}/relationship",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "Where this account stands with a member: connected (1st), pending (our invite is out), none",
       request: z.object({ vanity }),
@@ -887,7 +887,7 @@ export const linkedin: SiteApi = {
     route({
       method: "POST",
       path: "/in/{vanity}/withdraw",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "Withdraw our pending invite (reads the button first: connected or none withdraws nothing and says so)",
       request: z.object({ vanity }),
@@ -910,7 +910,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/connections",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "Recently added connections, newest first (`max`, default 40): name, handle, headline, when they connected",
       request: newest,
@@ -964,7 +964,7 @@ export const linkedin: SiteApi = {
     route({
       method: "GET",
       path: "/messaging",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary:
         "The inbox's conversations newest first (`max`, `unread=true`): name, handle, preview, unread",
       request: inbox,
@@ -974,7 +974,7 @@ export const linkedin: SiteApi = {
     route({
       method: "POST",
       path: "/in/{vanity}/message",
-      standing: { final: "LinkedIn gives this to closed partner programs only" },
+      standing: { waits: "linkedin-partner" },
       summary: "Message a 1st-degree connection (anyone else is InMail, which needs Premium)",
       request: message,
       irreversible: true,

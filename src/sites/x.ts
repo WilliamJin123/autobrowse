@@ -12,6 +12,7 @@ import { basename, extname } from "node:path";
 import { z } from "zod";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
+import { X_ENTERPRISE, X_PAID_READS } from "./blockers.js";
 import { fields, presetWords, resolve } from "./facets/core.js";
 import { X_SEARCH } from "./facets/sets.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
@@ -282,6 +283,7 @@ export const xOAuth: OAuthSpec = {
 export const x: SiteApi = {
   site: "x",
   origin: X_ORIGIN,
+  blockers: { "x-paid-reads": X_PAID_READS, "x-enterprise": X_ENTERPRISE },
   probe: { path: "/2/users/me" },
   auth: { oauth: xOAuth },
   // Well under what a person scrolls in a day; reads look like one reader, not a scraper.
@@ -307,7 +309,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/by/username/{username}",
-      standing: { final: "the API bills each read; the signed-in page shows it free" },
+      standing: { waits: "x-paid-reads" },
       summary:
         "A user by handle: id, bio, location, link, follower counts (free: the signed-in page)",
       request: byUsername,
@@ -363,10 +365,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/me/following",
-      standing: {
-        final:
-          "the API bills each read, with no free tier since 2026-02; the signed-in page shows it free (William's cost call, 11-03)",
-      },
+      standing: { waits: "x-paid-reads" },
       summary:
         "Who the account follows, newest first (`max_results`, default 1000): `data[]` of username, name, follows_you (free: the signed-in page; the free API tier has no follows)",
       request: following,
@@ -376,9 +375,7 @@ export const x: SiteApi = {
     route({
       method: "POST",
       path: "/2/users/me/following",
-      standing: {
-        final: "X took follow off every self-serve API tier (2026-04-16): Enterprise only",
-      },
+      standing: { waits: "x-enterprise" },
       summary:
         "Follow a user by handle (`undo` unfollows): `data.following` (free: the signed-in page; the free API tier has no follows)",
       request: follow,
@@ -388,9 +385,7 @@ export const x: SiteApi = {
     route({
       method: "POST",
       path: "/2/users/me/likes",
-      standing: {
-        final: "X took like off every self-serve API tier (2026-04-16): Enterprise only",
-      },
+      standing: { waits: "x-enterprise" },
       summary:
         "Like a post (`id`; `undo` takes it back): `data.liked` (free: the signed-in page; the free API tier has no likes)",
       request: like,
@@ -420,7 +415,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/{id}/tweets",
-      standing: { final: "the API bills each read; the signed-in page shows it free" },
+      standing: { waits: "x-paid-reads" },
       summary:
         "A user's posts and replies, newest first (`max_results` up to 100, `since_id` cursor, `exclude=replies,retweets`; `id` may be a handle; free: the signed-in page). Each reply has `in_reply_to_status_id`, `referenced_tweets` and `in_reply_to` {username, name}",
       request: timeline,
@@ -432,10 +427,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/users/{id}/timelines/reverse_chronological",
-      standing: {
-        final:
-          "the API bills each read, with no free tier since 2026-02; the signed-in page shows it free (William's cost call, 11-03)",
-      },
+      standing: { waits: "x-paid-reads" },
       summary:
         "The signed-in account's home: posts from the accounts it follows, newest first (the Following tab, scrolled to `max_results`; `since_id` cursor; ads left out). Browser only: the API bills each post read",
       request: timeline,
@@ -445,7 +437,7 @@ export const x: SiteApi = {
     route({
       method: "GET",
       path: "/2/tweets/search/recent",
-      standing: { final: "the API bills each read; the signed-in page shows it free" },
+      standing: { waits: "x-paid-reads" },
       summary: `Posts matching \`query\` (X search operators, \`max_results\`, \`since_id\` cursor; X's own \`sort_order\` recency (default)|relevancy, \`start_time\`, \`end_time\`; ${presetWords(X_SEARCH)}; free: the signed-in page)`,
       request: search,
       prefer: "browser",
@@ -464,7 +456,7 @@ export const x: SiteApi = {
     route({
       method: "POST",
       path: "/1.1/account/update_profile.json",
-      standing: { final: "v1.1 only, which wants OAuth 1.0a; our token is OAuth 2.0" },
+      standing: { waits: "x-enterprise" },
       summary:
         "The account's display name (v1.1 wants OAuth 1.0a, so the Edit profile dialog in the browser): `name`; answers `{ before, name }`. The handle never changes",
       request: profileName,

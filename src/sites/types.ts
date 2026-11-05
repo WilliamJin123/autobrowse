@@ -143,13 +143,16 @@ export interface SiteRoute<I = unknown, O = unknown> {
 }
 
 /**
- * `final`: the browser answers for good, and why (no API has the call; the API bills it; a
- * program closed to new apps). `waits`: a blocker's id. A call an API gives after a review, an
- * audit or a beta we can ask for always `waits`, filed or not (William, 11-05).
+ * `final`: the browser is the best way there will ever be, and why. Two reasons only: no API
+ * has the call at any tier (it is the site's internal one), or the API cannot do what the page
+ * does. `waits`: a blocker's id, for every call some API gives or could give us: after a
+ * review, by paying, on an enterprise or partner program however far off, or by a leg of ours
+ * not built. Cost is never a reason for `final`: at scale the API wins (no 403 and 429 walls,
+ * no proxies, failures that say what failed). William, 11-05.
  */
 export type Standing = { final: string } | { waits: string };
 
-/** One thing outside our code that a site's routes wait on: a review, a grant, a beta. */
+/** One thing a site's routes wait on: a review, a grant, a beta, a paid or partner API, a leg of ours not built. */
 export interface Blocker {
   what: string;
   /** The Backlog task that tracks it. */

@@ -43,6 +43,7 @@ import {
   search,
   WebMiss,
 } from "../reach/web.js";
+import { GOOGLE_PLACES } from "./blockers.js";
 import { fields } from "./facets/core.js";
 import { GOOGLE_SEARCH } from "./facets/sets.js";
 import { proofShotRoute } from "./proof.js";
@@ -93,6 +94,7 @@ const order = z
 export const web: SiteApi = {
   site: "web",
   origin: "https://web",
+  blockers: { "google-places": GOOGLE_PLACES },
   auth: { open: true },
   signedOut: true,
   // Google's page is capped in searches; Exa in mills of a dollar; /fetch in calls. /search's backends meter themselves.
@@ -261,7 +263,7 @@ export const web: SiteApi = {
     route({
       method: "GET",
       path: "/place",
-      standing: { final: "the Places API bills each call; Maps shows the id free" },
+      standing: { waits: "google-places" },
       summary:
         "A business's Google Place ID from Google Maps, signed out (`q`: name and address, \"Northwind Plumbing, 12 Elm St, Springfield\"): `placeId` (null when no place carries the name), `name`, `address`, `url`, `via` (place, list or none) and the list's `candidates`. A browser leg: call it on the desk",
       request: z.object({ q: z.string().trim().min(3).max(300) }),
@@ -273,7 +275,7 @@ export const web: SiteApi = {
       path: "/place/reviews",
       standing: {
         final:
-          "the Places API gives 5 reviews; the Business Profile API reads only places we manage",
+          "no API gives all of a place's reviews unless we manage the place: the Places API stops at 5 (a first pass)",
       },
       summary:
         "A place's Google reviews off Google Maps, newest first (`placeId`, `limit` up to 50, default 20): `name`, `url` (the place on Maps) and `reviews`, each with `id`, `author`, `authorUrl`, `stars`, `text`, `at` (ISO), `ago`, `edited` and the owner's `reply`. Signed out Maps hides reviews, so it reads in the `google` profile. A browser leg: call it on the desk",

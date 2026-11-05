@@ -1,7 +1,8 @@
 /**
  * Path standing (designs/2026-11-05-path-standing.md): whether the leg a route answers by is the
- * answer for good, or a stand-in until something outside our code clears. Stated on the route
- * where the legs cannot say it; derived where they can (a missing grant, no token).
+ * answer for good, or a stand-in until a blocker clears (a review, a paid or partner API, a leg
+ * of ours). Stated on the route where the legs cannot say it; derived where they can (a missing
+ * grant, no token).
  */
 import type { Blocker, SiteApi, SiteRoute, Standing } from "./types.js";
 
@@ -10,8 +11,9 @@ type AnyRoute = SiteRoute<never, unknown>;
 /** What a route with both legs waits on when no token is held: a setup step, ours to run. */
 export const CONNECT = "connect";
 
-/** A `final` reason that names a gate we could pass is a `waits` stated wrong. */
-const GATED = /\b(review|audit|approval|approved|beta|waitlist|verification)\b/i;
+/** A `final` reason that names a gate we could pass, or a price, is a `waits` stated wrong. */
+const GATED =
+  /\b(review|audit|approval|approved|beta|waitlist|verification|bills?|billed|paid|pay|cost|costs|price|priced|tier|tiers|enterprise|partner|partners)\b/i;
 
 /** The site's blocker that gives grant `g`. */
 export const blockerFor = (s: Pick<SiteApi, "blockers">, g: string): string | undefined =>
@@ -21,10 +23,10 @@ export const blockerFor = (s: Pick<SiteApi, "blockers">, g: string): string | un
  * Where the stated standings break the rule; empty when they hold.
  *
  *   browser only        `final` or `waits`
- *   `prefer: "browser"` `final`
+ *   `prefer: "browser"` `waits` (what holds the API leg back) or `final`
  *   both legs           nothing: derived from `needs` and the token; or `waits` as below
  *   an API leg          nothing, or `waits` for a better gated way (a webhook in review)
- *   `final`             a reason, which names no review, audit or beta (that is a `waits`)
+ *   `final`             a reason, which names no review, price or partner program (those wait)
  *   `waits`             a blocker the site lists; a fixed `needs` grant has a blocker that gives it
  *   a blocker           a route waits on it, or it gives grants
  */
@@ -42,12 +44,12 @@ export function standingFaults(sites: readonly SiteApi[]): string[] {
       }
       if (st && "final" in st && !st.final.trim()) say("`final` gives no reason");
       if (st && "final" in st && GATED.test(st.final))
-        say("`final` names a review: a call a review gives states `waits` on its blocker");
+        say("`final` names a review or a price: a call some API gives states `waits` on a blocker");
       if (r.browser && !r.api && !st)
         say("browser only: state `final` (why for good) or `waits` (a blocker)");
       if (r.browser && r.api) {
         if (r.prefer === "browser") {
-          if (!st || !("final" in st)) say("prefers the browser: state `final`, the reason");
+          if (!st) say("prefers the browser: state `waits` (what holds the API back) or `final`");
         } else if (st && "final" in st)
           say("both legs: the leg comes from `needs` and the token; `final` says nothing");
       }

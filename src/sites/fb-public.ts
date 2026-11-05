@@ -73,7 +73,10 @@ export const fbPublic: SiteApi = {
     route({
       method: "GET",
       path: "/ads",
-      standing: { final: "Meta's Ad Library API gives political ads and ads shown in the EU only" },
+      standing: {
+        final:
+          "no API has a commercial ad shown outside the EU: Meta's Ad Library API gives political ads and EU-shown ads only (a first pass for those)",
+      },
       summary:
         "Ads running now for keyword `q` in `country` (default US), newest layout first: Library ID, advertiser, its page, start date, text, call to action, the link it sends to (`url`, every one in `urls`), the shown domain (`caption`), and the card's whole text (`all`). A browser leg: call it on the desk",
       request: z.object({

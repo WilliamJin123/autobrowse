@@ -33,11 +33,16 @@ describe("path standing", () => {
     expect(standingFaults([site([{ browser: leg, standing: { final: " " } }])])).toHaveLength(1);
   });
 
-  it("a `final` that names a review is a wait stated wrong", () => {
-    const gated = { browser: leg, standing: { final: "hashtags only, after App Review" } };
-    expect(standingFaults([site([gated])])).toEqual([
-      "s GET /a: `final` names a review: a call a review gives states `waits` on its blocker",
-    ]);
+  it("a `final` that names a review, a price or a partner program is a wait stated wrong", () => {
+    const fault =
+      "s GET /a: `final` names a review or a price: a call some API gives states `waits` on a blocker";
+    for (const final of [
+      "hashtags only, after App Review",
+      "the API bills each read",
+      "Enterprise only",
+      "closed partner programs only",
+    ])
+      expect(standingFaults([site([{ browser: leg, standing: { final } }])])).toEqual([fault]);
   });
 
   it("a wait names a blocker the site lists, and each blocker has a route or grants", () => {
@@ -60,10 +65,16 @@ describe("path standing", () => {
     ).toEqual([]);
     expect(standingFaults([site([{ ...both, standing: { final: "x" } }])])).toHaveLength(1);
     expect(standingFaults([site([{ ...both, prefer: "browser" }])])).toEqual([
-      "s GET /a: prefers the browser: state `final`, the reason",
+      "s GET /a: prefers the browser: state `waits` (what holds the API back) or `final`",
     ]);
     expect(
-      standingFaults([site([{ ...both, prefer: "browser", standing: { final: "free" } }])]),
+      standingFaults([site([{ ...both, prefer: "browser", standing: { final: "richer page" } }])]),
+    ).toEqual([]);
+    // the API leg answers, held back by a cost call: a wait, not for good
+    expect(
+      standingFaults([
+        site([{ ...both, prefer: "browser", standing: { waits: "review" } }], { review }),
+      ]),
     ).toEqual([]);
   });
 
