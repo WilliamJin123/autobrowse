@@ -822,6 +822,12 @@ fetch, then Chrome's TLS fingerprint (`impit`), then a stealth browser (profile
 2 s; 1500 a day. Wren's batch render pass is the caller. Code:
 `src/reach/ladder.ts`, `src/browser/render.ts`.
 
+`web GET /brand?url=` reads one page's brand in the same stealth browser, light scheme:
+`themeColor`, `body` (`background`, `color`, `font`), `headings`, `buttons`, `links`, `logos`,
+with `finalUrl`, `status` and `block`. The values are computed styles, so a site that builds its
+CSS by script still answers. It does not climb to the exit; a worker with no browser answers 501.
+`@wrenautomation/read`'s `brandOf` is the caller. Code: `src/browser/brand.ts`.
+
 ### Chores on those APIs
 
 ```sh
