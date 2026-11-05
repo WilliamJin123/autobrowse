@@ -58,7 +58,7 @@ Any subset; `name` is the accessible name from `aria`. Or `{"mark":n}`: a number
 Look:
 - `{"cmd":"snapshot"}` — interactive elements, one line each. Start here.
 - `{"cmd":"overlay",…}` — the panel a person watching reads: [overlay.md](overlay.md). Optional; acts never depend on it.
-- `{"cmd":"aria"}` — accessibility tree, masked. `hints` scopes it, `limit` caps characters (default 12000). `extras:true` also lists what the tree misses (controls in closed shadow roots, cards clickable only by script), each with hints to act on. A link's target is its `/url:` line.
+- `{"cmd":"aria"}` — accessibility tree, masked. `hints` scopes it, `limit` is the answer's size (default 12000; past it, compacted). `extras:true` also lists what the tree misses (controls in closed shadow roots, cards clickable only by script), each with hints to act on. A link's target is its `/url:` line.
 - `{"cmd":"text"}` — the page's words as laid out: side-by-side reads as a row (`Price | $40`), tables across, a sidebar as `[col 1/2]`. Costs what plain text does. `"coords":true` adds `@x,y` per line (+25%); `"layout":false` = DOM order.
 - `{"cmd":"url"}`, `{"cmd":"screenshot"}` (path back), `{"cmd":"count","hints":…}`.
 - `{"cmd":"marks"}` — a screenshot with a numbered box on each control in view, and the list `{n, tag, role, name}`. For a control the snapshot and `aria` do not name (an icon, a canvas widget). Act with `"hints":{"mark":n}`: the journal keeps the control's own hints, never the point. A load or re-render makes the marks stale: take them again.
@@ -130,9 +130,10 @@ Every look costs tokens. Look once, then let the acts tell you what changed.
 
 1. `start.sh <site> <url>`, then `goal`. The `open` answer already lists the page's controls (`changed.added`).
 2. `snapshot`. `aria` with `hints` or a `limit` only when the snapshot is not enough.
-3. Every act answers `changed`: `added` (new controls, up to 40), `gone` (a count), `more` (past 40). Read that; don't look again after each act.
-4. Acts you are sure of (fill a form, submit) go in one `batch`. It stops at the first failure: `failed: {at, cmd, error}`, `done` holds what ran. A paying click goes alone.
-5. Prefer `role`+`name`; fall back to `css`+`nth`. A failed act is not journaled. Change the hints; don't repeat. A miss answers with `marks` (the picture and its list): read it and act on a mark.
+3. A long answer (`eval`, `aria`, `text`, `read`, `read_file`, `network` body, `shell`) is compacted to its `limit`, never cut at one point: a list of same-shape objects comes as TOON (`format:"toon"`, a header then rows, lossless); still too long, lists keep their first, last and evenly spaced items (`_i` = the item's place) and long strings their head and tail; a tree loses its deepest levels first. Each gap says what it left out. `whole: {chars, file}` holds the full answer: read the file, or raise `limit`.
+4. Every act answers `changed`: `added` (new controls, up to 40), `gone` (a count), `more` (past 40). Read that; don't look again after each act.
+5. Acts you are sure of (fill a form, submit) go in one `batch`. It stops at the first failure: `failed: {at, cmd, error}`, `done` holds what ran. A paying click goes alone.
+6. Prefer `role`+`name`; fall back to `css`+`nth`. A failed act is not journaled. Change the hints; don't repeat. A miss answers with `marks` (the picture and its list): read it and act on a mark.
 6. Never `raw:true` on a page showing a key.
 7. Done: `done` with the outcome and a one-line summary, `save` with a kebab name if it should compile, `stop.sh`. Or `stop.sh <port> achieved|failed "summary"` in one go. Never stop without a verdict: `autobrowse success` counts a run with none as unknown.
 

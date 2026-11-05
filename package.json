@@ -120,6 +120,7 @@
     "@restatedev/restate-sdk-clients": "1.17.1",
     "@restatedev/restate-sdk-tunnel": "1.17.1",
     "@sentry/node": "10.75.0",
+    "@toon-format/toon": "4.4.0",
     "commander": "15.0.0",
     "credvault": "0.13.0",
     "entities": "8.1.0",

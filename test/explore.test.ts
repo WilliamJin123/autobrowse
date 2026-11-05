@@ -151,6 +151,33 @@ describe("explore mode", () => {
     await busy;
   });
 
+  it("compacts a long eval answer: TOON, then an even cut, the whole in a file", async () => {
+    const small = await send({ cmd: "eval", js: "'a b '.repeat(25)" });
+    expect(small.body).toEqual({ result: "a b ".repeat(25) });
+    // Same-shape rows over the budget as JSON, under it as TOON: nothing left out, no file.
+    const rows = await send({
+      cmd: "eval",
+      js: "Array.from({length: 300}, (_, i) => ({id: i, name: 'row ' + i}))",
+      limit: 6_000,
+    });
+    expect(rows.body.format).toBe("toon");
+    expect(rows.body.result as string).toMatch(/^\[300\]\{id,name\}:/);
+    expect(rows.body.whole).toBeUndefined();
+    // Far over: an even cut with each kept row's place, both ends kept, the whole on disk.
+    const big = await send({ cmd: "eval", js: "Array.from({length: 9000}, (_, i) => ({i}))" });
+    const text = big.body.result as string;
+    expect(text.length).toBeLessThanOrEqual(20_000);
+    expect(text).toMatch(/^\[\d+\]\{_i,i\}:\n {2}0,0\n/);
+    expect(text).toContain("8999,8999");
+    const whole = big.body.whole as { chars: number; file: string };
+    expect(JSON.parse(await readFile(whole.file, "utf8"))).toHaveLength(9000);
+    const long = await send({ cmd: "eval", js: "'e f '.repeat(6000)" });
+    expect((long.body.result as string).length).toBeLessThanOrEqual(20_000);
+    expect(long.body.result as string).toMatch(/ …\d+ chars… /);
+    const wide = await send({ cmd: "eval", js: "'c d '.repeat(7500)", limit: 40_000 });
+    expect(wide.body).toEqual({ result: "c d ".repeat(7500) });
+  });
+
   it("takes commands one at a time, journals the ones that work, and saves a compilable recording", async () => {
     const opened = await send({ cmd: "open", url: PAGE });
     // An act answers the URL short; `url` answers it whole.
@@ -447,8 +474,11 @@ describe("explore mode", () => {
     const read = await send({ cmd: "read_file", name: "resume" });
     expect(read.body).toMatchObject({ name: "resume", note: "a test resume" });
     expect(read.body.text).toContain("Worked at Example Co");
-    const cut = await send({ cmd: "read_file", name: "resume", limit: 8 });
-    expect(cut.body).toMatchObject({ text: "# Resume", more: resume.length - 1 - 8 });
+    // Over the limit: compacted, never cut mid-text; the whole kept in a file.
+    const cut = await send({ cmd: "read_file", name: "resume", limit: 40 });
+    expect(cut.body.text).toMatch(/^# Resume/);
+    const whole = cut.body.whole as { file: string };
+    expect(await readFile(whole.file, "utf8")).toContain("Worked at Example Co");
     const uses = (await audit.recent()).filter((u) => u.credential === "file:resume");
     expect(uses.map((u) => u.by)).toEqual(["upload file:resume", "read_file", "read_file"]);
   });

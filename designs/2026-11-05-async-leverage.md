@@ -58,6 +58,15 @@ Measured 2026-11-05 on Restate Cloud: `desk status` started, peeked done, waited
 - Callers: judgments with no one waiting (nightly scores, labels, the learn scorer). Each caller moves only when its result can wait 24 h.
 - Engine work goes to the birdwatch dev session.
 
+## 4. Compacted answers (WA-1093)
+
+- Measured (`autobrowse tokens`, 30 days): 10 `eval` answers on `learn` were 100k–1.6M tokens each, 96% of eval's 7.1M. Claude Code shows about 30k chars of a command's output, so the rest never reached the agent.
+- Every explore answer with a size (`eval`, `aria`, `text`, `read`, `read_file`, `network` body, desktop `shell`) goes through `src/explore/compact.ts`. Nothing is cut at one point.
+- Values: JSON if it fits; else TOON (`@toon-format/toon`, MIT), lossless; else lists and strings shrink by the same factor until it fits. Kept list items: first, last, evenly spaced; objects carry `_i`, their place. Strings: head and tail, the gap counted.
+- Text: a tree drops its deepest levels first. Then every line is shortened alike, then lines are sampled evenly from the outline. Each gap counts the lines it stands for.
+- The whole answer goes to `<recordings>/.explore-<site>/whole/`, named in `whole: {chars, file}`. Lossless TOON writes no file.
+- `limit` stays the knob; it is now the answer's budget, not a cut.
+
 ## Options
 
 ### Where read tabs come from
@@ -94,6 +103,16 @@ Measured 2026-11-05 on Restate Cloud: `desk status` started, peeked done, waited
 | B. Per-site sizes | Later, if a site needs fewer |
 | C. Sized by free memory | Later; the setting first, measured |
 
+### How a long answer fits (WA-1093)
+
+| Option | Verdict |
+|---|---|
+| A. TOON first, then an even cut, the whole in a file | **Chosen** (William). Lossless when it can be; the cut spreads over the whole answer; no model |
+| B. The even cut only, as JSON | No: same-shape lists cost ~40% more than TOON for nothing |
+| C. Pages and a cursor | No: more turns, and `eval` would run the page's JS again per page |
+| D. A model summary | No: costs tokens and seconds; can drop or make up facts |
+| E. A hard cut at the limit (before) | No (William): "I don't like hard cutoffs midway; I like principled compaction" |
+
 ## Decision log
 
 - 2026-11-05: Reads go in parallel, acts never (William: parallel acts "would look like a bot").
@@ -104,3 +123,4 @@ Measured 2026-11-05 on Restate Cloud: `desk status` started, peeked done, waited
 - 2026-11-05: Tabs do no fill or select: the money gate is explore's, per `fp.act`; a read has no need of it (search by URL).
 - 2026-11-05: `peek` reads Restate's `/output` (470 = still running), not the admin API: same ingress, same token.
 - 2026-11-05: `fp` throws while `each` runs: one cursor per page keeps every key clear of the order tabs finish in.
+- 2026-11-05: Explore answers are compacted, never cut at one point: TOON, then an even cut, the whole in a file (William chose A).

@@ -136,6 +136,8 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     cmd: z.literal("eval"),
     js: z.string(),
     raw: z.boolean().optional(),
+    /** Answer chars before the cut (default 20,000); the whole goes to a file. */
+    limit: z.number().int().positive().optional(),
     hints: hintsSchema.optional(),
   }),
   targetSchema.extend({ cmd: z.literal("count") }),

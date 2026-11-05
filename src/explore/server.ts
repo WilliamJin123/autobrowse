@@ -176,6 +176,7 @@ import {
   WAITS_FOR_CONTROL,
   WHOLE_PAGE,
 } from "./commands.js";
+import { compactText, compactValue } from "./compact.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES } from "./lease.js";
 import { type Box, marksFor, missed } from "./marks.js";
@@ -188,6 +189,25 @@ export { journalFileFor, readJournal, tokenFileFor } from "./journal.js";
 /** A tool as an answer lists it: what to send `flow`. */
 
 const FLOW_MS = 30 * 60_000;
+/** eval answer chars before compaction (~5k tokens). */
+const EVAL_LIMIT = 20_000;
+/** Page text read whole before compaction; past this a page is not text. */
+const WHOLE_TEXT = 2_000_000;
+
+/** A compacted answer's whole, beside the session's shots; the answer names the file. */
+function keepWhole(dir: string, kind: string, text: string, ext = "txt"): string {
+  const file = join(dir, "whole", `${kind}-${Date.now()}.${ext}`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, text, { mode: 0o600 });
+  return file;
+}
+
+/** Text over budget: compacted evenly, the whole kept. */
+function fitText(dir: string, kind: string, text: string, budget: number) {
+  const c = compactText(text, budget);
+  if (!c.even) return { text };
+  return { text: c.text, whole: { chars: text.length, file: keepWhole(dir, kind, text) } };
+}
 /** A `code` command stops after this long: a loop that never ends. */
 const CODE_MS = 30 * 60_000;
 /** How long a spending click's page gets to say paid or declined before it counts as no charge. */
@@ -560,11 +580,15 @@ async function runDesktop(d: Desktop, a: DesktopOp, shotsDir: string, n: number)
     }
     case "shell": {
       const r = await d.shell(a.command, a.root ?? false);
+      const shellOut = (key: string, text: string, budget: number) => {
+        const fit = fitText(shotsDir, key, text, budget);
+        return { [key]: fit.text, ...(fit.whole ? { [`${key}Whole`]: fit.whole } : {}) };
+      };
       // Output can hold tokens: masked like everything else that leaves the socket.
       return {
         code: r.code,
-        stdout: redactText(r.stdout.slice(0, 4_000)),
-        stderr: redactText(r.stderr.slice(0, 1_000)),
+        ...shellOut("stdout", redactText(r.stdout), 4_000),
+        ...shellOut("stderr", redactText(r.stderr), 1_000),
       };
     }
     case "wait":
@@ -854,12 +878,17 @@ async function serve(
     if (c.id !== undefined) {
       const r = log.row(c.id);
       if (!r) throw new Error(`no call ${c.id} (the log keeps the newest ${MAX_ROWS})`);
-      const body = r.body === undefined ? undefined : JSON.stringify(r.body, null, 1);
-      const cap = c.limit ?? 20_000;
+      if (r.body === undefined) return r;
+      const v = compactValue(r.body, c.limit ?? 20_000);
+      if (v.kind === "json") return { ...r, body: JSON.stringify(r.body, null, 1) };
+      const json = JSON.stringify(r.body);
       return {
         ...r,
-        ...(body !== undefined ? { body: body.slice(0, cap) } : {}),
-        ...(body && body.length > cap ? { more: body.length - cap } : {}),
+        body: v.text,
+        format: "toon",
+        ...(v.even
+          ? { whole: { chars: json.length, file: keepWhole(shotsDir, "network", json, "json") } }
+          : {}),
       };
     }
     if (c.diff) {
@@ -2167,12 +2196,14 @@ async function serve(
           : ariaWithFrames(page)
         ).catch((e: Error) => `error: ${e.message}`);
         // Even raw: a password typed into a field is never something a caller may read back.
-        const aria = out(redactAria(tree.slice(0, c.limit ?? 12_000)), c.raw);
+        const fit = fitText(shotsDir, "aria", out(redactAria(tree), c.raw), c.limit ?? 12_000);
+        const aria = fit.text;
+        const whole = fit.whole ? { whole: fit.whole } : {};
         if (c.hints && tree.startsWith("error:"))
           return { aria, hint: 'see the page: {"cmd":"marks"}' };
-        if (!c.extras || c.hints) return { aria };
+        if (!c.extras || c.hints) return { aria, ...whole };
         const extras = (await extrasOf(page)).map((e) => ({ ...e, name: out(e.name, c.raw) }));
-        return { aria, extras };
+        return { aria, extras, ...whole };
       }
       case "snapshot":
         return {
@@ -2181,15 +2212,16 @@ async function serve(
             .map((r) => redactRow(r))
             .join("\n"),
         };
-      case "text":
-        return {
-          text: out(
-            c.layout === false
-              ? await bodyText(page, c.limit ?? 4_000)
-              : await layoutText(page, c.limit ?? 4_000, { coords: c.coords === true }),
-            c.raw,
-          ),
-        };
+      case "text": {
+        const all = out(
+          c.layout === false
+            ? await bodyText(page, WHOLE_TEXT)
+            : await layoutText(page, WHOLE_TEXT, { coords: c.coords === true }),
+          c.raw,
+        );
+        const fit = fitText(shotsDir, "text", all, c.limit ?? 4_000);
+        return { text: fit.text, ...(fit.whole ? { whole: fit.whole } : {}) };
+      }
       case "url":
         return { url: page.url() };
       case "files": {
@@ -2216,12 +2248,12 @@ async function serve(
         const f = got.file;
         if (f.kind === "paper") return { name: f.name, text: null, why: "no text: an ID document" };
         if (!f.text) return { name: f.name, text: null, why: "no text: an image or a scan" };
-        const limit = c.limit ?? 40_000;
+        const fit = fitText(shotsDir, "file", f.text, c.limit ?? 40_000);
         return {
           name: f.name,
           note: f.note,
-          text: f.text.slice(0, limit),
-          ...(f.text.length > limit ? { more: f.text.length - limit } : {}),
+          text: fit.text,
+          ...(fit.whole ? { whole: fit.whole } : {}),
         };
       }
       case "pages":
@@ -2271,13 +2303,30 @@ async function serve(
             target: c.hints ? toLocatorHints(c.hints) : null,
             js: c.js,
           });
-        return { result: typeof result === "string" ? out(result, c.raw) : result };
+        const shown = typeof result === "string" ? out(result, c.raw) : result;
+        const budget = c.limit ?? EVAL_LIMIT;
+        if (typeof shown === "string") {
+          const t = fitText(shotsDir, "eval", shown, budget);
+          return { result: t.text, ...(t.whole ? { whole: t.whole } : {}) };
+        }
+        // 10 answers of 100k-1.6M tokens were 96% of eval's (WA-1093): TOON, then an even cut.
+        const v = compactValue(shown, budget);
+        if (v.kind === "json") return { result: v.value };
+        const json = out(JSON.stringify(shown), c.raw);
+        return {
+          result: v.text,
+          format: "toon",
+          ...(v.even
+            ? { whole: { chars: json.length, file: keepWhole(shotsDir, "eval", json, "json") } }
+            : {}),
+        };
       }
       case "count":
         return { count: await locateAll(page, c.hints as Hints).count() };
       case "read": {
-        const text = (await find(c).first().innerText({ timeout: 10_000 })).trim().slice(0, 2_000);
-        const shown = out(text, false);
+        const text = (await find(c).first().innerText({ timeout: 10_000 })).trim();
+        const fit = fitText(shotsDir, "read", out(text, false), 2_000);
+        const shown = fit.text;
         journalAct(c, (target) => ({ kind: "read", target, as: c.as, value: shown }));
         return { as: c.as, text: shown };
       }
