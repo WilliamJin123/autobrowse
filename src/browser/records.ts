@@ -8,7 +8,7 @@
 import type { Page } from "playwright";
 import type { OutlineOp } from "../compiler/outline.js";
 import type { FlowPage } from "./flow.js";
-import { scrollCollect } from "./scroll-collect.js";
+import { type Scrollable, scrollCollect } from "./scroll-collect.js";
 
 export type RecordsOp = Extract<OutlineOp, { kind: "records" }>;
 export type Row = Record<string, string | null>;
@@ -112,7 +112,7 @@ export async function records(fp: FlowPage, op: RecordsOp): Promise<Row[]> {
 
 /** The op's rows on this page: one read, or a feed scrolled up to `max`. The last markup comes back too. */
 export async function readRecords(
-  fp: FlowPage,
+  fp: Scrollable,
   op: RecordsOp,
 ): Promise<{ rows: Row[]; html: string }> {
   let html = "";

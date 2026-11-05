@@ -130,6 +130,7 @@ export function browserOptions(
     ...(settings.browserTimezone ? { timezone: settings.browserTimezone } : {}),
     profilesDir: settings.profilesDir,
     channel: settings.browserChannel,
+    readTabs: settings.readTabs,
     artifactsDir: settings.artifactsDir,
     ...(settings.watchFlows ? { watchFlows: settings.watchFlows } : {}),
     ...(settings.film

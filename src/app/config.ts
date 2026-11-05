@@ -114,6 +114,8 @@ const schema = z.object({
   browserKeepMinutes: z.coerce.number().min(0).default(10),
   /** At most this many browsers kept open at once (~300 MB each). */
   browserKeepMax: z.coerce.number().int().min(1).default(2),
+  /** Most background tabs a `code` run reads in at once (`fp.each`); acts stay on the one main tab. */
+  readTabs: z.coerce.number().int().min(1).max(8).default(3),
   /** How the browser acts: `human` (paced like a person; sites watch for the other kind) or `fast` (demos, tests). */
   pace: z.enum(["human", "fast"]).default("human"),
   /** Film every browser into this take folder (designs/2026-10-24-film.md); `autobrowse film` sets it for its shell. */
@@ -418,6 +420,7 @@ export const ENV_KEYS = {
   browserKeepMinutes: "BROWSER_KEEP_MINUTES",
   browserKeepMax: "BROWSER_KEEP_MAX",
   pace: "PACE",
+  readTabs: "READ_TABS",
   showPointer: "SHOW_POINTER",
   overlay: "AUTOBROWSE_OVERLAY",
   film: "AUTOBROWSE_FILM",

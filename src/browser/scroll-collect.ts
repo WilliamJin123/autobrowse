@@ -52,7 +52,10 @@ const READ_ODDS = 0.12;
 const BACK_ODDS = 0.07;
 const BACK: [number, number] = [0.3, 0.7];
 
-export async function scrollCollect<T>(fp: FlowPage, o: ScrollCollect<T>): Promise<Collected<T>> {
+/** What a scroll read needs: the main page or a read tab. */
+export type Scrollable = Pick<FlowPage, "page" | "scroll" | "wait">;
+
+export async function scrollCollect<T>(fp: Scrollable, o: ScrollCollect<T>): Promise<Collected<T>> {
   const random = o.random ?? Math.random;
   const rows = new Map<string, T>();
   let idle = 0;

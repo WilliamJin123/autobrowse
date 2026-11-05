@@ -14,7 +14,7 @@
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { FileChooser, Locator, Page } from "playwright";
+import type { BrowserContext, FileChooser, Locator, Page } from "playwright";
 import { resumeDir, statsDirOf } from "../deps/stats.js";
 // Explore's panel; moves to browser/ once its open peer edit lands.
 import type { Command } from "../explore/commands.js";
@@ -211,6 +211,25 @@ export interface FlowPage {
   screens?: ScreenHelp;
   /** The session's page calls, redacted (`browser/network`); absent in fakes. */
   network?: NetLog;
+  /** A new background tab in this session, for `code`'s `fp.each`; absent in fakes. */
+  readTab?(): Promise<ReadTab>;
+  /** Most read tabs at once (`READ_TABS`). */
+  readTabs?: number;
+}
+
+/** A background tab for parallel reads: same sign-in, never an act that changes a site. */
+export interface ReadTab {
+  readonly page: Page;
+  /** Navigate; a wall throws: sign in on the main page, then run again. */
+  open(url: string): Promise<void>;
+  url(): string;
+  read(hints: Hints): Promise<string>;
+  has(hints: Hints, withinMs?: number): Promise<boolean>;
+  wait(ms: number): Promise<void>;
+  scroll(dy: number): Promise<void>;
+  /** hover, click or press only; the caller decides it changes the page, not the site. */
+  act(op: Op, hints: Hints): Promise<void>;
+  close(): Promise<void>;
 }
 
 export interface BrowserFlow<I, O> {
@@ -489,6 +508,56 @@ async function doOp(
       return uploadFiles(page, target, paths, timeout, hands);
     }
   }
+}
+
+const TAB_ACTS = new Set(["hover", "click", "press"]);
+
+/**
+ * CDP `background: true`: the headed window stays on the main tab.
+ * Measured 2026-11-05: lazy rows load in such a tab, headless and headed.
+ */
+export async function openReadTab(
+  context: BrowserContext,
+  from: Page,
+  hands: Hands,
+): Promise<ReadTab> {
+  const made = context.waitForEvent("page", { timeout: SETTLE_MS * 4 });
+  let page: Page;
+  try {
+    const cdp = await context.newCDPSession(from);
+    await cdp.send("Target.createTarget", { url: "about:blank", background: true });
+    await cdp.detach().catch(() => undefined);
+    page = await made;
+  } catch {
+    made.catch(() => undefined);
+    page = await context.newPage();
+    await from.bringToFront().catch(() => undefined);
+  }
+  return {
+    page,
+    async open(url) {
+      await settle(page, url);
+      if (OFFLINE_PAGE.test(page.url()))
+        throw new Error(`net::ERR_INTERNET_DISCONNECTED opening ${url}`);
+      const wall = await looksLikeWall(page);
+      if (wall) throw new Error(`read tab: ${wall.detail}; sign in on fp first, then send again`);
+    },
+    url: () => page.url(),
+    read: async (hints) => (await textOf(locate(page, hints))).slice(0, 2_000),
+    has: async (hints, withinMs = 0) => {
+      const l = locate(page, hints).first();
+      if (withinMs > 0)
+        await l.waitFor({ state: "visible", timeout: withinMs }).catch(() => undefined);
+      return l.isVisible().catch(() => false);
+    },
+    wait: (ms) => page.waitForTimeout(ms),
+    scroll: (dy) => hands.scroll(page, dy),
+    act: async (op, hints) => {
+      if (!TAB_ACTS.has(op.kind)) throw new Error(`read tab: no ${op.kind}; do it on fp`);
+      await doOp(page, hints, op, ACT_TIMEOUT_MS, hands);
+    },
+    close: () => page.close().catch(() => undefined),
+  };
 }
 
 /** Files into a file input, else through the chooser the target opens. */
@@ -863,6 +932,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           passkeys: session.passkeys,
           ...(network ? { network } : {}),
           screens: help,
+          readTab: () => openReadTab(session.context, session.page, hands),
+          readTabs: opts.readTabs ?? 3,
         };
         /** An interrupt the page shows now: a coded one, else a click learned on this site. */
         async function interruptHere(overlaysOnly: boolean): Promise<Screen | null> {

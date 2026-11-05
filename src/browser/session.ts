@@ -122,6 +122,8 @@ export interface BrowserOptions {
   artifactsDir: string;
   /** Flows watched step by step (`WATCH_FLOWS`, see `browser/watch`); the runner's own `watch` wins. */
   watchFlows?: string;
+  /** Most background tabs `code`'s `fp.each` reads in at once (`READ_TABS`). */
+  readTabs?: number;
   headless?: boolean;
   /**
    * Which local browser: "chrome" (the installed Google Chrome, what a
