@@ -15,7 +15,8 @@
  * plain fetch, then Chrome's TLS fingerprint, then a stealth browser, then the
  * same browser out of the `fetch@exit` exit. It climbs only on a block signal and
  * answers a block as data (`block`, `tries`), never an error. Metered on the
- * `fetch` bucket, 1500 a day.
+ * `fetch` bucket, 1500 a day. `GET /brand?url=` is the same stealth browser's computed styles
+ * for one page (`browser/brand.ts`): colours, fonts and logos as a person sees them.
  *
  * LinkedIn without LinkedIn: `GET /linkedin/profile?url=` and
  * `/linkedin/company?url=` read Exa's cached copy (never live, so neither
@@ -26,8 +27,9 @@
  * (about $10 a month, its free credit). Raising it is a spend decision.
  */
 import { z } from "zod";
+import { type BrandStyles, brandStyles } from "../browser/brand.js";
 import { MAX_REVIEWS } from "../browser/flows/google-reviews.js";
-import { climb, FETCH_MAX, realRungs, TIERS } from "../reach/ladder.js";
+import { blockOf, climb, FETCH_MAX, realRungs, TIERS } from "../reach/ladder.js";
 import {
   cachedLinkedinCompany,
   cachedLinkedinProfile,
@@ -208,6 +210,28 @@ export const web: SiteApi = {
       meter: () => ({ fetch: 1 }),
       api: ({ url, from, max }, leg) =>
         climb(url, { from, max }, realRungs(leg.render ? { render: leg.render } : {})),
+    }),
+    route({
+      method: "GET",
+      path: "/brand",
+      summary:
+        "A page's brand as a person sees it, from computed styles in the stealth browser, light scheme (`url` http(s)): `{ finalUrl, status, block, themeColor, body { background, color, font }, headings [{ font, color }], buttons [{ background, color, area }], links [{ color }], logos [{ src, svg, named, top, area }] }`. Colours as the browser gives them (`rgb(…)`, `oklch(…)`). A block is data (`block`), not an error; no climb to the exit. 501 on a worker with no browser",
+      request: z.object({ url: z.url({ protocol: /^https?$/ }) }),
+      meter: () => ({ fetch: 1 }),
+      api: async ({ url }, leg) => {
+        if (!leg.render) throw new SiteError(501, "web GET /brand needs a browser on this worker");
+        const got = await leg.render(url, {
+          profile: "fetch",
+          scheme: "light",
+          probe: brandStyles,
+        });
+        return {
+          finalUrl: got.finalUrl,
+          status: got.status,
+          block: blockOf(got),
+          ...(got.probed as BrandStyles),
+        };
+      },
     }),
     route({
       method: "GET",

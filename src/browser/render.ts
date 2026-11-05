@@ -10,7 +10,7 @@
  * with almost no text) goes to the flows' captcha solver (`browser/captcha`), with the same hands
  * and eyes, up to `attempts` tries; then the page is read again. What is left is a block.
  */
-import type { Response as PwResponse } from "playwright";
+import type { Page, Response as PwResponse } from "playwright";
 import { htmlText } from "../reach/html.js";
 import { challengeOf, NoExit } from "../reach/ladder.js";
 import { type CaptchaOutcome, type Eyes, findCaptcha, solveCaptcha } from "./captcha/index.js";
@@ -27,10 +27,20 @@ export interface RenderedPage {
   status: number | null;
   type: string | null;
   html: string;
+  /** What `probe` read off the page, when one was asked. */
+  probed?: unknown;
+}
+
+export interface RenderAsk {
+  profile: RenderProfile;
+  /** The colour scheme the page is told the person prefers; the browser's own when absent. */
+  scheme?: "light" | "dark";
+  /** Reads the live page after the wall wait, before it closes (`web GET /brand`). */
+  probe?: (page: Page) => Promise<unknown>;
 }
 
 /** What `ApiLeg.render` is. Throws `NoExit` for `fetch@exit` with no exit mapped. */
-export type Render = (url: string, o: { profile: RenderProfile }) => Promise<RenderedPage>;
+export type Render = (url: string, o: RenderAsk) => Promise<RenderedPage>;
 
 const NAV_MS = 45_000;
 const CLEAR_POLLS = 15;
@@ -98,7 +108,7 @@ export interface RenderDeps {
 export function renderer(deps: RenderDeps): Render {
   const { opts, park } = deps;
   const locks = deps.locks ?? new KeyedMutex();
-  return async (url, { profile }) => {
+  return async (url, { profile, scheme, probe }) => {
     if (profile === "fetch@exit" && !opts.egress?.exitFor(profile)) throw new NoExit();
     // The same key flows use for a park slot (`browser/flow.ts`).
     const key = (await opts.profileName?.(profile)) ?? profile;
@@ -112,6 +122,7 @@ export function renderer(deps: RenderDeps): Render {
           page.on("response", (r) => {
             if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) last = r;
           });
+          if (scheme) await page.emulateMedia({ colorScheme: scheme });
           await page.goto(url, { waitUntil: "load", timeout: NAV_MS });
           const read = async (): Promise<RenderedPage> => ({
             finalUrl: page.url(),
@@ -134,7 +145,7 @@ export function renderer(deps: RenderDeps): Render {
               deps.sleep,
             );
           healthy = true;
-          return got;
+          return probe ? { ...got, probed: await probe(page) } : got;
         } finally {
           await page.close().catch(() => undefined);
         }

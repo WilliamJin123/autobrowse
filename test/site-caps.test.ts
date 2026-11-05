@@ -327,6 +327,7 @@ describe("web and x reads", () => {
       ["/linkedin/posts", "api"],
       ["/read", "api"],
       ["/fetch", "api"],
+      ["/brand", "api"],
       ["/google", "none"], // a browser leg; this fake runner has no flows
       ["/place", "none"],
       ["/place/reviews", "none"],
