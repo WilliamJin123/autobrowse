@@ -58,7 +58,8 @@ A long worker call you need later, not now: start it as a job, do other work, co
 - Never change or rotate a stored password. Never wipe a browser profile.
   Explore LinkedIn only as `linkedin@wren`: reads, under 20 page loads,
   stop on a 429. Never William's own LinkedIn in an explore session.
-- Stop every explore session you start (`stop.sh`). `autobrowse browsers`
+- Stop every explore session you start, as soon as it is done
+  (`autobrowse stop <port> achieved|failed "why"`). `autobrowse browsers`
   lists our browsers and sessions (owner, memory, idle, held); `doctor` warns.
 - One sign-in try per site, then report. Repeated tries get accounts
   flagged (Google, X, Reddit).

@@ -29,7 +29,7 @@ autobrowse site status <site>          # the site's API and browser routes
 ```bash
 scripts/start.sh <site> [url] [port] [flags]   # default port 9090; prints "port N" when ready
 scripts/cmd.sh <port> '<json>'                 # one command, JSON back
-scripts/stop.sh <port> achieved|failed "…"     # verdict, then close browser + socket
+autobrowse stop [port] achieved|failed "…"     # verdict, then close browser + socket; no port = your one open session
 scripts/state.sh                               # open sessions (held ones marked), resumable journals, profiles
 autobrowse browsers [--json]           # every browser of ours: owner, age, MB; sessions: idle, held
 autobrowse browsers stop <port>        # close a session, journal kept (--forget drops it)
@@ -41,14 +41,22 @@ profile takes it sooner: after 3 minutes with no command it closes the
 session (journal kept) and runs; while you drive it, the write waits.
 `--hold` (`start.sh <site> "" <port> --hold`) turns both off: only for
 multi-loop work or a long wait on a person, and scheduled posts on that
-profile wait meanwhile. You stop a held session yourself (`stop.sh`);
+profile wait meanwhile. You stop a held session yourself (`autobrowse stop`);
 `doctor` flags one held over 12 hours.
+
+Stop a session the moment its goal is done or failed: `autobrowse stop`. Never
+kill a process, never leave it to the lease. A backstop closes what you forget
+(journal kept): a subagent that ends closes the sessions it started, and a
+session whose Claude session exited closes after 3 minutes. Both spare a
+paused session and a held one. So before you end your turn at a step a
+person must do: `{"cmd":"pause"}`, then report the port. Paused, it waits 40
+minutes.
 
 `<site>` is a profile name (`google`, `cloudflare`, `aws`, `scratch` = no login;
 `<site>@<label>` for a second account). One session per site; `start.sh` on an
 open port just reports it. A session that died left its journal:
 `start.sh <site> "" <same port>` resumes on its last page, so `save` still has
-every act. `stop.sh` ends it for good. Flags for secrets: signup.md.
+every act. `autobrowse stop` ends it for good. Flags for secrets: signup.md.
 
 ## Commands
 
@@ -122,7 +130,7 @@ Session:
   the page he left; never redo his step.
 - `{"cmd":"journal","last":5}` — what is recorded (`total` and the newest `last`).
 - `{"cmd":"save","name":"site-what-it-does"}` — writes `recordings/<name>/`.
-- `{"cmd":"close"}`.
+- `{"cmd":"close"}` — browser and socket, no verdict. Use `autobrowse stop`.
 
 ## How to work
 
@@ -135,7 +143,7 @@ Every look costs tokens. Look once, then let the acts tell you what changed.
 5. Acts you are sure of (fill a form, submit) go in one `batch`. It stops at the first failure: `failed: {at, cmd, error}`, `done` holds what ran. A paying click goes alone.
 6. Prefer `role`+`name`; fall back to `css`+`nth`. A failed act is not journaled. Change the hints; don't repeat. A miss answers with `marks` (the picture and its list): read it and act on a mark.
 6. Never `raw:true` on a page showing a key.
-7. Done: `done` with the outcome and a one-line summary, `save` with a kebab name if it should compile, `stop.sh`. Or `stop.sh <port> achieved|failed "summary"` in one go. Never stop without a verdict: `autobrowse success` counts a run with none as unknown.
+7. Done: `done` with the outcome and a one-line summary, `save` with a kebab name if it should compile, `autobrowse stop <port>`. Or `autobrowse stop <port> achieved|failed "summary"` in one go. Never stop without a verdict: `autobrowse success` counts a run with none as unknown.
 
 The payment gate: a billing field (card, CVC, tax id, billing address) or a
 spending button (Buy, Pay, Subscribe, Add funds, Start trial) texts William and

@@ -325,6 +325,7 @@ export function explorerOpener(
     | "goal"
     | "fileSets"
     | "signInOn"
+    | "owner"
   > & {
     /** false: a wall on `open` stays a wall (a signup page must not sign in as a stored account). */
     signIn?: boolean;

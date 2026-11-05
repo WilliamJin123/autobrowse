@@ -8,7 +8,7 @@ import { runJson } from "../agent/run-json.js";
 import { urlWithoutQuery } from "../auth/guard.js";
 import type { SecretValues } from "../auth/signup.js";
 import type { Command as ExploreCommand } from "../explore/commands.js";
-import { DEFAULT_IDLE_MINUTES } from "../explore/lease.js";
+import { DEFAULT_IDLE_MINUTES, pidAlive } from "../explore/lease.js";
 import type { Explorer } from "../explore/server.js";
 import { expandHome, shortHome } from "../google/auth.js";
 import type { LlmUsage } from "../llm/types.js";
@@ -16,6 +16,16 @@ import { explorerOpener, type LocalBackend } from "./backend.js";
 import type { Settings } from "./config.js";
 import { headed } from "./display.js";
 import { browserOptions, COMPILED_DIR, llmFor } from "./services.js";
+
+/** The Claude Code session this CLI runs under, if any: who an explore session answers to. */
+const claudeOwner = (): { session?: string; alive?: () => boolean } => {
+  const session = process.env.CLAUDE_CODE_SESSION_ID;
+  const pid = Number(process.env.CLAUDE_PID);
+  return {
+    ...(session ? { session } : {}),
+    ...(Number.isInteger(pid) && pid > 1 ? { alive: () => pidAlive(pid) } : {}),
+  };
+};
 
 /** POST one command to an explore session; `wait=1` holds the request across a payment gate. */
 async function postCmd(
@@ -128,6 +138,7 @@ export function registerRecordCommands(
           tokenFile,
           journalFile,
           idleMinutes: o.hold ? 0 : Number(o.idle),
+          owner: claudeOwner(),
           signIn: !o.signup,
           ...(await withLogins(await exploreSecrets(site, o), o.login)),
           ...(o.files ? { fileSets: listOf(o.files) } : {}),
@@ -182,7 +193,9 @@ export function registerRecordCommands(
     });
     for (let i = 0; i < 240 && !exited; i++) {
       if (existsSync(tokenFile))
-        return console.log(`exploring ${site} on port ${port}\nlog ${log}`);
+        return console.log(
+          `exploring ${site} on port ${port}\nlog ${log}\nwhen done: autobrowse stop ${port} achieved|failed "why"`,
+        );
       await new Promise((r) => setTimeout(r, 500));
     }
     const tail = readFileSync(log, "utf8").split("\n").slice(-20).join("\n");
@@ -206,6 +219,26 @@ export function registerRecordCommands(
       console.log(res.body);
       if (!res.ok) process.exitCode = 1;
     });
+
+  program
+    .command("stop [port] [outcome] [why...]")
+    .description(
+      'End an explore session: the verdict (achieved|failed "why"), then browser and socket closed. No port: this Claude session\'s one open session',
+    )
+    .option("--hook", "Claude Code's SubagentStop hook: close what the ended agent left open")
+    .action(
+      async (
+        port: string | undefined,
+        outcome: string | undefined,
+        why: string[],
+        o: { hook?: boolean },
+      ) => {
+        const { stopMain } = await import("../explore/stop.js");
+        process.exitCode = await stopMain(
+          o.hook ? ["--hook"] : [port, outcome, ...why].filter((a) => a !== undefined),
+        );
+      },
+    );
 
   const listOf = (v: string) =>
     v

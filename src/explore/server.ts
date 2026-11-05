@@ -178,7 +178,7 @@ import {
 } from "./commands.js";
 import { compactText, compactValue } from "./compact.js";
 import { type Journaled, readJournal } from "./journal.js";
-import { DEFAULT_IDLE_MINUTES } from "./lease.js";
+import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
 import { type Box, marksFor, missed } from "./marks.js";
 import { overlayFor, traceRow } from "./overlay.js";
 
@@ -420,6 +420,12 @@ export interface ExploreOptions {
    */
   journalFile?: string;
   /**
+   * The Claude Code session that started it. `session` goes in the info file: `autobrowse stop`
+   * with no port finds its own. `alive` false (that Claude exited): nobody is left to drive, so
+   * the lease drops to `TAKE_IDLE_MINUTES`; a person at the window keeps it by loading pages.
+   */
+  owner?: { session?: string; alive?: () => boolean };
+  /**
    * Where run history goes (`runs/<site>/<run>.jsonl`, src/runs/log.ts): every
    * command with what its answer cost the caller, every act with the page it
    * was done on, how it ended. Kept for good; walks are built from it.
@@ -446,6 +452,8 @@ export interface ExploreInfo {
   /** No idle close (`--hold`, teach): someone must stop it. */
   held: boolean;
   startedAt: string;
+  /** The Claude Code session that started it (`ExploreOptions.owner`). */
+  session?: string;
 }
 
 export interface Explorer {
@@ -2409,7 +2417,8 @@ async function serve(
       case "done": {
         const id = history && !history.ended() ? history.id : null;
         await endRun(c.outcome, c.summary ?? null);
-        return { ok: true, run: id };
+        // The browser stays open for a next goal: say how it goes.
+        return { ok: true, run: id, close: `autobrowse stop ${opts.port}` };
       }
       case "os": {
         const a = c.act;
@@ -2503,6 +2512,8 @@ async function serve(
       case "code":
         return runCodeHere(c, wait);
       case "close":
+        // An agent that ended at a wall paused first: the session waits on a person.
+        if (c.unlessPaused && paused) return { ok: false, paused: true };
         // Closed on purpose: nothing left to resume, unless asked to keep it.
         closing = !c.keep;
         if (c.why) {
@@ -2513,7 +2524,8 @@ async function serve(
         if (codeFile && closing) rmSync(codeFile, { force: true });
         await overlay.remove(page);
         queueMicrotask(() => finish());
-        return { ok: true };
+        // A run still open ends with no verdict: `autobrowse stop` says so.
+        return { ok: true, ...(history && !history.ended() && !saved ? { verdict: false } : {}) };
     }
   };
 
@@ -2584,6 +2596,7 @@ async function serve(
       driver: opts.driver ?? "console",
       held: idleMs === 0,
       startedAt,
+      ...(opts.owner?.session ? { session: opts.owner.session } : {}),
     };
     writeFileSync(infoFile, JSON.stringify(info), { mode: 0o600 });
   }
@@ -2595,8 +2608,10 @@ async function serve(
     idleMs > 0
       ? setInterval(
           () => {
-            if (busy === 0 && now() - lastTouch >= (paused ? idleMs * 4 : idleMs)) {
+            const gone = !paused && opts.owner?.alive?.() === false;
+            if (busy === 0 && now() - lastTouch >= leaseMs(idleMs, { paused, ownerGone: gone })) {
               endedBy = "idle";
+              if (gone) closedWhy = "its Claude session ended";
               finish();
             }
           },

@@ -24,7 +24,7 @@ npx autobrowse cmd '{"cmd":"aria"}'                                     # the pa
 npx autobrowse cmd '{"cmd":"click","hints":{"role":"link","nth":0}}'
 npx autobrowse cmd '{"cmd":"read","hints":{"role":"paragraph","nth":0},"as":"text"}'
 npx autobrowse cmd '{"cmd":"save","name":"first-flow"}'                 # what worked becomes a recording
-npx autobrowse cmd '{"cmd":"close"}'
+npx autobrowse stop achieved "the first flow is saved"                  # the verdict, then browser and socket closed
 npx autobrowse compile first-flow --no-llm                              # recording to code, no model
 npx autobrowse try first-flow                                           # run it
 ```
@@ -767,6 +767,8 @@ pnpm autobrowse site call web GET "/exa/companies?q=staffing%20agency%20in%20Aus
 pnpm autobrowse site call web GET "/fetch?url=https://firm.test&from=impersonate"   # one page raw up the fetch ladder: html, tier, block, tries
 pnpm autobrowse doctor                        # which read/search/maps backends and site tokens work now; browser warnings
 pnpm autobrowse browsers                      # our browsers (owner, age, MB) and explore sessions (idle, held); `browsers stop <port>`
+pnpm autobrowse stop [port] achieved|failed "why"   # end an explore session: the verdict, then close. No port: the one this Claude session started (else 9090)
+pnpm autobrowse stop --hook                   # Claude Code SubagentStop hook (`{"type":"command","command":"autobrowse stop --hook"}`): closes what an ended subagent started and left open; a paused or held session stays
 pnpm autobrowse site call linkedin GET "/search/results/people?keywords=ria%20founder%20austin&pages=2"   # as Wren's LinkedIn
 pnpm autobrowse site call linkedin GET "/in/<vanity>?company=true"   # one profile, every role, current employer's page
 pnpm autobrowse site call linkedin GET "/company/<handle>"   # website, size, industry, HQ, phone

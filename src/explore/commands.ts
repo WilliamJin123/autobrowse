@@ -238,6 +238,8 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     keep: z.boolean().optional(),
     /** Who closed it and why, for the run's history (a write took the idle session's profile). */
     why: z.string().max(300).optional(),
+    /** A paused session stays open and answers `{ok:false, paused:true}` (`autobrowse stop --hook`). */
+    unlessPaused: z.boolean().optional(),
   }),
   /**
    * Several commands in one call, in order, stopping at the first that fails.

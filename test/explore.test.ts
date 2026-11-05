@@ -768,6 +768,46 @@ describe("a session nobody closes", () => {
     }
   }, 30_000);
 
+  it("names the Claude session that started it; a close for an ended agent spares it while paused", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "explore-owner-"));
+    const tokenFile = join(dir, "explore-9000.token");
+    const ex = await startExplore({
+      site: "scratch",
+      port: 9950 + Math.floor(Math.random() * 40),
+      recordingsDir: join(dir, "recordings"),
+      idleMinutes: 0,
+      tokenFile,
+      owner: { session: "sess-1" },
+      browser: {
+        tier: "local",
+        channel: "chromium",
+        profilesDir: join(dir, "profiles"),
+        artifactsDir: join(dir, "artifacts"),
+        headless: true,
+      },
+    });
+    try {
+      const info = JSON.parse(await readFile(join(dir, "explore-9000.json"), "utf8"));
+      expect(info.session).toBe("sess-1");
+      await ex.exec({ cmd: "pause" });
+      const left = {
+        cmd: "close",
+        keep: true,
+        unlessPaused: true,
+        why: "its agent ended",
+      } as const;
+      expect(await ex.exec(left)).toEqual({ ok: false, paused: true });
+      expect(await ex.exec({ cmd: "url" })).toBeTruthy();
+      await ex.exec({ cmd: "resume" });
+      expect(await ex.exec(left)).toMatchObject({ ok: true });
+      await ex.done;
+    } finally {
+      await ex.exec({ cmd: "close" }).catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 500));
+      await rm(dir, { recursive: true, force: true, maxRetries: 5 });
+    }
+  }, 30_000);
+
   it("never idle-closes while a command runs; idle counts from its end", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-idle-"));
     const ex = await startExplore({

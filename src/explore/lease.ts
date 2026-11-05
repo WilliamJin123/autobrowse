@@ -8,3 +8,21 @@
  */
 export const DEFAULT_IDLE_MINUTES = 10;
 export const TAKE_IDLE_MINUTES = 3;
+
+/**
+ * How long a session may sit with no command. Paused: four times the idle time (a person is at
+ * a hand step). Its Claude session gone: `TAKE_IDLE_MINUTES` at most, since nobody is left to
+ * drive it; a person at the window keeps it by loading pages.
+ */
+export const leaseMs = (idleMs: number, s: { paused: boolean; ownerGone: boolean }): number =>
+  s.paused ? idleMs * 4 : s.ownerGone ? Math.min(idleMs, TAKE_IDLE_MINUTES * 60_000) : idleMs;
+
+/** True while the process exists (ours or not). */
+export const pidAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+};

@@ -18,7 +18,11 @@ export async function postCmd(port, body) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/?wait=1`, {
       method: "POST",
-      headers: { authorization: `Bearer ${readFileSync(tokenFile, "utf8").trim()}` },
+      headers: {
+        authorization: `Bearer ${readFileSync(tokenFile, "utf8").trim()}`,
+        // the run names the Claude Code session that drove it
+        "x-claude-session": process.env.CLAUDE_CODE_SESSION_ID ?? "",
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15 * 60_000),
     });
