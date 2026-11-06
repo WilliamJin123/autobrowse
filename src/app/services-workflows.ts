@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { EnvStore } from "credvault";
+import { rotateKey } from "../auth/keys.js";
 import type { FlowRunner } from "../browser/flow.js";
 import { cloudflare, verifyCloudflareToken } from "../clients/cloudflare.js";
 import { dynadot } from "../clients/dynadot.js";
@@ -22,7 +23,7 @@ import type { Probe } from "../workflows/inbox-fleet/steps.js";
 import type { Consents, WorkspaceInboxDeps } from "../workflows/workspace-inbox/index.js";
 import type { Settings } from "./config.js";
 import { awsFor } from "./owner.js";
-import { envStoreFor, ssmFor } from "./services-keys.js";
+import { envStoreFor, keyKeeperFor, ssmFor } from "./services-keys.js";
 import { later, lazy, required } from "./services-kit.js";
 import { gmailFor, googleAdminFor } from "./services-reach.js";
 import { credentialsFor, identitiesFor } from "./services-state.js";
@@ -52,6 +53,16 @@ export function bootstrapDepsFor(
       (await sink.get(key).catch(() => null)) ??
       null,
     verifyCloudflareToken: (token) => verifyCloudflareToken(http, token),
+    filledBy: async (name) => (await keyKeeperFor(settings).filledBy?.(name)) ?? null,
+    rotate: async (address, token) => {
+      const keeper = keyKeeperFor(settings);
+      const { key } = await rotateKey(keeper, address, token, {
+        owner: settings.owner,
+        now: Date.now(),
+      });
+      // The old id is in `previous`: the projection replaces the name as a rotation.
+      await keeper.project([key.site]);
+    },
   };
 }
 

@@ -60,6 +60,10 @@ export interface BootstrapDeps {
   stored: (key: string) => Promise<string | null>;
   /** The API's own verdict on a token; the page saying so is not proof. */
   verifyCloudflareToken: (token: string) => Promise<boolean>;
+  /** The vault key that fills an env name (`cloudflare@api`), or null: then the name is the sink's. */
+  filledBy: (name: string) => Promise<string | null>;
+  /** A new value for a vault key: the old id goes to `previous`, then the env names are projected. */
+  rotate: (address: string, token: string) => Promise<void>;
 }
 
 export interface BootstrapMemo {
@@ -100,6 +104,8 @@ const apiToken: Step<"api-token"> = {
       (await fx.run("verify existing token", () => deps.verifyCloudflareToken(have)))
     )
       return skipped("existing token verifies");
+    // Read before the mint: a vault that cannot answer must fail here, not after the site showed the token.
+    const filled = await fx.run(`vault key of ${plan.envKey}`, () => deps.filledBy(plan.envKey));
     // Mint, verify and store inside one effect: the token exists only here and in the sink.
     const outcome = await fx.run("cloudflare api token", async () => {
       const { token } = await deps.browser.run(cloudflareApiToken, {
@@ -108,11 +114,15 @@ const apiToken: Step<"api-token"> = {
       });
       if (!(await deps.verifyCloudflareToken(token))) return "minted a token the API rejects";
       // The held token failed the API's check, or the plan said force: the new one replaces it.
-      await deps.sink.put(plan.envKey, token, { replace: true });
+      // A name a vault key fills is the vault's: a direct write would split env from vault.
+      if (filled) await deps.rotate(filled, token);
+      else await deps.sink.put(plan.envKey, token, { replace: true });
       return "ok";
     });
     if (outcome !== "ok") throw new Error(outcome);
-    return done(`token "${plan.tokenName}" minted, verified, stored as ${plan.envKey}`);
+    return done(
+      `token "${plan.tokenName}" minted, verified, stored as ${plan.envKey}${filled ? ` (vault key ${filled} rotated)` : ""}`,
+    );
   },
 };
 

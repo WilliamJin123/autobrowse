@@ -143,8 +143,12 @@ describe("creds key add", () => {
     await expect(
       t.run("add", "cloudflare@third", "--clipboard", "--env", "CF_PAGES_TOKEN", "--confirm"),
     ).rejects.toThrow(/cloudflare@pages already fills CF_PAGES_TOKEN/);
+    // Own names and no purpose: no rotation names for the vendor.
+    expect(Object.keys(t.env.values).filter((n) => /^(CLOUDFLARE_API_KEY|NUM_)/.test(n))).toEqual(
+      [],
+    );
     await t.run("ls");
-    expect(t.out()).toContain("env CF_PAGES_TOKEN");
+    expect(t.out()).toContain("env CF_PAGES_TOKEN (own names only)");
     expect(t.out()).not.toContain("synthetic-");
   });
 

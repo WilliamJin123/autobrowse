@@ -26,6 +26,10 @@ function deps(
     stored: async (key) =>
       key === "CLOUDFLARE_API_TOKEN" ? (over.have?.token ?? null) : (sink.values[key] ?? null),
     verifyCloudflareToken: async () => over.verify ?? true,
+    filledBy: async () => null,
+    rotate: async () => {
+      throw new Error("no vault key fills this name");
+    },
     ...over,
   };
   return { d, calls, sink };
@@ -84,6 +88,31 @@ describe("bootstrap workflow", () => {
     expect(out.results["api-token"]?.status).toBe("done");
     expect(calls).toEqual(["mint wren-workers"]);
     expect(sink.values).toEqual({ WREN_WORKERS_TOKEN: "t".repeat(40) });
+  });
+  it("a name a vault key fills is rotated in the vault, never written directly", async () => {
+    const rotated: string[] = [];
+    const { d, sink } = deps({
+      have: { token: "x", account: "y" },
+      filledBy: async (name) => (name === "CLOUDFLARE_API_TOKEN" ? "cloudflare@api" : null),
+      rotate: async (address, token) => {
+        rotated.push(`${address} ${token.length}`);
+      },
+    });
+    const out = await runFlow(fakeEffects().fx, bootstrapWorkflow, d, plan({ force: true }));
+    expect(out.results["api-token"]?.status).toBe("done");
+    expect(rotated).toEqual(["cloudflare@api 40"]);
+    expect(sink.values.CLOUDFLARE_API_TOKEN).toBeUndefined();
+  });
+  it("a vault that cannot answer fails before the mint", async () => {
+    const { d, calls } = deps({
+      have: { token: "x", account: "y" },
+      filledBy: async () => {
+        throw new Error("vault unreachable");
+      },
+    });
+    const out = await runFlow(fakeEffects().fx, bootstrapWorkflow, d, plan({ force: true }));
+    expect(out.status).toBe("failed");
+    expect(calls).toEqual([]);
   });
   it("dry run stops before minting", async () => {
     const { d, calls } = deps();

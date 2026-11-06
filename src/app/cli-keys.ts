@@ -11,6 +11,7 @@ import {
   type ApiKey,
   apiKeySchema,
   type EnvStore,
+  inRing,
   isProjectedName,
   type KeyInfo,
   type KeyStore,
@@ -115,7 +116,7 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
     )
     .option(
       "--env <names...>",
-      "env names this key fills (CLOUDFLARE_PAGES_TOKEN); one name, one key per owner",
+      "env names this key fills (CLOUDFLARE_PAGES_TOKEN); one name, one key per owner. With no --purpose the key fills only these: it is not in the vendor's rotation",
     )
     .option(
       "--confirm",
@@ -258,7 +259,7 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
             k.id,
             u ? `${u.uses} uses, last ${u.lastUsedAt}` : "no uses",
             k.cap ? `cap ${k.cap.amount} ${k.cap.unit}` : "",
-            k.env.length ? `env ${k.env.join(",")}` : "",
+            k.env.length ? `env ${k.env.join(",")}${inRing(k) ? "" : " (own names only)"}` : "",
             k.via ? `via ${k.via}` : "",
           ]
             .filter(Boolean)
