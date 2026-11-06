@@ -110,3 +110,5 @@ Not counted as an API: a scraper a vendor runs (SerpApi and the like). It is a b
 - 2026-11-05 (WA-1110): a blocker may be a paid or partner API or a leg of ours not built, not only a review. One list then answers "what would move this route to the API".
 - 2026-11-05 (WA-1110, William): LinkedIn `/company/{company}` stays `final` with a note: the API's shallow lookup (name, website, logo, locations) is a first pass before the page read (WA-1113).
 - 2026-11-05 (WA-1110, my call): a vendor's scraper API is not an API here. William may overrule: then `/google` and `/place/reviews` wait.
+- 2026-11-06 (William): "serpapi doesn't count". A vendor's scraper API is not an API here; `/google` and `/place/reviews` stay `final`.
+- 2026-11-06 (William: "that's your call… no is fine"): Instagram `/web/p/{shortcode}` stays `final`, not waiting on `meta-app`. No API reads a post by its link code; after App Review the API reads a business or creator account's posts, which stays the first-pass note.
