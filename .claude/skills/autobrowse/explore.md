@@ -39,8 +39,9 @@ autobrowse site status <site>          # the site's API and browser routes
 scripts/start.sh <site> [url] [port] [flags]   # default port 9090; prints "port N" when ready
 scripts/cmd.sh <port> '<json>'                 # one command, JSON back
 autobrowse stop [port] achieved|failed "…"     # verdict, then close browser + socket; no port = your one open session
+                                               # a session that does not answer: its process is ended, and stop says so
 scripts/state.sh                               # open sessions (held ones marked), resumable journals, profiles
-autobrowse browsers [--json]           # every browser of ours: owner, age, MB; sessions: idle, held
+autobrowse browsers [--json]           # every browser of ours: owner, age, MB; sessions: driver MB, idle, held
 autobrowse browsers stop <port>        # close a session, journal kept (--forget drops it)
 ```
 

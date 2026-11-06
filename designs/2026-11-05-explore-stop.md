@@ -62,3 +62,4 @@ A subagent's turn also ends when it reports a wall and waits for William. So: at
 - 2026-11-05: The hook matches by transcript, not by a new `--agent` flag on start: `agent_id` is not in the shell's env, and an agent would have to pass it.
 - 2026-11-05: Owner gone shortens the lease; it does not close at once. A person may still be at the window after Claude Code quits.
 - 2026-11-05: The hook keeps the journal and gives no verdict. A guessed verdict would spoil `autobrowse success`.
+- 2026-11-05: A live session that does not answer is ended by `stop` (SIGTERM, 5 s, SIGKILL), never called "already closed" (WA-1118, `2026-11-05-driver-memory.md`).

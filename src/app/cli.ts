@@ -903,7 +903,7 @@ const browsers = program
         bold(e.site),
         e.driver,
         `up ${ago((Date.now() - Date.parse(e.startedAt)) / 1000)}`,
-        e.held ? warn("held") : `idle ${e.idleMinutes}m`,
+        `${e.mb} MB driver${e.held ? `, ${warn("held")}` : `, idle ${e.idleMinutes}m`}`,
       ]),
     ];
     for (const line of columns(rows)) console.log(line);
@@ -924,7 +924,6 @@ browsers
   .action(async (target: string, o: { forget?: boolean; force?: boolean }) => {
     const { browsersNow } = await import("../browser/browsers.js");
     const { expandHome } = await import("../google/auth.js");
-    const { tokenFileFor } = await import("../explore/server.js");
     const v = await browsersNow(expandHome(settings.profilesDir));
     const hits = v.browsers.filter((b) => String(b.pid) === target || b.profile === target);
     if (hits.length > 1) throw new Error(`${target} is open ${hits.length} times: name a pid`);
@@ -933,15 +932,16 @@ browsers
       v.explorers.find((e) => String(e.port) === target)?.port ??
       Number(/^(?:explore|agent|teach):(\d+)$/.exec(b?.opener ?? "")?.[1] ?? 0);
     if (port) {
-      const token = (await readFile(tokenFileFor(port), "utf8")).trim();
-      const r = await fetch(`http://127.0.0.1:${port}/`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` },
-        body: JSON.stringify({ cmd: "close", keep: !o.forget }),
-      });
-      if (!r.ok) throw new Error(`explore ${port} did not close: ${r.status}`);
+      const { post, endProcess, CLOSE_WAIT_MS } = await import("../explore/stop.js");
+      const pid = v.explorers.find((e) => e.port === port)?.pid ?? null;
+      const r = await post(port, { cmd: "close", keep: !o.forget });
+      if (!r.ok && r.body) throw new Error(`explore ${port} did not close: ${r.body}`);
+      if (!r.ok && pid === null)
+        throw new Error(`explore ${port} does not answer and names no process`);
+      // no answer: the process is stuck, nothing to wait for
+      const how = pid === null ? "exited" : await endProcess(pid, r.ok ? CLOSE_WAIT_MS : 0);
       return console.log(
-        `closed explore ${port}${o.forget ? "" : " (journal kept: the next session on it resumes)"}`,
+        `closed explore ${port}${how === "exited" ? "" : ` (pid ${pid} did not ${r.ok ? "leave" : "answer"}: ended by ${how})`}${o.forget ? "" : " (journal kept: the next session on it resumes)"}`,
       );
     }
     if (!b) throw new Error(`no browser or explore server matches ${target}`);

@@ -9,6 +9,14 @@ TOKEN="$DIR/explore-$PORT.token"; LOG="$DIR/explore-$PORT.log"
 if [ -f "$TOKEN" ] && curl -s -m 3 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$TOKEN")" "http://127.0.0.1:$PORT/" -d '{"cmd":"url"}' | grep -q 200; then
   echo "port $PORT already open"; exit 0
 fi
+# A live session that is busy keeps its token: a second start would fight it for the port.
+INFO="$DIR/explore-$PORT.json"
+if [ -f "$INFO" ]; then
+  OLD=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$INFO")
+  if [ -n "$OLD" ] && kill -0 "$OLD" 2>/dev/null; then
+    echo "port $PORT: explore pid $OLD is alive and does not answer. End it: autobrowse stop $PORT"; exit 1
+  fi
+fi
 rm -f "$TOKEN"
 ARGS=(explore "$SITE" --port "$PORT"); [ -n "$URL" ] && ARGS+=(--url "$URL")
 [ $# -gt 3 ] && ARGS+=("${@:4}")  # --signup/--codes/--login/--headed: what place may type

@@ -14,7 +14,7 @@ export interface Proc {
   pid: number;
   ppid: number;
   command: string;
-  /** Resident memory, KB. */
+  /** Memory, KB: resident, or the footprint where `withFootprint` read it. */
   rss?: number;
   /** Seconds since it started. */
   age?: number;
@@ -71,6 +71,23 @@ export async function listProcs(): Promise<Proc[]> {
       });
   }
   return procs;
+}
+
+/**
+ * macOS: each pid's footprint in KB, compressed and swapped pages too. Under swap `ps` shows a
+ * tenth of it (measured 11-05: a browser at 100 MB resident held 1.5 GB). Empty off macOS or on failure.
+ */
+export async function footprintKb(pids: number[]): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  if (process.platform !== "darwin" || pids.length === 0) return out;
+  const { stdout } = await promisify(execFile)("footprint", pids.map(String), {
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 10_000,
+  }).catch((e: { stdout?: string }) => ({ stdout: e.stdout ?? "" })); // a pid gone mid-read: the rest still print
+  const unit: Record<string, number> = { B: 1 / 1024, KB: 1, MB: 1024, GB: 1024 * 1024 };
+  for (const m of stdout.matchAll(/\[(\d+)\]: \S+\s+Footprint: ([\d.]+) (B|KB|MB|GB)\b/g))
+    out.set(Number(m[1]), Math.round(Number(m[2]) * (unit[m[3] as string] ?? 1)));
+  return out;
 }
 
 /** Stop every orphan on our profiles; `dry` only names them. Never throws: a sweep is best effort. */

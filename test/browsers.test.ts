@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   admit,
   BROWSER_WARN_MB,
+  DRIVER_WARN_MB,
   HELD_WARN_HOURS,
   IDLE_WARN_MINUTES,
   lockHolder,
@@ -50,6 +51,7 @@ const ex9090 = {
   startedAt: "",
   idleMinutes: 0,
   idleMs: 0,
+  mb: 150,
 };
 const explorers = [ex9090];
 
@@ -102,7 +104,8 @@ describe("browsers view and warnings", () => {
         idleMinutes: 999,
         startedAt: new Date(Date.now() - hours * 3_600_000).toISOString(),
       },
-      ...[9092, 9093, 9094].map((port) => ({ ...ex9090, port })),
+      ...[9092, 9093].map((port) => ({ ...ex9090, port })),
+      { ...ex9090, port: 9094, mb: DRIVER_WARN_MB + 1 },
     ];
     const ps = [...procs, chrome(60, 300, "x", (BROWSER_WARN_MB + 1) * 1024)];
     const w = warnings(view(ps, ex, 4096)).join("\n");
@@ -114,6 +117,8 @@ describe("browsers view and warnings", () => {
     expect(w).toContain("x (pid 60, explore:9090) uses 1537 MB");
     expect(w).toMatch(/browsers use \d+ MB, \d+% of RAM/);
     expect(w).toContain("5 explore servers open");
+    expect(w).toContain("explore 9094 (x) driver uses 601 MB");
+    expect(w).not.toContain("explore 9093 (x) driver");
   });
   it("a lock held by a browser that is none of ours", () => {
     const ps = [...procs, { pid: 77, ppid: 1, command: "/Applications/Google Chrome" }];

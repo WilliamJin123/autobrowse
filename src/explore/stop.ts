@@ -5,6 +5,7 @@
  *   autobrowse stop [port] [achieved|failed] [why]   verdict, then close browser and socket
  *   autobrowse stop --hook                           Claude Code's SubagentStop hook (JSON on stdin)
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,6 +113,58 @@ export const post: Post = async (port, body) => {
   }
 };
 
+/** How a session's process left: on its own, or by our signal. */
+export type Ended = "exited" | "SIGTERM" | "SIGKILL";
+
+/**
+ * Waits `waitMs` for a session's process to leave, then makes it: SIGTERM, and SIGKILL 5 s later.
+ * A process that answers no close still holds its browser and profile (WA-1118: a blocked one
+ * held both 15 minutes while `stop` said "already closed"). A killed driver's browser gets a
+ * SIGTERM of its own, so it closes its profile cleanly.
+ */
+export async function endProcess(
+  pid: number,
+  waitMs: number,
+  deps: { alive?: (pid: number) => boolean; kill?: (pid: number, signal: string) => void } = {},
+): Promise<Ended> {
+  const alive = deps.alive ?? pidAlive;
+  const kill =
+    deps.kill ??
+    ((p: number, signal: string) => {
+      try {
+        process.kill(p, signal);
+      } catch {
+        // gone between the check and the signal
+      }
+    });
+  const gone = async (ms: number): Promise<boolean> => {
+    const until = Date.now() + ms;
+    while (alive(pid)) {
+      if (Date.now() >= until) return false;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return true;
+  };
+  if (await gone(waitMs)) return "exited";
+  kill(pid, "SIGTERM");
+  if (await gone(5_000)) return "SIGTERM";
+  let children: number[] = [];
+  try {
+    children = execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" })
+      .split("\n")
+      .map(Number)
+      .filter((n) => n > 0);
+  } catch {
+    // no child
+  }
+  kill(pid, "SIGKILL");
+  for (const c of children) kill(c, "SIGTERM");
+  return "SIGKILL";
+}
+
+/** The process's exit after its close answered: it saves the run and closes the browser first. */
+export const CLOSE_WAIT_MS = 30_000;
+
 /** What Claude Code gives a SubagentStop hook. */
 export interface AgentEnded {
   agent_type?: string;
@@ -160,6 +213,7 @@ export async function stopMain(
     sessions?: () => OpenSession[];
     session?: string;
     stdin?: () => Promise<string>;
+    end?: (pid: number, waitMs: number) => Promise<Ended>;
   } = {},
 ): Promise<number> {
   const out = deps.out ?? ((line: string) => console.log(line));
@@ -201,6 +255,9 @@ export async function stopMain(
     }
     port = (mine[0] as OpenSession).port;
   }
+  const live = (deps.sessions ?? openSessions)().find((s) => s.port === port) ?? null;
+  const end = deps.end ?? endProcess;
+  let res: { ok: boolean; body: string } | null = null;
   if (outcome) {
     const said = await send(port, {
       cmd: "done",
@@ -208,19 +265,32 @@ export async function stopMain(
       ...(summary ? { summary: summary.slice(0, 500) } : {}),
     });
     if (!said.ok && said.body) out(said.body);
+    // no answer at all: a close would wait the same minute for nothing
+    if (!said.ok && !said.body) res = said;
   }
-  const res = await send(port, { cmd: "close" });
+  res ??= await send(port, { cmd: "close" });
   if (!res.ok && !res.body) {
-    out(`no explore session on ${port}: already closed`);
+    if (!live) {
+      out(`no explore session on ${port}: already closed`);
+      return 0;
+    }
+    const how = await end(live.pid, 0);
+    out(
+      how === "exited"
+        ? `closed explore ${port}`
+        : `explore ${port} (pid ${live.pid}) did not answer: ended by ${how}${outcome ? ", its verdict not saved" : ""}. Its journal stays: the next session on ${port} resumes`,
+    );
     return 0;
   }
   if (!res.ok) {
     out(res.body);
     return 1;
   }
+  // The answer comes before the browser closes: back only when the process is gone.
+  const how = live ? await end(live.pid, CLOSE_WAIT_MS) : "exited";
   const unsaid = !outcome && /"verdict":false/.test(res.body);
   out(
-    `closed explore ${port}${outcome ? ` (${outcome})` : unsaid ? " (no verdict: the run counts as unknown)" : ""}`,
+    `closed explore ${port}${outcome ? ` (${outcome})` : unsaid ? " (no verdict: the run counts as unknown)" : ""}${how === "exited" ? "" : ` (pid ${live?.pid} did not leave in ${CLOSE_WAIT_MS / 1000} s: ended by ${how})`}`,
   );
   return 0;
 }

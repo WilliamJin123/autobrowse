@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { leaseMs, TAKE_IDLE_MINUTES } from "../src/explore/lease.js";
 import {
+  CLOSE_WAIT_MS,
   closeLeftBy,
+  type Ended,
+  endProcess,
   type OpenSession,
   openSessions,
   type Post,
@@ -128,16 +131,26 @@ describe("an agent that ended with sessions open", () => {
 });
 
 describe("autobrowse stop", () => {
-  const run = async (argv: string[], sessions: OpenSession[] = [], answer = yes) => {
+  const run = async (
+    argv: string[],
+    sessions: OpenSession[] = [],
+    answer = yes,
+    how: Ended = "exited",
+  ) => {
     const out: string[] = [];
+    const ended: Array<[number, number]> = [];
     const { sent, send } = wire(answer);
     const code = await stopMain(argv, {
       out: (l) => out.push(l),
       send,
       sessions: () => sessions,
       session: "sess-1",
+      end: async (pid, waitMs) => {
+        ended.push([pid, waitMs]);
+        return how;
+      },
     });
-    return { code, out, sent };
+    return { code, out, sent, ended };
   };
 
   it("says the verdict, then closes", async () => {
@@ -190,6 +203,49 @@ describe("autobrowse stop", () => {
   it("a session already gone is no error", async () => {
     const r = await run(["9091", "achieved"], [], () => ({ ok: false, body: "" }));
     expect(r).toMatchObject({ code: 0, out: ["no explore session on 9091: already closed"] });
+  });
+
+  it("is back only when the process is gone; one that stays is ended and named", async () => {
+    const open = [session(9091, { pid: 4242 })];
+    const left = await run(["9091", "achieved"], open);
+    expect(left.ended).toEqual([[4242, CLOSE_WAIT_MS]]);
+    expect(left.out).toEqual(["closed explore 9091 (achieved)"]);
+    const stayed = await run(["9091", "achieved"], open, yes, "SIGTERM");
+    expect(stayed.out[0]).toMatch(
+      /closed explore 9091 \(achieved\) \(pid 4242 did not leave.*SIGTERM/,
+    );
+  });
+
+  it("a live session that answers nothing is ended, never called closed already", async () => {
+    const r = await run(
+      ["9091", "achieved"],
+      [session(9091, { pid: 4242 })],
+      () => ({ ok: false, body: "" }),
+      "SIGKILL",
+    );
+    // no close after a verdict that got no answer: it would wait the same minute
+    expect(r.sent.map(([, b]) => b.cmd)).toEqual(["done"]);
+    expect(r.ended).toEqual([[4242, 0]]);
+    expect(r.out[0]).toMatch(
+      /explore 9091 \(pid 4242\) did not answer: ended by SIGKILL, its verdict not saved/,
+    );
+    expect(r.out.join()).not.toContain("already closed");
+  });
+
+  it("endProcess waits, then signals", async () => {
+    const signals: string[] = [];
+    let alive = true;
+    const deps = {
+      alive: () => alive,
+      kill: (_: number, sig: string) => {
+        signals.push(sig);
+        alive = false;
+      },
+    };
+    expect(await endProcess(1, 0, deps)).toBe("SIGTERM");
+    expect(signals).toEqual(["SIGTERM"]);
+    expect(await endProcess(1, 1_000, deps)).toBe("exited");
+    expect(signals).toEqual(["SIGTERM"]);
   });
 
   it("refuses a verdict it does not know", async () => {

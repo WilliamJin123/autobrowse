@@ -12,6 +12,7 @@ import type { Browser, BrowserContext, Page } from "playwright";
 import { type HttpClient, safeUrls } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
 import { assertProfileFree } from "./browsers.js";
+import { boundRequests } from "./driver-memory.js";
 import type { Egress, Exit } from "./egress.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
@@ -212,6 +213,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     // `navigator.webdriver` is already false (LOCAL_ARGS). No init-script shim: an own
     // `webdriver` property on navigator, reading undefined, is itself a tell.
   }
+  boundRequests(context);
   const page = context.pages()[0] ?? (await context.newPage());
   const film = opts.film ? await filmContext(context, opts.film) : null;
   const passkeys = virtualAuthenticator(context, await opts.passkeys?.(site).catch(() => []));
@@ -253,6 +255,7 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
       );
     });
   const context = browser.contexts()[0] ?? (await browser.newContext());
+  boundRequests(context);
   const page = await context.newPage();
   return {
     context,

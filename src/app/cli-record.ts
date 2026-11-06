@@ -182,6 +182,13 @@ export function registerRecordCommands(
   const background = async (site: string, port: number, tokenFile: string): Promise<void> => {
     if (existsSync(tokenFile) && (await postCmd(port, tokenFile, { cmd: "url" })).ok)
       return console.log(`port ${port} already open`);
+    // A live session that is busy keeps its token: a second start would fight it for the port.
+    const { openSessions } = await import("../explore/stop.js");
+    const held = openSessions().find((s) => s.port === port);
+    if (held)
+      throw new Error(
+        `port ${port}: explore ${held.site} (pid ${held.pid}) is alive and does not answer. End it: autobrowse stop ${port}`,
+      );
     rmSync(tokenFile, { force: true });
     const log = join(dirname(tokenFile), `explore-${port}.log`);
     const argv = process.argv.slice(2).filter((a) => a !== "--background");

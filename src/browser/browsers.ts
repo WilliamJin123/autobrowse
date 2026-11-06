@@ -9,7 +9,7 @@ import { readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { hostname, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { ExploreInfo } from "../explore/server.js";
-import { browserRoots, listProcs, type Proc } from "./reap.js";
+import { browserRoots, footprintKb, listProcs, type Proc } from "./reap.js";
 
 /** An explore server idle this long, not held, is forgotten. */
 export const IDLE_WARN_MINUTES = 120;
@@ -17,6 +17,8 @@ export const IDLE_WARN_MINUTES = 120;
 export const HELD_WARN_HOURS = 12;
 /** One browser (its whole process tree) over this. */
 export const BROWSER_WARN_MB = 1536;
+/** An explore driver (the Node process) over this: it starts near 150 MB and stays under 300 (WA-1118). */
+export const DRIVER_WARN_MB = 600;
 /** All our browsers over this share of the machine's RAM. */
 export const RAM_WARN_SHARE = 0.5;
 /** More explore servers than this at once. */
@@ -35,7 +37,7 @@ export interface BrowserRow {
   profile: string;
   /** Seconds. */
   age: number;
-  /** RSS of the process tree. */
+  /** Memory of the process tree: the footprint on macOS, resident elsewhere. */
   mb: number;
 }
 
@@ -43,6 +45,8 @@ export interface ExplorerRow extends ExploreInfo {
   idleMinutes: number;
   /** Since its last command or page load (the info file's mtime). */
   idleMs: number;
+  /** Memory of the driver process alone; its browser is a row of its own. */
+  mb: number;
 }
 
 /** A profile whose `SingletonLock` names a live browser that is none of the rows. */
@@ -91,7 +95,7 @@ export function readExplorers(
   dir = join(tmpdir(), "autobrowse"),
   now = Date.now(),
 ): ExplorerRow[] {
-  const live = new Set(procs.map((p) => p.pid));
+  const live = new Map(procs.map((p) => [p.pid, p]));
   const out: ExplorerRow[] = [];
   for (const name of safe(() => readdirSync(dir), [] as string[])) {
     if (!/^explore-\d+\.json$/.test(name)) continue;
@@ -100,7 +104,12 @@ export function readExplorers(
     if (!info || !live.has(info.pid)) continue;
     const touched = safe(() => statSync(file).mtimeMs, now);
     const idleMs = Math.max(0, now - touched);
-    out.push({ ...info, idleMinutes: Math.floor(idleMs / 60_000), idleMs });
+    out.push({
+      ...info,
+      idleMinutes: Math.floor(idleMs / 60_000),
+      idleMs,
+      mb: Math.round((live.get(info.pid)?.rss ?? 0) / 1024),
+    });
   }
   return out.sort((a, b) => a.port - b.port);
 }
@@ -116,8 +125,24 @@ export function lockHolder(profileDir: string, alive = isAlive): number | null {
 
 /** Everything `browsers` and `doctor` show; never throws. */
 export async function browsersNow(profilesDir: string, procs?: Proc[]): Promise<BrowsersView> {
-  const ps = procs ?? (await listProcs().catch(() => []));
+  const ps = procs ?? (await withFootprint(await listProcs().catch(() => []), profilesDir));
   return viewOf(ps, profilesDir, readExplorers(ps), totalmem() / 2 ** 20);
+}
+
+/** The same rows, our browsers' trees and explore drivers at their footprint (macOS; resident elsewhere). */
+export async function withFootprint(procs: Proc[], profilesDir: string): Promise<Proc[]> {
+  const kids = new Map<number, Proc[]>();
+  for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p]);
+  const pids = new Set(readExplorers(procs).map((e) => e.pid));
+  const walk = (p: Proc): void => {
+    pids.add(p.pid);
+    for (const k of kids.get(p.pid) ?? []) walk(k);
+  };
+  for (const root of browserRoots(procs, profilesDir)) walk(root);
+  const real = await footprintKb([...pids]).catch(() => new Map<number, number>());
+  return real.size
+    ? procs.map((p) => (real.has(p.pid) ? { ...p, rss: real.get(p.pid) as number } : p))
+    : procs;
 }
 
 export function viewOf(
@@ -181,6 +206,10 @@ export function warnings(v: BrowsersView): string[] {
       );
   for (const s of v.strangers)
     out.push(`profile ${s.profile} is locked by pid ${s.pid}, not ours: close that Chrome`);
+  for (const e of v.explorers.filter((x) => x.mb > DRIVER_WARN_MB))
+    out.push(
+      `explore ${e.port} (${e.site}) driver uses ${e.mb} MB (it starts near 150): say so on WA-1118, then autobrowse stop ${e.port} and start again (the journal resumes)`,
+    );
   for (const b of v.browsers.filter((x) => x.mb > BROWSER_WARN_MB))
     out.push(`${b.profile} (pid ${b.pid}, ${b.opener}) uses ${b.mb} MB: autobrowse browsers`);
   if (v.ramMb && v.totalMb > v.ramMb * RAM_WARN_SHARE)

@@ -195,6 +195,13 @@ export type HandEvent =
 
 export type HandsLog = (page: Page, e: HandEvent) => void;
 
+/** One typed text: keys sent, the plan's time and the real time. The gap is the driver's and the browser's lag. */
+export interface Typed {
+  keys: number;
+  plannedMs: number;
+  ms: number;
+}
+
 const unlogged: HandsLog = () => {};
 /** What the hands log shows for a key of a secret. */
 const HIDDEN_KEY = "•";
@@ -214,7 +221,8 @@ export interface Hands {
   /** `at`: a point inside the control (a canvas, a captcha picture), from its top-left. */
   click(target: Locator, o: ActTimeout & { at?: Point }): Promise<void>;
   /** A control: replace what it holds with `text`. A page: type at the caret. */
-  type(target: KeyTarget, text: string, o: ActTimeout): Promise<void>;
+  /** Null: no keys were paced (instant hands, or a long text pasted). */
+  type(target: KeyTarget, text: string, o: ActTimeout): Promise<Typed | null>;
   press(target: KeyTarget, key: string, o: ActTimeout): Promise<void>;
   /** The pointer onto the control, and it stays there. */
   hover(target: Locator, o: ActTimeout): Promise<void>;
@@ -239,7 +247,10 @@ export const instantHands: Hands = {
   think: async () => {},
   click: async (target, { at, ...o }) =>
     (at ? target : await pressable(target, o)).click({ ...o, ...(at ? { position: at } : {}) }),
-  type: (target, text, o) => (isPage(target) ? target.keyboard.type(text) : target.fill(text, o)),
+  type: async (target, text, o) => {
+    await (isPage(target) ? target.keyboard.type(text) : target.fill(text, o));
+    return null;
+  },
   press: (target, key, o) => (isPage(target) ? target.keyboard.press(key) : target.press(key, o)),
   hover: (target, o) => target.hover(o),
   paste: async (target, text, o) => {
@@ -486,12 +497,15 @@ export function handsFor(
       }
       if ([...text].length > pace.typing.pasteOver) {
         await page.waitForTimeout(drawMs(pace.think, random));
-        return isPage(target) ? target.keyboard.insertText(text) : target.fill(text, o);
+        await (isPage(target) ? target.keyboard.insertText(text) : target.fill(text, o));
+        return null;
       }
       // The click focused the control: keys go to the page's keyboard from here, not
       // through the locator, which re-checks and re-focuses the control on every key.
       const hide = hidden(text);
-      for (const k of typingPlan(text, pace.typing, random)) {
+      const plan = typingPlan(text, pace.typing, random);
+      const began = Date.now();
+      for (const k of plan) {
         key(page, hide && k.ch !== BACKSPACE ? HIDDEN_KEY : k.ch);
         // `delay` is how long the key is held: down, wait, up.
         if (k.ch === BACKSPACE) await page.keyboard.press(BACKSPACE, { delay: k.hold });
@@ -499,7 +513,13 @@ export function handsFor(
         if (k.after) await page.waitForTimeout(k.after);
       }
       // Keys that landed nowhere leave the field empty: a person would see it and fill it.
+      const ms = Date.now() - began;
       if (!isPage(target) && text && (await fieldValue(target)) === "") await target.fill(text, o);
+      return {
+        keys: plan.length,
+        plannedMs: Math.round(plan.reduce((n, k) => n + k.hold + (k.after ?? 0), 0)),
+        ms,
+      };
     },
     async paste(target, text, o) {
       if (await chosen(target, text, o, (l) => click(l, o))) return;

@@ -90,6 +90,8 @@ export type RunRow =
       pics?: string[];
       /** A marks shot's boxes, CSS px in the viewport, in mark order. */
       boxes?: Array<[number, number, number, number]>;
+      /** Typing: keys sent, the plan's time, the real time. The gap is the driver's and the browser's lag. */
+      typed?: { keys: number; plannedMs: number; ms: number };
       /** The Claude Code session that sent it, when not the one before. */
       session?: string;
     }

@@ -35,6 +35,7 @@ import type { SecretValues } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
 import { fetchFile } from "../browser/download.js";
+import { collectWhenIdle, holdCollect } from "../browser/driver-memory.js";
 import { extrasOf } from "../browser/extras.js";
 import { filmLog } from "../browser/film.js";
 import {
@@ -51,7 +52,7 @@ import {
   seedOf,
 } from "../browser/flow.js";
 import { ariaWithFrames, withFrame } from "../browser/frames.js";
-import { freshSeed, handsFor, seeded } from "../browser/human/index.js";
+import { freshSeed, handsFor, seeded, type Typed } from "../browser/human/index.js";
 import { inPage } from "../browser/in-page.js";
 import { layoutText } from "../browser/layout.js";
 import { type Hints, locate, locateAll, textOf } from "../browser/locate.js";
@@ -524,6 +525,8 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
     const flow = defineFlow<undefined, void>({
       site: opts.site,
       name: "explore",
+      // the journal, the run history and the observations record the session
+      trace: false,
       run: (fp) =>
         new Promise<void>((finish) => {
           resolve({ fp, finish });
@@ -714,6 +717,8 @@ async function serve(
   let capture: Capture | null = null;
   let stepPics: string[] = [];
   let stepBoxes: Array<[number, number, number, number]> | null = null;
+  /** The command's typing, planned against real time: for its run row. */
+  let stepTyped: Typed | null = null;
   /** The screen last pictured (URL shape and landmarks): a new one takes a picture. */
   let lastScreen = "";
   /** The Claude Code session that last sent a command: rows name a change. */
@@ -764,6 +769,8 @@ async function serve(
     firstGoal = null;
     saved = false;
   };
+  /** Observation packs still at work. */
+  const packs: Promise<void>[] = [];
   /** `resumable`: an idle close or a lost browser, whose next life goes on writing this run. */
   const endRun = async (outcome: RunOutcome, summary: string | null, resumable = false) => {
     const h = history;
@@ -772,11 +779,8 @@ async function serve(
     const look = page.isClosed() ? handLook : await lookAt(page).catch(() => null);
     const pic = await picture();
     logged((l) => l.end({ outcome, summary, look, ...(pic ? { pic } : {}) }));
-    try {
-      capture?.close();
-    } catch {
-      // packed by the next ship (`packStale`)
-    }
+    // not awaited: `done` answers at once; the close waits for it (`packs`). A pack that fails is the next ship's (`packStale`).
+    if (capture) packs.push(capture.close().catch(() => undefined));
     capture = null;
     if (runSide && !resumable) rmSync(runSide, { force: true });
   };
@@ -813,9 +817,11 @@ async function serve(
     const own = !IMMEDIATE.has(c.cmd);
     const pics = own ? stepPics : [];
     const boxes = own ? stepBoxes : null;
+    const typed = own ? stepTyped : null;
     if (own) {
       stepPics = [];
       stepBoxes = null;
+      stepTyped = null;
     }
     const h = history;
     if (!h || h.ended()) return;
@@ -852,6 +858,7 @@ async function serve(
           ...(after ? { after } : {}),
           ...(pics.length ? { pics } : {}),
           ...(boxes ? { boxes } : {}),
+          ...(typed ? { typed } : {}),
           ...(by ? { session: by } : {}),
         }),
       );
@@ -1465,6 +1472,7 @@ async function serve(
     page = fp.page;
     if (IMMEDIATE.has(c.cmd)) return act(c, wait);
     busy++;
+    holdCollect();
     const began = now();
     let failed: unknown = null;
     let answer: unknown;
@@ -1500,6 +1508,7 @@ async function serve(
         traceRow(c, failed, now() - began, { from, to: fp.page.url(), answer }),
       );
       busy--;
+      if (busy === 0) collectWhenIdle();
       // Idle counts from a command's end: a long one is someone driving.
       touch();
       quietAt = now() + HAND_GRACE_MS;
@@ -2076,7 +2085,7 @@ async function serve(
       case "fill": {
         await gate("fill", c, wait);
         await hands.think(page);
-        await hands.type(find(c), c.value, { timeout: 10_000 });
+        stepTyped = await hands.type(find(c), c.value, { timeout: 10_000 });
         const secret =
           looksLikeSecretField(toLocatorHints(c.hints)) || looksLikeSecretValue(c.value);
         journalAct(c, (target) => ({
@@ -2172,7 +2181,7 @@ async function serve(
               )
               .catch(() => false)
           : false;
-        await hands.type(page, c.text, { timeout: 10_000 });
+        stepTyped = await hands.type(page, c.text, { timeout: 10_000 });
         if (!into || !held)
           return {
             ok: true,
@@ -2633,6 +2642,7 @@ async function serve(
     // A person teaching ends by closing the browser: that run did its job too.
     const closedAs = saved ? "saved" : opts.driver === "person" ? "achieved" : "closed";
     await endRun(endedBy ?? closedAs, closedWhy, !closing).catch(() => undefined);
+    await Promise.all(packs);
     finishFlow();
   });
   openRun();

@@ -34,6 +34,7 @@ import { failureShape, firstTraceOfShape } from "../shots/traces.js";
 import { currentCall, currentReach, type DoneActs, markReached, markSubmitted } from "./attempt.js";
 import { type CaptchaOutcome, type Eyes, solveCaptcha } from "./captcha/index.js";
 import type { CodeStore } from "./code.js";
+import { collectWhenIdle } from "./driver-memory.js";
 import { filmLog, filmStep } from "./film.js";
 import { type Fixes, flowKey } from "./fixes.js";
 import {
@@ -244,6 +245,11 @@ export interface BrowserFlow<I, O> {
   name: string;
   /** The flow puts a secret on screen (a minted token): no screenshot, trace or step watch keeps it. */
   secret?: boolean;
+  /**
+   * false: no Playwright trace. For a flow that lasts hours (explore): the trace keeps every
+   * response body in the driver until the flow ends (WA-1118: 207 MB after ten page opens).
+   */
+  trace?: false;
   /**
    * "provider": open the profile where the site's sign-in provider holds the
    * session (William's LinkedIn signs in by Google, in the `google` profile),
@@ -514,7 +520,8 @@ async function doOp(
     case "click":
       return hands.click(target, { timeout });
     case "fill":
-      return hands.type(target, op.value, { timeout });
+      await hands.type(target, op.value, { timeout });
+      return;
     case "select":
       return chooseOption(target, op.value, timeout, hands);
     case "press":
@@ -740,6 +747,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
         // in the person's own browser: it would film their other tabs. A filmed
         // session's frames are the film's: a page has one screencast, and its first client sets the size.
         const tracing =
+          flow.trace !== false &&
           !flow.secret &&
           !session.shared &&
           (await session.context.tracing
@@ -1363,6 +1371,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           }
           throw new FlowFailed(`${flow.site}/${flow.name}`, err, artifacts);
         } finally {
+          // a worker runs flows for days: collect between them
+          collectWhenIdle();
           runs?.record(
             runRow(flow, startedAt, {
               outcome,

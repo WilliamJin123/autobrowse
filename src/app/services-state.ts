@@ -150,8 +150,11 @@ export function shipperFor(
     ...(settings.shotsEndpoint ? { endpoint: settings.shotsEndpoint } : {}),
   });
   const runs = runsDirFor(settings);
-  return () => {
-    packStale(runs);
+  return async () => {
+    // a pack that fails leaves its text file for the next ship
+    await packStale(runs).catch((e) =>
+      console.warn(`observations not packed: ${e instanceof Error ? e.message : e}`),
+    );
     return shipShots({
       roots: [
         {

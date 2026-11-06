@@ -7,16 +7,22 @@
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
+  closeSync,
+  createReadStream,
+  createWriteStream,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
-  readFileSync,
+  readSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { constants, zstdCompressSync } from "node:zlib";
+import { pipeline } from "node:stream/promises";
+import { constants, createZstdCompress, type ZstdOptions } from "node:zlib";
 import { redactAria, redactText } from "../recorder/redact.js";
 import { baseSite } from "./log.js";
 
@@ -37,17 +43,54 @@ export interface Capture {
   /** Stores a picture once; its hash. */
   picture(jpeg: Uint8Array): string;
   /** zstd the text file, so it ships; a later life of the run starts a new one beside it. */
-  close(): void;
+  close(): Promise<void>;
+}
+
+/** The hashes a text file holds, read in pieces: a long run's file is hundreds of MB. */
+function hashesIn(file: string): Set<string> {
+  const seen = new Set<string>();
+  const fd = openSync(file, "r");
+  try {
+    const buf = Buffer.alloc(1 << 20);
+    // a row opens with 22 bytes, `{"h":"<16 hex>`; `head` carries them across a piece's edge
+    let head = "";
+    let atStart = true;
+    for (let n = readSync(fd, buf); n > 0; n = readSync(fd, buf)) {
+      const b = buf.subarray(0, n);
+      let i = 0;
+      while (i < n) {
+        const nl = b.indexOf(10, i);
+        if (!atStart) {
+          if (nl < 0) break;
+          i = nl + 1;
+          atStart = true;
+          continue;
+        }
+        const end = Math.min(i + 22 - head.length, nl < 0 ? n : nl);
+        head += b.toString("latin1", i, end);
+        i = end;
+        if (head.length === 22) {
+          if (head.startsWith('{"h":"')) seen.add(head.slice(6));
+          head = "";
+          atStart = false;
+        } else if (i < n) {
+          // a line under 22 bytes: past its newline
+          head = "";
+          i++;
+        }
+      }
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return seen;
 }
 
 export function captureFor(dir: string, site: string, run: string): Capture {
   const file = obsFile(dir, site, run);
   const blobs = join(dir, BLOBS);
   mkdirSync(blobs, { recursive: true, mode: 0o700 });
-  const seen = new Set<string>();
-  if (existsSync(file))
-    for (const line of readFileSync(file, "utf8").split("\n"))
-      if (line.startsWith('{"h":"')) seen.add(line.slice(6, 22));
+  const seen = existsSync(file) ? hashesIn(file) : new Set<string>();
   return {
     text(raw) {
       const text = maskObs(raw);
@@ -64,43 +107,58 @@ export function captureFor(dir: string, site: string, run: string): Capture {
       if (!existsSync(to)) writeFileSync(to, jpeg, { mode: 0o600 });
       return h;
     },
-    close() {
-      if (!existsSync(file)) return;
-      packObs(file);
+    async close() {
+      if (existsSync(file)) await packObs(file);
     },
   };
 }
 
-/** `<run>.obs.jsonl` → `<run>.obs.<mtime>.jsonl.zst`: each life's file ships under its own key. */
-export function packObs(file: string): string {
-  const stamp = Math.trunc(statSync(file).mtimeMs);
-  const to = file.replace(/\.jsonl$/, `.${stamp}.jsonl.zst`);
-  writeFileSync(
-    to,
-    zstdCompressSync(readFileSync(file), {
+/**
+ * `<run>.obs.jsonl` → `<run>.obs.<mtime>.jsonl.zst`: each life's file ships under its own key.
+ * By stream, so zlib's threads do the work: a sync pack of a 538 MB file at level 19 held the
+ * driver's main thread 15 minutes (WA-1118). Level 6 with long matches: 213 MB for 19 CPU-seconds;
+ * level 9 gives 200 MB for 32, level 3 gives 239 MB for 15.
+ * The text file takes its packed name first, so a new life never appends to a file being packed.
+ */
+export async function packObs(file: string): Promise<string> {
+  const packing = /\.obs\.\d+\.jsonl$/.test(file);
+  const from = packing
+    ? file
+    : file.replace(/\.jsonl$/, `.${Math.trunc(statSync(file).mtimeMs)}.jsonl`);
+  if (!packing) renameSync(file, from);
+  const to = `${from}.zst`;
+  const tmp = `${to}.tmp`;
+  await pipeline(
+    createReadStream(from),
+    createZstdCompress({
       params: {
-        [constants.ZSTD_c_compressionLevel]: 19,
+        [constants.ZSTD_c_compressionLevel]: 6,
         [constants.ZSTD_c_enableLongDistanceMatching]: 1,
+        // 128 MB: the most a default decoder takes
+        [constants.ZSTD_c_windowLog]: 27,
       },
-    }),
-    { mode: 0o600 },
+      // the window shrinks to a small file's size; newer than our @types/node
+      pledgedSrcSize: statSync(from).size,
+    } as ZstdOptions),
+    createWriteStream(tmp, { mode: 0o600 }),
   );
-  rmSync(file);
+  renameSync(tmp, to);
+  rmSync(from);
   return to;
 }
 
-/** A life that died before its end (a crash) leaves its text file: packed once a day has passed. */
-export function packStale(dir: string, now = Date.now()): number {
+/** A life that died before its end, or in its pack, leaves its text file: packed once a day has passed. */
+export async function packStale(dir: string, now = Date.now()): Promise<number> {
   let n = 0;
   if (!existsSync(dir)) return n;
   for (const site of readdirSync(dir, { withFileTypes: true })) {
     if (!site.isDirectory() || site.name === BLOBS) continue;
     for (const f of readdirSync(join(dir, site.name))) {
       const p = join(dir, site.name, f);
-      if (f.endsWith(".obs.jsonl") && now - statSync(p).mtimeMs > 86_400_000) {
-        packObs(p);
-        n++;
-      }
+      if (!/\.obs(\.\d+)?\.jsonl$/.test(f) || now - statSync(p).mtimeMs <= 86_400_000) continue;
+      // one at a time: each pack holds a 128 MB window
+      await packObs(p);
+      n++;
     }
   }
   return n;
