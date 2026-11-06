@@ -83,7 +83,8 @@ const localValue = (file: string, name: string): string | null =>
     ? (parseDotenv(readFileSync(file, "utf8")).find((e) => e.name === name)?.value ?? null)
     : null;
 
-const CLEAR_MS = 60_000;
+/** A secret on the clipboard: 5 min, then emptied if untouched (William, 2026-11-06: 1 min too short). */
+export const CLIPBOARD_MS = 5 * 60_000;
 
 /**
  * Why `env set`/`env rm` refuse `name`, or null. API key names are the vault's
@@ -98,7 +99,7 @@ export function projectedRefusal(name: string): string | null {
     : `${name} is set by the projection from the vault's ${name.replace(/^NUM_/, "").toLowerCase().replace(/_/g, "-")} keys`;
 }
 
-/** macOS: pbcopy now, and a detached shell that empties it in a minute only if it still holds this value (compared by hash). */
+/** macOS: pbcopy now, and a detached shell that empties it after `clearAfterMs` only if it still holds this value (compared by hash). */
 export async function macClipboard(text: string, clearAfterMs: number): Promise<void> {
   if (process.platform !== "darwin") throw new Error("clipboard needs macOS; use --print or pull");
   await new Promise<void>((res, rej) => {
@@ -169,8 +170,8 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       const value = await deps.store().get(name);
       if (value === null) throw new Error(`${name} is not in the store`);
       if (o.print) return out(value);
-      await clipboard(value, CLEAR_MS);
-      say(`${name} is on the clipboard for ${CLEAR_MS / 1000}s`);
+      await clipboard(value, CLIPBOARD_MS);
+      say(`${name} is on the clipboard for ${CLIPBOARD_MS / 60_000} min`);
     });
 
   env

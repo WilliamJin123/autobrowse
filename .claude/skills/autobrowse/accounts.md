@@ -20,7 +20,7 @@ A site with no password, only a code emailed each time (Cap), is
 
 ```sh
 autobrowse creds list [platform]           # stored sites; reads SSM in prod, so not in a loop
-autobrowse creds copy <site> [account]     # one field on the clipboard for a minute; never printed
+autobrowse creds copy <site> [account]     # one field on the clipboard for 5 minutes; never printed
 autobrowse creds link <site[:account]>... [--keys A,B] [--open] [--ttl 24h]  # one-time link (one reveal): logins and env keys; --open = no sign-in, only when William asks for one to send out; Wren's accounts only unless he names one; one per ask
 autobrowse creds paste <site>@<label>      # William's `email password [key]` from the clipboard
 autobrowse creds push <site> | --all       # to SSM, so the box signs in too; `pull` the other way

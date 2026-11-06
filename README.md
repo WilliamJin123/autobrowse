@@ -247,7 +247,7 @@ a row; it is work.
   `env push --from deploy/prod.env` sends a whole file; `env set NAME
   --clipboard` stores a new one straight from the clipboard; the box reads the
   store on every deploy. Back down on any machine with AWS access: `env
-  get NAME` puts one value on the clipboard for a minute (Universal
+  get NAME` puts one value on the clipboard for 5 minutes (Universal
   Clipboard carries it to a phone), `env pull` merges all of them into a
   0600 `.env`, `eval "$(autobrowse env pull --export)"` loads a shell.
   `env ls` prints names only; nothing prints a value unless `--print`.
@@ -461,7 +461,7 @@ pnpm autobrowse accounts                          # each account's purposes and 
 pnpm autobrowse needs                             # what only you can give (logins, keys, consents, phone, money, decisions), each with its check + command
                                                   # (the UI has the same list on its Needs page, and the account policy on Accounts)
 pnpm autobrowse needs do login-linkedin           # runs the row's ingestion (clipboard creds, a consent, a setup step); `needs done <id>` for decisions
-pnpm autobrowse creds copy google                 # one stored field onto the clipboard for a minute (--field password|username|totp|recovery|previous); never printed
+pnpm autobrowse creds copy google                 # one stored field onto the clipboard for 5 minutes (--field password|username|totp|recovery|previous); never printed
 pnpm autobrowse creds key add exa@main --clipboard --purpose default   # an API key as an account: vendor@label, value from the clipboard or stdin, never an argument; --cap 1000 --cap-unit calls
 pnpm autobrowse creds key ls [--all]                # address, owner, status, id, purposes, cap, uses; never a value
 pnpm autobrowse creds key spend exa@main [--until 2026-11-01]   # out of credit: skipped until the 1st (or the date)
@@ -472,7 +472,7 @@ pnpm autobrowse creds key purpose exa@main default bulk   # give purposes to a k
 pnpm autobrowse creds key audit exa@main -n 50      # one key's uses and refusals from the audit ledger
 pnpm autobrowse creds key project [--check]         # write the env names from the vault; --check exits 1 on a difference
 pnpm autobrowse creds key migrate [--apply]         # env keys into the vault: dry run first, the projection must then change nothing
-pnpm autobrowse creds link npm                    # one-time link for the phone: Wren sign-in, then Copy username / Copy password; 10 min
+pnpm autobrowse creds link npm                    # one-time link for the phone: Wren sign-in, then Copy username / Copy password; 15 min
 pnpm autobrowse creds link --keys A_KEY,A_SECRET --open   # one-time link for someone outside Wren: no sign-in, 24h (--ttl 7d max)
 pnpm autobrowse creds password google             # you changed it on the site: type it here twice, echo off; only the store is touched
 pnpm autobrowse creds rotate google --ask         # change it on the site itself, to one you type here (no --ask: a random 24-char one)

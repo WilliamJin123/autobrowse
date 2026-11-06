@@ -81,7 +81,7 @@ describe("autobrowse env", () => {
     expect(t.said.join("\n")).not.toContain("tok");
     await t.run("get", "TWILIO_AUTH_TOKEN");
     expect(t.copied).toEqual(["tok"]);
-    expect(t.said.at(-1)).toMatch(/on the clipboard for 60s/);
+    expect(t.said.at(-1)).toMatch(/on the clipboard for 5 min/);
     await t.run("get", "TWILIO_AUTH_TOKEN", "--print");
     expect(t.printed()).toBe("tok");
     await expect(t.run("get", "NOPE")).rejects.toThrow(/not in the store/);

@@ -33,11 +33,11 @@ import { defineFlow, type FlowPage, flowRunner } from "../browser/flow.js";
 import { envFileSink } from "../deps/sink.js";
 import { expandHome } from "../google/auth.js";
 
-/** A copied secret lives on the clipboard for a minute, then is emptied if untouched. */
-const CLIPBOARD_MS = 60_000;
+/** A link's life unopened (William, 2026-11-06: the Worker's 10 min too short). */
+const LINK_TTL_S = 15 * 60;
 
 import { runLeg } from "../engine/leg.js";
-import { macClipboard } from "./cli-env.js";
+import { CLIPBOARD_MS, macClipboard } from "./cli-env.js";
 import { type KeysCliDeps, registerKeyCommands } from "./cli-keys.js";
 import { credLinkUrl, type Settings } from "./config.js";
 import { headed } from "./display.js";
@@ -405,7 +405,7 @@ export function registerAuthCommands(
   creds
     .command("copy <site> [account]")
     .description(
-      "One field of a stored credential onto the clipboard (emptied after a minute); nothing is ever printed. Several accounts on the site: name one (role, username, or part of it); `creds list <site>` shows them",
+      "One field of a stored credential onto the clipboard (emptied after 5 minutes); nothing is ever printed. Several accounts on the site: name one (role, username, or part of it); `creds list <site>` shows them",
     )
     .option("--field <what>", "password | username | totp | recovery | previous", "password")
     .action(async (given: string, account: string | undefined, o: { field: string }) => {
@@ -425,7 +425,7 @@ export function registerAuthCommands(
       if (!value) throw new Error(`${site} has no ${o.field} stored`);
       await macClipboard(value, CLIPBOARD_MS);
       console.log(
-        `${site} (${cred.username}) ${o.field} is on the clipboard for ${CLIPBOARD_MS / 1000}s`,
+        `${site} (${cred.username}) ${o.field} is on the clipboard for ${CLIPBOARD_MS / 60_000} min`,
       );
     });
   creds
@@ -438,7 +438,7 @@ export function registerAuthCommands(
       "env keys to add, comma separated (DYNADOT_API_KEY,DYNADOT_API_SECRET)",
     )
     .option("--open", "no sign-in: anyone holding the link opens it once (default TTL 24h)")
-    .option("--ttl <time>", "dies unopened after 10m, 24h, 7d (default 10m, open 24h)")
+    .option("--ttl <time>", "dies unopened after 15m, 24h, 7d (default 15m, open 24h)")
     .option("--label <text>", "what the page names before Reveal (default: what's inside)")
     .action(
       async (
@@ -481,7 +481,7 @@ export function registerAuthCommands(
           credLinkUrl(settings),
           settings.credLinkSecret,
           { label: linkLabel(o.label ? [o.label] : [...given, ...keys]), fields },
-          { open: o.open, ttl: o.ttl ? linkTtl(o.ttl) : o.open ? 86_400 : undefined },
+          { open: o.open, ttl: o.ttl ? linkTtl(o.ttl) : o.open ? 86_400 : LINK_TTL_S },
         );
         const at = new Date().toISOString();
         for (const u of uses)

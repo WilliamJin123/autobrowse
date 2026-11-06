@@ -50,7 +50,6 @@ async function postCmd(
 }
 
 /** Long enough to fill a signup form; `creds copy` puts it back after. */
-const HAND_CLIPBOARD_MS = 5 * 60_000;
 /** How long a signup by hand may take before the wait gives up. */
 const HAND_WAIT_MS = 30 * 60_000;
 
@@ -700,14 +699,14 @@ export function registerRecordCommands(
     const { SIGNUP_PAGES } = await import("../auth/signup.js");
     const { RESET_FORMS, watchForSiteMail } = await import("../auth/exists.js");
     const { credentialsFor, gmailFor } = await import("./services.js");
-    const { macClipboard } = await import("./cli-env.js");
+    const { CLIPBOARD_MS, macClipboard } = await import("./cli-env.js");
     const page = a.url ?? SIGNUP_PAGES[site];
     if (!page) throw new Error(`no signup page mapped for ${site}: give --url`);
     const store = credentialsFor(settings);
     const cred = await store.get(a.key);
     if (!cred?.password) throw new Error(`no minted password for ${a.key}`);
     const since = new Date();
-    await macClipboard(cred.password, HAND_CLIPBOARD_MS);
+    await macClipboard(cred.password, CLIPBOARD_MS);
     if (process.platform === "darwin") {
       const { execFile } = await import("node:child_process");
       execFile("open", [page]);
@@ -717,7 +716,7 @@ export function registerRecordCommands(
         `${page} — in your own browser`,
         `  email     ${a.email}`,
         ...(a.handle ? [`  username  ${a.handle}`] : []),
-        `  password  on the clipboard for ${HAND_CLIPBOARD_MS / 60_000} min (creds copy ${a.key} puts it back)`,
+        `  password  on the clipboard for ${CLIPBOARD_MS / 60_000} min (creds copy ${a.key} puts it back)`,
       ].join("\n"),
     );
     const form = RESET_FORMS[site];
