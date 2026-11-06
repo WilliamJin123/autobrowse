@@ -329,7 +329,7 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       askFirst(
         clashes,
         o.confirm,
-        `autobrowse env set ${name}${o.clipboard ? " --clipboard" : ""}`,
+        `autobrowse env set ${name}${o.clipboard ? " --clipboard" : ""}${o.storeOnly ? " --store-only" : ""}`,
       );
       await store.put(name, value, { replace: o.confirm === true });
       say(
