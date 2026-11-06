@@ -34,6 +34,45 @@ describe("autobrowse env", () => {
     return { dir, store, said, copied, run, paste, printed: () => printed };
   };
 
+  it("history shows marks, never values; restore puts a version back in the store and the file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "env-cli-"));
+    const store = memoryEnvStore({ TOKEN: "wrong-value-22" });
+    const said: string[] = [];
+    const program = new Command().exitOverride();
+    registerEnvCommands(program, { envFile: join(dir, ".env"), owner: "me" } as Settings, {
+      store: () => store,
+      say: (l) => said.push(l),
+      versions: async (name) =>
+        name === "TOKEN"
+          ? [
+              {
+                version: 1,
+                at: "2026-09-25T00:00:00.000Z",
+                value: "first-value-11",
+                expiresAt: null,
+              },
+              {
+                version: 2,
+                at: "2026-11-05T00:00:00.000Z",
+                value: "wrong-value-22",
+                expiresAt: null,
+              },
+            ]
+          : [],
+    });
+    const run = (...args: string[]) => program.parseAsync(["node", "autobrowse", "env", ...args]);
+    await run("history", "TOKEN");
+    expect(said).toHaveLength(2);
+    expect(said[1]).toMatch(/^v2 .*14 chars.*the store now/);
+    expect(said.join("\n")).not.toMatch(/first-value|wrong-value/);
+    await run("restore", "TOKEN", "1");
+    expect(await store.get("TOKEN")).toBe("first-value-11");
+    expect(readFileSync(join(dir, ".env"), "utf8")).toContain("TOKEN=first-value-11");
+    expect(said.join("\n")).not.toMatch(/first-value|wrong-value/);
+    await expect(run("restore", "TOKEN", "9")).rejects.toThrow(/no version 9/);
+    await expect(run("history", "NOPE")).rejects.toThrow(/not in the store/);
+  });
+
   it("lists names only, copies one value, prints on request", async () => {
     const t = setup({ TWILIO_AUTH_TOKEN: "tok", A: "1" });
     await t.run("ls");

@@ -112,6 +112,7 @@ export {
 } from "./services-browser.js";
 export {
   envStoreFor,
+  envVersions,
   keyAdminFor,
   keyKeeperFor,
   keyStoreFor,

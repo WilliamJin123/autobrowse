@@ -23,6 +23,7 @@ import {
 import { expandHome } from "../google/auth.js";
 import { isDefaultOwner } from "../owner.js";
 import type { Settings } from "./config.js";
+import type { EnvVersion } from "./services-keys.js";
 import { editSetting, isSettingName, settingsPath } from "./settings-file.js";
 
 export interface EnvCliDeps {
@@ -33,7 +34,13 @@ export interface EnvCliDeps {
   out?: (text: string) => void;
   /** What is on the clipboard, for `set --clipboard`. */
   paste?: () => Promise<string>;
+  /** Each version of one name the store still holds, oldest first. */
+  versions?: (name: string) => Promise<EnvVersion[]>;
 }
+
+/** Eight hex of a value's hash: says which versions hold the same value, never the value. */
+const mark = (value: string): string =>
+  createHash("sha256").update(value).digest("hex").slice(0, 8);
 
 const CLEAR_MS = 60_000;
 
@@ -255,6 +262,76 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       if (at && Number.isNaN(at.getTime())) throw new Error(`not a date: ${when}`);
       await store.put(name, value, at ? { expiresAt: at.toISOString() } : {});
       say(at ? `${name} expires ${at.toISOString()}` : `${name}: no expiry`);
+    });
+
+  const versionsOf = async (name: string): Promise<EnvVersion[]> => {
+    if (!deps.versions) throw new Error("this store keeps no versions");
+    const rows = await deps.versions(name);
+    if (!rows.length) throw new Error(`${name} is not in the store`);
+    return rows;
+  };
+  const localValue = (file: string, name: string): string | null =>
+    existsSync(file)
+      ? (parseDotenv(readFileSync(file, "utf8")).find((e) => e.name === name)?.value ?? null)
+      : null;
+
+  env
+    .command("history <name>")
+    .description(
+      "Each version the store still holds of one value (the newest 100): when it was set, its length and a mark that is the same for the same value; never the value",
+    )
+    .option("--file <file>", "env file to compare with", settings.envFile)
+    .action(async (name: string, o: { file: string }) => {
+      const rows = await versionsOf(name);
+      const local = localValue(resolve(expandHome(o.file)), name);
+      for (const [i, r] of rows.entries())
+        say(
+          [
+            `v${r.version}`.padEnd(5),
+            (r.at ?? "").padEnd(24),
+            mark(r.value),
+            `${r.value.length} chars`.padEnd(10),
+            r.expiresAt ? `expires ${r.expiresAt}` : "",
+            i === rows.length - 1 ? "← the store now" : "",
+            local === r.value ? "← this machine's env file" : "",
+          ]
+            .filter(Boolean)
+            .join("  "),
+        );
+      if (local !== null && !rows.some((r) => r.value === local))
+        say(`this machine's env file holds a value the store never had (${mark(local)})`);
+    });
+
+  env
+    .command("restore <name> <version>")
+    .description(
+      "Put an earlier version back, as a new version: the store and the local env file. The value replaced stays in the history",
+    )
+    .option("--out <file>", "env file that gets it too (merged, 0600)", settings.envFile)
+    .option("--store-only", "the store alone, not the local env file")
+    .action(async (name: string, version: string, o: { out: string; storeOnly?: boolean }) => {
+      const rows = await versionsOf(name);
+      const want = rows.find((r) => `v${r.version}` === version || `${r.version}` === version);
+      if (!want)
+        throw new Error(`${name} has no version ${version}: autobrowse env history ${name}`);
+      const now = rows.at(-1);
+      if (now && now.value !== want.value)
+        await deps
+          .store()
+          .put(name, want.value, want.expiresAt ? { expiresAt: want.expiresAt } : {});
+      say(
+        now && now.value === want.value
+          ? `${name}: the store already holds v${want.version}'s value`
+          : `${name}: v${want.version} (${mark(want.value)}) is back in the store; it replaced v${now?.version} (${now ? mark(now.value) : ""}), which stays in the history`,
+      );
+      if (!o.storeOnly) {
+        const file = resolve(expandHome(o.out));
+        await mkdir(dirname(file), { recursive: true });
+        const current = existsSync(file) ? await readFile(file, "utf8") : "";
+        await writeSecretFile(file, upsertDotenv(current, [{ name, value: want.value }]));
+        say(`and in ${file}`);
+      }
+      boxHint();
     });
 
   env

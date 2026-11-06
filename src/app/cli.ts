@@ -61,6 +61,7 @@ import {
   credentialsFor,
   domainDepsFor,
   envStoreFor,
+  envVersions,
   identitiesFor,
   inboxActivityDepsFor,
   inboxFleetDepsFor,
@@ -973,7 +974,10 @@ registerAccountsCommands(program, () => ({
   workspaceDomain: settings.googleWorkspaceDomain?.toLowerCase() ?? null,
   push: (text) => envStoreFor(settings).put("AUTOBROWSE_ACCOUNTS", text),
 }));
-registerEnvCommands(program, settings, { store: () => envStoreFor(settings) });
+registerEnvCommands(program, settings, {
+  store: () => envStoreFor(settings),
+  versions: (name) => envVersions(settings, name),
+});
 registerSettingsCommands(program, settings);
 registerDesktopCommands(program, tmpdir());
 registerWalletCommands(program, settings);

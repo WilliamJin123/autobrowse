@@ -37,7 +37,11 @@ William's alone.
 autobrowse env ls                          # names, when each changed, when it lapses
 autobrowse env set <NAME> --clipboard      # William copies the value; it never passes through you
 autobrowse env expires <NAME> <when>
+autobrowse env history <NAME>              # each version the store holds: date, length, a mark; never the value
+autobrowse env restore <NAME> <version>    # an earlier version back, in the store and the env file
 ```
+
+A wrong value under an existing name: `env history`, then `env restore`. The store keeps the newest 100 versions.
 
 `env get` puts a value on William's clipboard. `--print` exists; don't use it.
 Never open `.env` for values; never source it in a shell.

@@ -82,6 +82,46 @@ export function envStoreFor(settings: Settings, ssm: SSMClient = ssmFor(settings
   return store;
 }
 
+export interface EnvVersion {
+  version: number;
+  at: string | null;
+  value: string;
+  expiresAt: string | null;
+}
+
+/**
+ * Each version of one name the shared store still holds (SSM keeps the newest 100), oldest
+ * first: the way back after a wrong overwrite (`env history`, `env restore`).
+ */
+export async function envVersions(
+  settings: Settings,
+  name: string,
+  ssm: SSMClient = ssmFor(settings),
+): Promise<EnvVersion[]> {
+  const { GetParameterHistoryCommand } = await import("@aws-sdk/client-ssm");
+  const out: EnvVersion[] = [];
+  let next: string | undefined;
+  do {
+    const r = await ssm.send(
+      new GetParameterHistoryCommand({
+        Name: `${ownerKeys(settings.owner).ssm}/${name}`,
+        WithDecryption: true,
+        MaxResults: 50,
+        NextToken: next,
+      }),
+    );
+    for (const p of r.Parameters ?? [])
+      out.push({
+        version: p.Version ?? 0,
+        at: p.LastModifiedDate?.toISOString() ?? null,
+        value: p.Value ?? "",
+        expiresAt: /^expires (\S+)$/.exec(p.Description ?? "")?.[1] ?? null,
+      });
+    next = r.NextToken;
+  } while (next);
+  return out.sort((a, b) => a.version - b.version);
+}
+
 /**
  * The API keys (`creds key`): one row per key under the owner's SSM path
  * plus `/keys`, beside the env rows. One per client and path for the process,
