@@ -4,6 +4,7 @@
  * reads `warnings` from the same view: a forgotten session, an orphan, a
  * profile two processes fight over. It reports; a person or agent decides.
  */
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { hostname, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,10 @@ export const BROWSER_WARN_MB = 1536;
 export const RAM_WARN_SHARE = 0.5;
 /** More explore servers than this at once. */
 export const EXPLORERS_WARN = 4;
+/** What one more browser is counted as before it opens (measured 11-05: 0.8 to 2.4 GB each). */
+export const NEW_BROWSER_MB = 1200;
+/** Linux: under this share of RAM available, memory is tight. */
+const AVAILABLE_TIGHT_SHARE = 0.15;
 
 /** `desk`, `worker`, `explore:<port>`, `agent:<port>`, `teach:<port>`, `cli`, `orphan`, or `other` (launched by none of ours). */
 export type Opener = string;
@@ -272,4 +277,51 @@ function safe<T>(f: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Whether the OS says memory is short, apart from our own count: RSS hides what is swapped out.
+ * macOS: the kernel's pressure level (1 normal, 2 warn, 4 critical). Linux: MemAvailable.
+ */
+export function memoryTight(): boolean {
+  if (process.platform === "darwin") {
+    const level = safe(
+      () =>
+        Number(
+          execFileSync("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"], {
+            encoding: "utf8",
+            timeout: 2000,
+          }),
+        ),
+      1,
+    );
+    return level >= 2;
+  }
+  const info = safe(() => readFileSync("/proc/meminfo", "utf8"), "");
+  const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(info)?.[1] ?? 0);
+  return kb("MemTotal") > 0 && kb("MemAvailable") < kb("MemTotal") * AVAILABLE_TIGHT_SHARE;
+}
+
+/**
+ * Admit one more explore browser by memory, not by count: null to open, else why not and what
+ * to do. The first browser of ours always opens; the limit scales with the machine's RAM.
+ */
+export function admit(v: BrowsersView, tight: boolean): string | null {
+  if (!v.browsers.length) return null;
+  const over = v.ramMb > 0 && v.totalMb + NEW_BROWSER_MB > v.ramMb * RAM_WARN_SHARE;
+  if (!tight && !over) return null;
+  const why = tight
+    ? "the OS reports memory pressure"
+    : `one more passes ${Math.round(RAM_WARN_SHARE * 100)}% of ${Math.round(v.ramMb / 1024)} GB RAM`;
+  const mbOf = (e: ExplorerRow) => v.browsers.find((b) => b.opener.endsWith(`:${e.port}`))?.mb ?? 0;
+  const open = v.explorers.map(
+    (e) =>
+      `  ${e.port} ${e.site}: ${mbOf(e)} MB, idle ${e.idleMinutes} min${e.held ? ", held" : ""}`,
+  );
+  return [
+    `memory is tight: ${v.browsers.length} browsers of ours hold ${v.totalMb} MB (${why}).`,
+    'Use an open session, or stop one that is done (autobrowse stop <port> achieved|failed "why"), then start again.',
+    ...(open.length ? ["Open explore sessions:", ...open] : []),
+    "Never stop a session that is not yours. `--force` opens anyway: only when a person says so.",
+  ].join("\n");
 }

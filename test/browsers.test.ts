@@ -3,10 +3,12 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  admit,
   BROWSER_WARN_MB,
   HELD_WARN_HOURS,
   IDLE_WARN_MINUTES,
   lockHolder,
+  NEW_BROWSER_MB,
   openerOf,
   viewOf,
   warnings,
@@ -138,5 +140,37 @@ describe("profile lock", () => {
     expect(lockHolder(at("dead", `${hostname()}-4243`), () => false)).toBeNull();
     expect(lockHolder(at("box", "other-host-4242"), () => true)).toBeNull();
     expect(lockHolder(join(tmp, "none"), () => true)).toBeNull();
+  });
+});
+
+describe("admit: one more explore browser, by memory", () => {
+  const row = (mb: number, port: number) => ({
+    pid: port,
+    opener: `explore:${port}`,
+    profile: "x",
+    age: 60,
+    mb,
+  });
+  const view = (mbs: number[], ramMb: number) => ({
+    browsers: mbs.map((mb, i) => row(mb, 9090 + i)),
+    explorers: [],
+    strangers: [],
+    totalMb: mbs.reduce((s, n) => s + n, 0),
+    ramMb,
+  });
+
+  it("opens the first browser even under pressure", () => {
+    expect(admit(view([], 16_384), true)).toBeNull();
+  });
+  it("scales with the machine's RAM", () => {
+    const held = [2000, 2000, 2000, 1500];
+    expect(admit(view(held, 16_384), false)).toMatch(/memory is tight: 4 browsers.*7500 MB/);
+    expect(admit(view(held, 65_536), false)).toBeNull();
+    expect(admit(view([8192 - NEW_BROWSER_MB], 16_384), false)).toBeNull();
+  });
+  it("refuses under OS pressure whatever our count says, and names the way out", () => {
+    const no = admit(view([300], 65_536), true);
+    expect(no).toMatch(/the OS reports memory pressure/);
+    expect(no).toMatch(/autobrowse stop <port>/);
   });
 });

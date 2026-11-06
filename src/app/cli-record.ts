@@ -107,6 +107,7 @@ export function registerRecordCommands(
       "--background",
       "return once the session takes commands; it keeps running (`autobrowse cmd` talks to it)",
     )
+    .option("--force", "open even when memory is tight (a person's call)")
     .action(
       async (
         site: string,
@@ -123,10 +124,17 @@ export function registerRecordCommands(
           fresh?: boolean;
           files?: string;
           background?: boolean;
+          force?: boolean;
         },
       ) => {
         const { tokenFileFor, journalFileFor } = await import("../explore/server.js");
         const tokenFile = tokenFileFor(Number(o.port));
+        // by memory, not by count: a 16 GB Mac and a 64 GB box each get what they can hold
+        if (!o.force && !existsSync(tokenFile)) {
+          const { admit, browsersNow, memoryTight } = await import("../browser/browsers.js");
+          const no = admit(await browsersNow(expandHome(settings.profilesDir)), memoryTight());
+          if (no) throw new Error(no);
+        }
         if (o.background) return background(site, Number(o.port), tokenFile);
         const journalFile = journalFileFor(
           expandHome(settings.recordingsDir),

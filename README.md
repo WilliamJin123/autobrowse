@@ -132,7 +132,8 @@ a row; it is work.
   is a note. `--terminal` records the shell leg after. Raw recordings
   stay out of git.
 - **Explored.** From a chat session, Claude Code drives the explore skill
-  itself or through the `browser` subagent, headed. Unattended (the desk,
+  itself; a side chore may go to the `browser` subagent, headed. A new
+  session is admitted by memory, not by count (`--force` overrides). Unattended (the desk,
   the bench), `autobrowse agent <site> "<goal>"` finds the way itself:
   each step the model sees the URL and an outline of the page (`[n]B Save`
   refs, containers kept, rows one line, repeats folded; ~1k chars for a

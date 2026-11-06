@@ -7,10 +7,19 @@ youtube.com) and `accounts`: every stored account that login can use. Pick one, 
 You send one JSON command at a time over loopback. Every act that works is
 journaled; `save` writes a recording; `compile` makes it a workflow.
 
-From a chat session, drive it yourself, or spawn the `browser` subagent
-(`~/.claude/agents/browser.md`): headed, William watches and can take over.
+From a chat session, drive it yourself: that is the default. What the page
+shows is then in your context, and one session holds one browser.
+Spawn the `browser` subagent (`~/.claude/agents/browser.md`, headed) only for a
+side chore: a task apart from your main one, whose result is a line or two
+(a setting changed, a file uploaded, an account made). A read or an act your
+main task needs, you do yourself. Never two browser subagents at once.
 Never `autobrowse agent` from a chat: that is the headless loop for the
 desk and the bench.
+
+Each browser holds 1 to 2 GB. `start.sh` refuses a new one when memory is
+tight (the OS reports pressure, or our browsers would pass half the RAM) and
+lists the open sessions: use one, or stop one of yours that is done, then
+start again. Never stop a session that is not yours. `--force` is a person's call.
 
 ## First: does something already do it?
 

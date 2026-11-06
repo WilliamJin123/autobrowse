@@ -24,7 +24,7 @@ email, password, code and phone by name; it never sees them. `--by-hand` for a
 page with a bot check: William's browser, password on the clipboard.
 
 This is a headless loop for unattended runs. From a chat, sign up in explore
-instead (yourself or the `browser` subagent): `start.sh <site> <url> <port>
+instead (yourself; the `browser` subagent when it is a side chore): `start.sh <site> <url> <port>
 --signup <address> --headed` mints and stores the password the same way.
 
 ## By hand in explore: secrets by name
