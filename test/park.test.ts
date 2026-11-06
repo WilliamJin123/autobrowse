@@ -60,6 +60,35 @@ describe("SessionPark", () => {
     expect(park.size).toBe(1);
   }, 60_000);
 
+  it("a tab a run left open closes at its end; a run that waits for a person keeps it", async () => {
+    const url = await ready;
+    let tabs = 0;
+    const flow = (name: string, end: () => void) =>
+      defineFlow<undefined, void>({
+        site: "scratch",
+        name,
+        async run(fp) {
+          tabs = fp.page.context().pages().length;
+          await fp.open(url);
+          await fp.page.evaluate('window.open("about:blank", "left")');
+          await fp.page.waitForTimeout(300);
+          end();
+        },
+      });
+    const ok = flow("leaves-a-tab", () => undefined);
+    const waits = flow("waits", () => {
+      throw new NeedsHuman("pick one");
+    });
+    await runner.run(ok, undefined);
+    await expect(runner.run(waits, undefined)).rejects.toBeInstanceOf(NeedsHuman);
+    // The first run's tab went; the waiting run's tab is there for the answer.
+    expect(tabs).toBe(1);
+    await runner.run(ok, undefined);
+    expect(tabs).toBe(2);
+    await runner.run(ok, undefined);
+    expect(tabs).toBe(1);
+  }, 60_000);
+
   it("a flow under its site and under its account's profile share one browser", async () => {
     const url = await ready;
     const shared = new SessionPark({ idleMs: 60_000, max: 2 });

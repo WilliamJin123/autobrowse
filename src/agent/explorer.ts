@@ -185,7 +185,7 @@ Actions, with "cmd" set to exactly one of these words:
   {"cmd":"captcha"}   (solve the captcha on the page, any kind; says solved or why not)
   {"cmd":"read","ref":n,"as":"camelName"}   (keep an element's text under a name; a workflow built from this run will read it the same way)
   {"cmd":"records","as":"camelName","goal":"what the rows are","fields":[{"key":"title","says":"what it holds"}],"max":10}   (a list on the page as rows; a workflow built from this run reads the list again, whatever it holds then)
-  {"cmd":"keep","ref":n,"env":"SOME_API_KEY"}   (a key, token or password the site just minted: it goes straight to the secret store under that env name; never read or quote it)
+  {"cmd":"keep","ref":n,"env":"SOME_API_KEY"}   (a key, token or password the site just minted: it goes straight to the secret store under that env name; never read or quote it. A name that already holds another value is never replaced: pick a name that says what this key is for)
   {"cmd":"os","act":{"op":"tree"},"goal":"why"}   (the desktop, outside the browser: the front app's controls as role "name" lines)
   {"cmd":"os","act":{"op":"open","app":"System Settings"},"goal":"why"}
   {"cmd":"os","act":{"op":"click","role":"button","name":"Allow"},"goal":"why"}   (role and name exactly as the tree printed them; "app" narrows to one app)
@@ -581,6 +581,7 @@ function outcome(s: StepRecord): string {
     code?: number;
     stdout?: string;
     stderr?: string;
+    held?: { env: string; mark: string };
   } | null;
   if (s.step?.action.cmd === "read" && r?.text !== undefined)
     return `ok: ${JSON.stringify(r.text.slice(0, 300))}`;
@@ -592,6 +593,9 @@ function outcome(s: StepRecord): string {
     if (r.code !== undefined)
       return `exit ${r.code}${r.stdout ? `\n${r.stdout.slice(0, 1_500)}` : ""}${r.stderr ? `\nstderr: ${r.stderr.slice(0, 500)}` : ""}`;
   }
+  // The agent's keep has no replace: a held value stays until a person says so.
+  if (s.step?.action.cmd === "keep" && r?.held)
+    return `NOT KEPT: ${r.held.env} already holds another value (mark ${r.held.mark}). Nothing was written. Keep it under another env name that says what this key is for; if no other name fits, stop with human.`;
   return "ok";
 }
 

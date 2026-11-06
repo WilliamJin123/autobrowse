@@ -168,7 +168,15 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     raw: z.boolean().optional(),
   }),
   /** Read a secret the site just minted straight into the secret sink under `env`; nothing shows it. */
-  targetSchema.extend({ cmd: z.literal("keep"), env: z.string().regex(/^[A-Z][A-Z0-9_]*$/) }),
+  targetSchema.extend({
+    cmd: z.literal("keep"),
+    env: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+    /** The name holds another value: its mark, from the refusal. Without it nothing is replaced. */
+    replace: z
+      .string()
+      .regex(/^[0-9a-f]{8}$/)
+      .optional(),
+  }),
   z.object({ cmd: z.literal("note"), text: z.string() }),
   /** A part of the run starts here, named: `walks cut` builds each part as its own walk. */
   z.object({ cmd: z.literal("cut"), name: z.string().regex(/^[a-z][a-z0-9-]*$/) }),

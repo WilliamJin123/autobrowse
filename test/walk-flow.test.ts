@@ -321,6 +321,20 @@ describe("walkFlow", () => {
     await expect(walkFlow(w, { secrets }).run(again.fp, {})).rejects.toThrow(
       "keep the key: nowhere to keep SCRATCH_API_KEY here",
     );
+
+    // No walk replaces a held value: it stops for a person and writes nothing.
+    const held: SecretSink = { put: vi.fn(async () => {}), get: async () => "live-token-1" };
+    const third = fakeSite(SITE, "signup", { reads: { "API key": "fake-key-123" } });
+    await expect(walkFlow(w, { secrets, sink: held }).run(third.fp, {})).rejects.toThrow(
+      /SCRATCH_API_KEY holds another value \(mark [0-9a-f]{8}\); nothing was written/,
+    );
+    expect(held.put).not.toHaveBeenCalled();
+    // The same value held: the keep goes through.
+    const same: SecretSink = { put: vi.fn(async () => {}), get: async () => "fake-key-123" };
+    const fourth = fakeSite(SITE, "signup", { reads: { "API key": "fake-key-123" } });
+    expect((await walkFlow(w, { secrets, sink: same }).run(fourth.fp, {})).kept).toEqual([
+      "SCRATCH_API_KEY",
+    ]);
   });
 
   it("does select, press, upload and open ops", async () => {

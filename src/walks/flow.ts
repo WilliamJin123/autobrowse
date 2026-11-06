@@ -18,7 +18,7 @@ import { OPTIONS, optionsIn, ROWS, squash } from "../browser/pick.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/records.js";
 import { lookAt, type PageLook, type Screen, walk } from "../browser/screens.js";
 import { NeedsHuman } from "../browser/session.js";
-import type { SecretSink } from "../deps/sink.js";
+import { heldOther, type SecretSink, valueMark } from "../deps/sink.js";
 import { samePage, shows } from "./build.js";
 import {
   FIELD_REF,
@@ -300,7 +300,14 @@ async function walkSpec(
       }
       case "keep": {
         if (!deps.sink) fp.human(`${op.goal}: nowhere to keep ${op.env} here`);
-        await deps.sink.put(op.env, await fp.read(op.hints as Hints));
+        const value = await fp.read(op.hints as Hints);
+        // No walk replaces a held value (WA-1124): a person moves it or renames this step.
+        const held = await heldOther(deps.sink, op.env, value);
+        if (held !== null)
+          fp.human(
+            `${op.goal}: ${op.env} holds another value (mark ${valueMark(held)}); nothing was written. Give this step another env name, or look at the held value's versions: autobrowse env history ${op.env}`,
+          );
+        await deps.sink.put(op.env, value);
         out.kept.push(op.env);
         return;
       }

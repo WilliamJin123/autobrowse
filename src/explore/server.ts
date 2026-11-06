@@ -82,7 +82,7 @@ import {
   type Wall,
 } from "../browser/session.js";
 import type { KeyKeeper } from "../deps/keys.js";
-import type { SecretSink } from "../deps/sink.js";
+import { heldOther, replaceWarning, type SecretSink, valueMark } from "../deps/sink.js";
 import { macDesktop } from "../desktop/mac.js";
 import { type Desktop, type DesktopOp, noDesktop, treeText } from "../desktop/types.js";
 import type { Effects } from "../engine/effects.js";
@@ -656,6 +656,14 @@ async function serve(
   /** Commands in flight, and when the last one's own late DOM events stop counting as a person's. */
   let busy = 0;
   let quietAt = 0;
+  /** Tabs a command opened (a `target=_blank` link, a popup). A person's own tabs are never in it. */
+  const stepTabs = new Set<Page>();
+  /** The agent moved on: each tab it left holds a renderer (100 to 300 MB) until the browser closes. */
+  const closeStepTabs = async (): Promise<number> => {
+    const left = [...stepTabs].filter((p) => p !== page && !p.isClosed());
+    await Promise.all(left.map((p) => p.close().catch(() => undefined)));
+    return left.length;
+  };
   /** Where the agent last left the page: the url, and the rows when its last act diffed them. */
   let left: { url: string; rows: string[] | null } | null = null;
   const byHand = () => paused || (busy === 0 && now() >= quietAt);
@@ -2052,8 +2060,12 @@ async function serve(
             throw err;
         }
         journal({ kind: "navigate" });
+        // `open` goes to the main page: the tabs earlier steps opened are behind it now.
+        page = fp.page;
+        const closedTabs = await closeStepTabs();
         return {
           url: page.url(),
+          ...(closedTabs ? { closedTabs } : {}),
           wall: await withAccounts(wallAnswer(await looksLikeWall(page), page.url())),
         };
       }
@@ -2288,7 +2300,8 @@ async function serve(
         page = next;
         // A popup that closes (OAuth done) hands control back to the main page.
         if (c.index !== "main") next.once("close", () => fp.switchTo(all[0] as Page));
-        return { url: next.url() };
+        const closedTabs = c.index === "main" ? await closeStepTabs() : 0;
+        return { url: next.url(), ...(closedTabs ? { closedTabs } : {}) };
       }
       case "screenshot":
         return { file: await shoot() };
@@ -2386,9 +2399,25 @@ async function serve(
         if (!opts.sink) throw new Error("keep needs a secret sink (SECRET_SINK / .env)");
         const value = await textOf(find(c));
         if (!value) throw new Error("keep: the element is empty");
+        // Two phases (WA-1124): the refusal names the held value's mark, the replace must quote it.
+        const held = await heldOther(opts.sink, c.env, value);
+        if (held !== null && c.replace !== valueMark(held))
+          return {
+            ok: false,
+            kept: false,
+            held: { env: c.env, mark: valueMark(held), length: held.length },
+            warning: replaceWarning(
+              [{ name: c.env, held, where: "the store" }],
+              `send the same command with "replace":"${valueMark(held)}"`,
+            ),
+          };
         await opts.sink.put(c.env, value);
         journalAct(c, (target) => ({ kind: "keep", target, env: c.env }));
-        return { env: c.env, length: value.length };
+        return {
+          env: c.env,
+          length: value.length,
+          ...(held !== null ? { replaced: valueMark(held) } : {}),
+        };
       }
       case "captcha": {
         const got = await fp.captcha();
@@ -2611,7 +2640,12 @@ async function serve(
   }
   page.context().on("close", () => finish());
   // A page load is a person (or a popup) still at work.
-  page.context().on("page", (p) => p.on("framenavigated", touch));
+  page.context().on("page", (p) => {
+    p.on("framenavigated", touch);
+    if (byHand()) return;
+    stepTabs.add(p);
+    p.once("close", () => stepTabs.delete(p));
+  });
   fp.page.on("framenavigated", touch);
   const idleCheck =
     idleMs > 0

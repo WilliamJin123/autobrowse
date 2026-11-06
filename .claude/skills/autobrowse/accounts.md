@@ -41,6 +41,8 @@ autobrowse env history <NAME>              # each version the store holds: date,
 autobrowse env restore <NAME> <version>    # an earlier version back, in the store and the env file
 ```
 
+**No replace without a yes.** `env set`, `env push`, `env pull` and explore `keep` write nothing when a name already holds another value: they print "STOP", the held value's mark and the line to replace it (`--replace <marks>`). Default: keep both, the new value under another name that says what it is for. Run the replace line only when William said to replace it in this conversation, or this session minted the held value. `env rm` deletes every version: it needs `--confirm <mark>` and William's yes.
+
 A wrong value under an existing name: `env history`, then `env restore`. The store keeps the newest 100 versions.
 
 `env get` puts a value on William's clipboard. `--print` exists; don't use it.

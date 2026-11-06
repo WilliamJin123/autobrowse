@@ -8,7 +8,7 @@ import { memoryAudit } from "credvault";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { compile } from "../src/compiler/index.js";
-import { memorySink } from "../src/deps/sink.js";
+import { memorySink, valueMark } from "../src/deps/sink.js";
 import { fakeDesktop } from "../src/desktop/types.js";
 import {
   journalFileFor,
@@ -283,6 +283,12 @@ describe("explore mode", () => {
     await send({ cmd: "eval", js: "window.close()" });
     await new Promise((r) => setTimeout(r, 300));
     expect((await send({ cmd: "pages" })).body.pages).toMatchObject([{ active: true }]);
+    // A tab a command opened and the agent left closes when it goes back to the main page.
+    await send({ cmd: "eval", js: 'window.open("about:blank", "left")' });
+    await new Promise((r) => setTimeout(r, 500));
+    await send({ cmd: "page", index: 1 });
+    expect((await send({ cmd: "page", index: "main" })).body).toHaveProperty("closedTabs", 1);
+    expect((await send({ cmd: "pages" })).body.pages).toHaveLength(1);
     expect((await send({ cmd: "page", index: 5 })).status).toBe(500);
 
     const bad = await send({ cmd: "nope" });
@@ -299,6 +305,31 @@ describe("explore mode", () => {
     const kept = await send({ cmd: "keep", hints: { css: "#key" }, env: "TEST_MINTED_KEY" });
     expect(kept.body).toEqual({ env: "TEST_MINTED_KEY", length: 54 });
     expect(sink.values.TEST_MINTED_KEY).toMatch(/^sk-ant-minted-key-/);
+    // The same value again is no replace. Another value under the name: refused, nothing written,
+    // nothing journaled, until the command quotes the held value's mark.
+    expect(
+      (await send({ cmd: "keep", hints: { css: "#key" }, env: "TEST_MINTED_KEY" })).body,
+    ).toEqual({ env: "TEST_MINTED_KEY", length: 54 });
+    sink.values.TEST_HELD = "live-token-1";
+    const notKept = await send({ cmd: "keep", hints: { css: "#key" }, env: "TEST_HELD" });
+    expect(notKept.body).toMatchObject({
+      ok: false,
+      kept: false,
+      held: { env: "TEST_HELD", mark: valueMark("live-token-1"), length: 12 },
+    });
+    expect(notKept.body.warning).toContain("STOP: nothing was written");
+    expect(notKept.body.warning).toContain(`"replace":"${valueMark("live-token-1")}"`);
+    expect(JSON.stringify(notKept.body)).not.toContain("live-token-1");
+    expect(sink.values.TEST_HELD).toBe("live-token-1");
+    const wrong = { cmd: "keep", hints: { css: "#key" }, env: "TEST_HELD", replace: "00000000" };
+    expect((await send(wrong)).body.ok).toBe(false);
+    expect(sink.values.TEST_HELD).toBe("live-token-1");
+    expect((await send({ ...wrong, replace: valueMark("live-token-1") })).body).toEqual({
+      env: "TEST_HELD",
+      length: 54,
+      replaced: valueMark("live-token-1"),
+    });
+    expect(sink.values.TEST_HELD).toMatch(/^sk-ant-minted-key-/);
 
     // Desktop acts share the session and the journal; looking is not journaled, typed secrets are hidden.
     const tree = (await send({ cmd: "os", act: { op: "tree" } })).body.tree as string;
@@ -325,7 +356,7 @@ describe("explore mode", () => {
     );
 
     const saved = await send({ cmd: "save", name: "buy" });
-    expect(saved.body.actions).toBe(14); // the ordering test's open is journaled too
+    expect(saved.body.actions).toBe(16); // the ordering test's open is journaled too; a refused keep is not
     const rec = await loadRecording(join(dir, "recordings"), "buy");
     // (the page's own data: URL holds the fixture; the acts must not)
     expect(JSON.stringify(rec.actions.map(({ url: _u, ...a }) => a))).not.toContain(
@@ -342,12 +373,14 @@ describe("explore mode", () => {
       "click",
       "click",
       "keep",
+      "keep",
+      "keep",
       "desktop",
       "desktop",
       "desktop",
       "desktop",
     ]);
-    const typed = rec.actions[11];
+    const typed = rec.actions[13];
     expect(
       typed.kind === "desktop" && typed.redacted && typed.op.op === "type" && typed.op.text,
     ).toBe("<redacted>");

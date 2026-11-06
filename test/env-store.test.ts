@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -6,6 +6,7 @@ import { memoryEnvStore } from "credvault";
 import { describe, expect, it } from "vitest";
 import { registerEnvCommands } from "../src/app/cli-env.js";
 import type { Settings } from "../src/app/config.js";
+import { valueMark } from "../src/deps/sink.js";
 
 describe("autobrowse env", () => {
   const setup = (initial: Record<string, string>) => {
@@ -103,7 +104,14 @@ describe("autobrowse env", () => {
   it("pulls into a 0600 env file (merged), as exports, or to stdout; sidecars for multi-line values", async () => {
     const t = setup({ A: "1", SA: '{\n "k": 1\n}', B: "2" });
     writeFileSync(join(t.dir, ".env"), "LOCAL=keep\nA=old\n");
-    await t.run("pull");
+    // A file value the store never held has no history: the pull writes nothing until its mark is quoted.
+    await expect(t.run("pull")).rejects.toThrow(
+      new RegExp(
+        `STOP: nothing was written[^]*A in .*: mark ${valueMark("old")}[^]*--replace ${valueMark("old")}`,
+      ),
+    );
+    expect(readFileSync(join(t.dir, ".env"), "utf8")).toBe("LOCAL=keep\nA=old\n");
+    await t.run("pull", "--replace", valueMark("old"));
     const env = readFileSync(join(t.dir, ".env"), "utf8");
     expect(env).toBe(`LOCAL=keep\nA=1\nB=2\nSA=${join(t.dir, "sa.json")}\n`);
     expect(statSync(join(t.dir, ".env")).mode & 0o777).toBe(0o600);
@@ -147,7 +155,10 @@ describe("autobrowse env", () => {
       "X",
       "Y",
     ]);
-    await t.run("rm", "X");
+    // A remove deletes every version: refused until the held value's mark is quoted.
+    await expect(t.run("rm", "X")).rejects.toThrow(/STOP: nothing was removed/);
+    expect(t.store.values.X).toBe("1");
+    await t.run("rm", "X", "--confirm", valueMark("1"));
     expect(t.store.values.X).toBeUndefined();
     expect(t.said.at(-1)).toBe("removed X");
   });
@@ -167,6 +178,86 @@ describe("autobrowse env", () => {
     await t.run("set", "ONLY_THERE", "--clipboard", "--store-only");
     expect(readFileSync(join(t.dir, ".env"), "utf8")).not.toContain("ONLY_THERE");
   });
+  it("no set or push replaces a held value until the second run quotes its mark", async () => {
+    const t = setup({ CF_TOKEN: "live-token-1" });
+    t.paste("other-token-2");
+    const refusal = await t.run("set", "CF_TOKEN", "--clipboard").then(
+      () => "",
+      (e: Error) => e.message,
+    );
+    expect(refusal).toContain("STOP: nothing was written");
+    expect(refusal).toContain(`CF_TOKEN in the store: mark ${valueMark("live-token-1")}, 12 chars`);
+    expect(refusal).toContain(
+      `autobrowse env set CF_TOKEN --clipboard --replace ${valueMark("live-token-1")}`,
+    );
+    expect(refusal).not.toContain("live-token-1");
+    expect(refusal).not.toContain("other-token-2");
+    expect(t.store.values.CF_TOKEN).toBe("live-token-1");
+    expect(existsSync(join(t.dir, ".env"))).toBe(false);
+
+    // A wrong mark is no confirmation.
+    await expect(t.run("set", "CF_TOKEN", "--clipboard", "--replace", "00000000")).rejects.toThrow(
+      /STOP/,
+    );
+    expect(t.store.values.CF_TOKEN).toBe("live-token-1");
+
+    await t.run("set", "CF_TOKEN", "--clipboard", "--replace", valueMark("live-token-1"));
+    expect(t.store.values.CF_TOKEN).toBe("other-token-2");
+    expect(t.said.join("\n")).toContain(
+      `replaced CF_TOKEN in the store (${valueMark("live-token-1")} → ${valueMark("other-token-2")})`,
+    );
+
+    // The same value again is no replace.
+    const same = setup({ SAME: "v" });
+    same.paste("v");
+    await same.run("set", "SAME", "--clipboard");
+
+    // A push writes none of its names while one of them would replace.
+    const p = setup({ B: "held" });
+    writeFileSync(join(p.dir, ".env"), "A=1\nB=new\n");
+    await expect(p.run("push", "A", "B")).rejects.toThrow(
+      new RegExp(
+        `B in the store: mark ${valueMark("held")}[^]*env push A B --replace ${valueMark("held")}`,
+      ),
+    );
+    expect(p.store.values).toEqual({ B: "held" });
+    await p.run("push", "A", "B", "--replace", valueMark("held"));
+    expect(p.store.values).toEqual({ A: "1", B: "new" });
+  });
+
+  it("a set refuses a value held only in the env file; a pull lets a rotation through", async () => {
+    const t = setup({});
+    writeFileSync(join(t.dir, ".env"), "ONLY_HERE=local-1\n");
+    t.paste("fresh-2");
+    await expect(t.run("set", "ONLY_HERE", "--clipboard")).rejects.toThrow(
+      new RegExp(`ONLY_HERE in .*\\.env: mark ${valueMark("local-1")}`),
+    );
+    expect(t.store.values.ONLY_HERE).toBeUndefined();
+
+    // The file holds the store's earlier version: the pull is the rotation reaching this machine.
+    const dir = mkdtempSync(join(tmpdir(), "env-cli-"));
+    const store = memoryEnvStore({ TOKEN: "rotated-2", LOST: "store-value" });
+    const program = new Command().exitOverride();
+    registerEnvCommands(program, { envFile: join(dir, ".env"), owner: "me" } as Settings, {
+      store: () => store,
+      say: () => {},
+      versions: async (name) =>
+        name === "TOKEN"
+          ? [
+              { version: 1, at: "2026-11-01T00:00:00.000Z", value: "first-1", expiresAt: null },
+              { version: 2, at: "2026-11-05T00:00:00.000Z", value: "rotated-2", expiresAt: null },
+            ]
+          : [{ version: 1, at: "2026-11-05T00:00:00.000Z", value: "store-value", expiresAt: null }],
+    });
+    const run = (...args: string[]) => program.parseAsync(["node", "autobrowse", "env", ...args]);
+    writeFileSync(join(dir, ".env"), "TOKEN=first-1\n");
+    await run("pull", "TOKEN");
+    expect(readFileSync(join(dir, ".env"), "utf8")).toBe("TOKEN=rotated-2\n");
+    writeFileSync(join(dir, ".env"), "LOST=never-stored\n");
+    await expect(run("pull", "LOST")).rejects.toThrow(/STOP: nothing was written/);
+    expect(readFileSync(join(dir, ".env"), "utf8")).toBe("LOST=never-stored\n");
+  });
+
   it("a push of a name only in the store says so; one in neither place is an error", async () => {
     const t = setup({ ONLY_THERE: "v" });
     await t.run("push", "ONLY_THERE");

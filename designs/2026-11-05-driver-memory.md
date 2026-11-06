@@ -70,10 +70,26 @@ Level 9 gives 200 MB for 32 s; level 3 gives 239 MB for 15 s.
 | Heap used | 135 MB and growing | 120 MB, flat |
 | `stop` | 34 s, then about 45 s to exit | 3.3 s, process gone |
 
-## Next
+## Stray tabs
 
-1. One tab per browser: close the tabs and popups a step opened.
-2. One shared signed-out reader Chrome: 2 pages a host with shared pacing, admit by memory per page, one retry on a fresh reader after a crash. First: compare block rates by the fetch ladder.
+Measured on the desk's two browsers: the big second renderer in each is the watcher tab (the long poll), kept on purpose. The small ones (24 to 81 MB) are the page's own frames. No stray tab was open. So this is a guard, not a saving.
+
+- Explore: a tab a command opened (a `target=_blank` link, a popup) closes when the agent sends `open` or `page main`. The answer holds `closedTabs`. A tab a person opened stays.
+- Flows: at a run's end, before the browser parks, each tab beside the main page closes (`closeStrayTabs`). Kept: a watcher's tab, every tab of a run that waits for a person, every tab of a person's own browser.
+
+## The shared reader: not built
+
+Plan was one Chrome for all signed-out reads, many tabs. The flow ledger says it saves almost nothing now.
+
+| 7 days to 2026-11-05 | |
+|---|---|
+| Browser runs | 1,842 |
+| Signed-out runs (`reddit-public`, `web`, `scratch`, `learn`, `perplexity`, `reviewer-fresh`) | 207, 128 minutes of run time |
+| Minutes with two or more signed-out browsers open (each kept 15 minutes after its run) | 84 of 10,080 (0.8%) |
+
+- The memory is in the signed-in sessions (`linkedin`, `x`, `instagram`, `apple`, `google`): signed-out runs are 5% of the run time (128 of 2,630 minutes). Each signed-in session needs its own profile.
+- The build is not small: flows on one context at once need page-level routes, no trace, a host limit and a crash retry.
+- Build it when signed-out reads overlap for more than an hour a day. The shape is ready: a flow as a tab in a shared context is how a person's own browser already works (`openOwn`, `session.shared`).
 
 ## Decision log
 
@@ -84,3 +100,5 @@ Level 9 gives 200 MB for 32 s; level 3 gives 239 MB for 15 s.
 - 2026-11-05: Collect only when no command runs (my call): a collection never pauses an act.
 - 2026-11-05: Keep 1,000 Requests (my call): a page load is a few hundred, and `waitForResponse` reads only new ones.
 - 2026-11-05: The network log is off by default (`AUTOBROWSE_NETWORK`), so its bounds wait.
+- 2026-11-05: Stray tabs close when the agent moves on, never a watcher's tab and never a tab of a run that waits for a person (my call).
+- 2026-11-05: The shared reader waits (my recommendation; William agreed to the reader on 11-05 before these numbers): two signed-out browsers were open together 0.8% of the week.

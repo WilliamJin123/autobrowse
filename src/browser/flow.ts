@@ -541,6 +541,19 @@ async function doOp(
 
 const TAB_ACTS = new Set(["hover", "click", "press"]);
 
+/** Tabs that outlive a run on purpose (a watcher's): never closed as strays. */
+const keptTabs = new WeakSet<Page>();
+
+/**
+ * Closes the tabs a run's steps left open beside `main` (a `target=_blank` link, a popup). A
+ * parked browser serves run after run: each stray holds a renderer until the browser closes.
+ */
+export async function closeStrayTabs(context: BrowserContext, main: Page): Promise<number> {
+  const strays = context.pages().filter((p) => p !== main && !keptTabs.has(p) && !p.isClosed());
+  await Promise.all(strays.map((p) => p.close().catch(() => undefined)));
+  return strays.length;
+}
+
 /**
  * CDP `background: true`: the headed window stays on the main tab.
  * Measured 2026-11-05: lazy rows load in such a tab, headless and headed.
@@ -644,6 +657,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           park.pin(key);
           try {
             const page = await session.context.newPage();
+            keptTabs.add(page);
             let released = false;
             return {
               page,
@@ -1416,6 +1430,9 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             if (path && !watch) rmSync(path, { force: true });
           }
           if (runner.park && !broken) {
+            // A run that waits for a person keeps every tab: the answer may need one.
+            if (outcome !== "human" && !session.shared)
+              await closeStrayTabs(session.context, session.page);
             // Stubs from `answer` belong to this run.
             await session.context.unrouteAll({ behavior: "ignoreErrors" }).catch(() => undefined);
             await runner.park.put(key, held);

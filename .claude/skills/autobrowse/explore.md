@@ -81,7 +81,7 @@ Look:
 - `{"cmd":"url"}`, `{"cmd":"screenshot"}` (path back), `{"cmd":"count","hints":…}`.
 - `{"cmd":"marks"}` — a screenshot with a numbered box on each control in view, and the list `{n, tag, role, name}`. For a control the snapshot and `aria` do not name (an icon, a canvas widget). Act with `"hints":{"mark":n}`: the journal keeps the control's own hints, never the point. A load or re-render makes the marks stale: take them again.
 - `network` and `html` (page calls, saved pages) are off by default: they cost tokens. Only when William asks, start explore with `AUTOBROWSE_NETWORK=1`; see `designs/2026-10-06-network-capture.md`.
-- `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes.
+- `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
 
 Act (journaled):
 - `{"cmd":"open","url":"https://…"}` — answers `wall` (`kind`, `by`: `url` or `text`) when one is there.
@@ -91,7 +91,7 @@ Act (journaled):
 - `{"cmd":"place","hints":{…},"secret":"code"}` — types a secret the session holds (signup.md); the value never reaches you. `"secret":"profile.taxId"` fills a field of the Mac's wallet profile (signup.md).
 - `{"cmd":"read","hints":{…},"as":"fieldName"}` — text off the page into the flow's output.
 - `{"cmd":"records","as":"ads","goal":"…","fields":[{"key":"name","says":"…"},{"key":"site","says":"…","optional":true}],"code":"return [...]"}` — a list page as rows. `code` is a function body over `root` (the document), run in a sandbox and checked; leave it out and the session's model writes one. `key` (default the first field) dedupes, `max` scrolls a feed, `min:0` lets the list be empty. A walk built from the run replays it, with no model.
-- `{"cmd":"keep","hints":{…},"env":"X_API_KEY"}` — a secret the site just showed goes straight to the store (`.env` locally, SSM in prod). The journal keeps the element and the name, never the value. This is how keys get set up.
+- `{"cmd":"keep","hints":{…},"env":"X_API_KEY"}` — a secret the site just showed goes straight to the store (`.env` locally, SSM in prod). The journal keeps the element and the name, never the value. This is how keys get set up. **A name that holds another value is never replaced silently**: the answer is `{ok:false, held:{env, mark}, warning}` and nothing was written. Default: keep the new value under another name that says what it is for (`CLOUDFLARE_PAGES_TOKEN`, never a second write to `CLOUDFLARE_API_TOKEN`). Send `"replace":"<mark>"` only when William said to replace it in this conversation, or this session minted the held value. The same rule holds for `env set`, `env push`, `env pull` (`--replace <marks>`) and `env rm` (`--confirm <mark>`).
 - `{"cmd":"captcha"}` — solves the page's captcha (a checkbox by a human click, a picture by a model, cropped in memory). Returns `{solved, kind, vendor, reason?}`. Never screenshot a captcha yourself.
 - `{"cmd":"note","text":"…"}` — a comment in the journal.
 - `{"cmd":"eval","js":"…"}` — last resort; not journaled as a click, so the recording misses it.
