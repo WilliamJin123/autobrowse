@@ -566,7 +566,14 @@ export function api(deps: ApiDeps): Hono<Env> {
       return accepted(
         c,
         jobs.start("setup", `${site}/${step}`, () =>
-          sites.setup(site, step, c.req.query("account") ?? null),
+          sites.setup(
+            site,
+            step,
+            c.req.query("account") ?? null,
+            null,
+            undefined,
+            c.req.query("confirm") === "1" ? { replace: true } : undefined,
+          ),
         ),
       );
     } catch (err) {

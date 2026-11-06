@@ -30,6 +30,8 @@ export interface ApiLeg {
   env: (name: string) => string | undefined;
   /** Keeps a secret the call made (a webhook URL) in the sink, so the answer never carries it. */
   keep?: (name: string, value: string) => Promise<void>;
+  /** The name holds a value: asked before a call that makes one to keep there, since `keep` never replaces. */
+  held?: (name: string) => Promise<boolean>;
   /** Paid keys out of credit, kept on disk (`reach/key-ring.ts`). */
   spent?: SpentKeys;
   /** Where paid keys come from: the vault, then the env names (`reach/key-source.ts`); absent, the env names. */

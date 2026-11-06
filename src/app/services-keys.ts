@@ -12,6 +12,7 @@ import {
   syncedEnvStore,
   unsharedFile,
 } from "credvault";
+import { envNameKey } from "../auth/keys.js";
 import { httpClient } from "../clients/http.js";
 import type { KeyKeeper } from "../deps/keys.js";
 import { expandHome } from "../google/auth.js";
@@ -151,11 +152,14 @@ export function keyStoreFor(settings: Settings, ssm: SSMClient = ssmFor(settings
 export function projectKeysFor(
   settings: Settings,
   ssm: SSMClient = ssmFor(settings),
-): (vendors: string[]) => Promise<{ put: string[]; removed: string[] }> {
+): (vendors: string[], o?: { replace?: boolean }) => Promise<{ put: string[]; removed: string[] }> {
   const store = keyStoreFor(settings, ssm);
   const sink = sinkFor(settings, ssm);
-  return async (vendors) =>
-    applyProjection(sink, await ownerKeysIn(store, settings.owner), { vendors });
+  return async (vendors, o) =>
+    applyProjection(sink, await ownerKeysIn(store, settings.owner), {
+      vendors,
+      ...(o?.replace ? { replace: true } : {}),
+    });
 }
 
 /**
@@ -171,6 +175,7 @@ export function keyKeeperFor(settings: Settings): KeyKeeper {
     put: (key) => store.put(key),
     get: (address) => store.get(address),
     project,
+    filledBy: (name) => envNameKey(store, settings.owner, name),
     // The stored credential the browser signs in with (`anthropic` or its `anthropic@<role>`), else the site name.
     login: async (site) => (await credentialsFor(settings, { armed: false }).keyOf(site)) ?? site,
   };

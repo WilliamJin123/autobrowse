@@ -171,11 +171,16 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   targetSchema.extend({
     cmd: z.literal("keep"),
     env: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
-    /** The name holds another value: its mark, from the refusal. Without it nothing is replaced. */
-    replace: z
+    /**
+     * Keep it as an API key in the vault at `vendor@label`, with `env` the env name that key
+     * fills. A vendor holds many keys, each under its own label. Absent: an env value only.
+     */
+    key: z
       .string()
-      .regex(/^[0-9a-f]{8}$/)
+      .regex(/^[a-z0-9-]+@[a-z0-9._-]+$/)
       .optional(),
+    /** Yes to the question the server asked about this name. Sent first, it is asked anyway. */
+    confirm: z.boolean().optional(),
   }),
   z.object({ cmd: z.literal("note"), text: z.string() }),
   /** A part of the run starts here, named: `walks cut` builds each part as its own walk. */

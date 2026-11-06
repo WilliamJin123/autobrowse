@@ -23,9 +23,12 @@ function setup(init: { env?: Record<string, string>; owner?: string } = {}) {
   registerKeyCommands(creds, { owner } as Settings, {
     keys: () => keys,
     env: () => env,
-    project: async (vendors) => {
+    project: async (vendors, o) => {
       projected.push(vendors);
-      return applyProjection(env, await ownerKeysIn(keys, owner), { vendors });
+      return applyProjection(env, await ownerKeysIn(keys, owner), {
+        vendors,
+        ...(o?.replace ? { replace: true } : {}),
+      });
     },
     audit: () => ({
       record: async (u) => void lines.push(u),
@@ -94,18 +97,55 @@ describe("creds key add", () => {
     expect(await t.keys.get("exa@second")).toBeNull();
   });
 
-  it("a new value on an existing label replaces it and records the old id", async () => {
+  it("a new value on a held label asks first; with --confirm it replaces and records the old id", async () => {
     const t = setup();
     t.paste("synthetic-a");
     await t.run("add", "exa@main", "--clipboard", "--purpose", "default");
     t.paste("synthetic-b");
-    await t.run("add", "exa@main", "--clipboard");
+    const asked = await t.run("add", "exa@main", "--clipboard").then(
+      () => "",
+      (e: Error) => e.message,
+    );
+    expect(asked).toContain("Nothing was written");
+    expect(asked).toContain(`exa@main in the key vault: id ${keyId("synthetic-a")}, 11 chars`);
+    expect(asked).toContain("Is that intended?");
+    expect(asked).toContain("yes: the same command with --confirm");
+    expect(asked).toContain("autobrowse creds key add exa@<label> --env <NAME>");
+    expect(asked).not.toContain("synthetic-");
+    expect((await t.keys.get("exa@main"))?.secret).toBe("synthetic-a");
+    expect(t.env.values.EXA_API_KEY).toBe("synthetic-a");
+    await t.run("add", "exa@main", "--clipboard", "--confirm");
     const key = await t.keys.get("exa@main");
     expect(key?.secret).toBe("synthetic-b");
     expect(key?.purposes).toEqual(["default"]);
     expect(key?.previous.map((p) => p.id)).toEqual([keyId("synthetic-a")]);
     expect(t.env.values.EXA_API_KEY).toBe("synthetic-b");
     expect(t.out()).toContain("revoke it there");
+  });
+
+  it("many keys of one vendor: each label fills its own env name; a held env name is asked about", async () => {
+    const t = setup({ env: { CF_DNS_TOKEN: "hand-set-1" } });
+    t.paste("synthetic-pages");
+    await t.run("add", "cloudflare@pages", "--clipboard", "--env", "CF_PAGES_TOKEN");
+    expect(t.env.values.CF_PAGES_TOKEN).toBe("synthetic-pages");
+    // Another key of the vendor: its own label, its own name; the first stays.
+    t.paste("synthetic-dns");
+    await expect(
+      t.run("add", "cloudflare@dns", "--clipboard", "--env", "CF_DNS_TOKEN"),
+    ).rejects.toThrow(/CF_DNS_TOKEN in the env store: 10 chars[\s\S]*Is that intended\?/);
+    expect(await t.keys.get("cloudflare@dns")).toBeNull();
+    expect(t.env.values.CF_DNS_TOKEN).toBe("hand-set-1");
+    await t.run("add", "cloudflare@dns", "--clipboard", "--env", "CF_DNS_TOKEN", "--confirm");
+    expect(t.env.values.CF_DNS_TOKEN).toBe("synthetic-dns");
+    expect(t.env.values.CF_PAGES_TOKEN).toBe("synthetic-pages");
+    // One env name, one key.
+    t.paste("synthetic-third");
+    await expect(
+      t.run("add", "cloudflare@third", "--clipboard", "--env", "CF_PAGES_TOKEN", "--confirm"),
+    ).rejects.toThrow(/cloudflare@pages already fills CF_PAGES_TOKEN/);
+    await t.run("ls");
+    expect(t.out()).toContain("env CF_PAGES_TOKEN");
+    expect(t.out()).not.toContain("synthetic-");
   });
 
   it("takes a cap and shows it", async () => {

@@ -326,7 +326,7 @@ describe("walkFlow", () => {
     const held: SecretSink = { put: vi.fn(async () => {}), get: async () => "live-token-1" };
     const third = fakeSite(SITE, "signup", { reads: { "API key": "fake-key-123" } });
     await expect(walkFlow(w, { secrets, sink: held }).run(third.fp, {})).rejects.toThrow(
-      /SCRATCH_API_KEY holds another value \(mark [0-9a-f]{8}\); nothing was written/,
+      /SCRATCH_API_KEY holds another value \(12 chars\); nothing was written/,
     );
     expect(held.put).not.toHaveBeenCalled();
     // The same value held: the keep goes through.

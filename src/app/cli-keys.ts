@@ -36,6 +36,7 @@ import {
   rotationOf,
   spendKey,
 } from "../auth/keys.js";
+import { type Held, heldLine } from "../deps/sink.js";
 import { isDefaultOwner } from "../owner.js";
 import { nextMonthUtc } from "../reach/key-ring.js";
 import { ownerKeysIn } from "../reach/key-source.js";
@@ -49,7 +50,10 @@ export interface KeysCliDeps {
   /** The store the projection writes (the sink): what `project --check` and `migrate` compare to the vault. */
   env: () => EnvStore;
   /** Writes the env names for these vendors from the vault; answers the names it put and removed. */
-  project: (vendors: string[]) => Promise<{ put: string[]; removed: string[] }>;
+  project: (
+    vendors: string[],
+    o?: { replace?: boolean },
+  ) => Promise<{ put: string[]; removed: string[] }>;
   audit: () => SecretAudit;
   /** What is on the clipboard, for `add --clipboard`. */
   paste?: () => Promise<string>;
@@ -84,8 +88,8 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
   const owner = settings.owner;
 
   /** Re-project one vendor and say which names changed. */
-  const reproject = async (vendor: string): Promise<void> => {
-    const { put, removed } = await deps.project([vendor]);
+  const reproject = async (vendor: string, o?: { replace?: boolean }): Promise<void> => {
+    const { put, removed } = await deps.project([vendor], o);
     const parts = [
       put.length ? `put ${put.join(", ")}` : "",
       removed.length ? `removed ${removed.join(", ")}` : "",
@@ -102,12 +106,20 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
   keyCmd
     .command("add <address>")
     .description(
-      "Store a key as <vendor>@<label> (value: --clipboard, else piped stdin, else a hidden prompt); an existing label takes a new value",
+      "Store a key as <vendor>@<label> (value: --clipboard, else piped stdin, else a hidden prompt). A vendor holds many keys, one label each. A label or env name that holds another value is asked about first; nothing is written until --confirm",
     )
     .option("--clipboard", "read the value from the clipboard (macOS)")
     .option(
       "--purpose <purposes...>",
       "what the key is for (`default` is the one the bare env name has)",
+    )
+    .option(
+      "--env <names...>",
+      "env names this key fills (CLOUDFLARE_PAGES_TOKEN); one name, one key per owner",
+    )
+    .option(
+      "--confirm",
+      "yes to the question the first run asked: replace the key at the label, or the value an env name holds",
     )
     .option("--via <credential>", "the login credential the key was minted from")
     .option("--vendor-id <id>", "the vendor's own name or id for the key")
@@ -123,6 +135,8 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
         o: {
           clipboard?: boolean;
           purpose?: string[];
+          env?: string[];
+          confirm?: boolean;
           via?: string;
           vendorId?: string;
           cap?: string;
@@ -160,6 +174,33 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
         const there = await store.get(keyAddress(site, account));
         const at = new Date(now()).toISOString();
         const swapped = there && keyId(there.secret) !== id;
+        const envNames = o.env ?? there?.env ?? [];
+        // Two phases (WA-1126): the first run asks and writes nothing.
+        const held: Held[] = [];
+        for (const n of envNames) {
+          const value = await deps.env().get(n);
+          if (value !== null && value !== secret && value !== there?.secret)
+            held.push({ name: n, length: value.length, where: "the env store" });
+        }
+        if ((swapped || held.length) && !o.confirm)
+          throw new Error(
+            [
+              "Nothing was written. This would replace a value already held:",
+              ...(swapped
+                ? [
+                    `  ${address} in the key vault: id ${keyId(there.secret)}, ${there.secret.length} chars${there.env.length ? `, fills ${there.env.join(", ")}` : ""}`,
+                  ]
+                : []),
+              ...held.map(heldLine),
+              "Every reader gets the new value; a key that works for them now may stop.",
+              "Is that intended?",
+              "  yes: the same command with --confirm",
+              `  no: do nothing, or keep both: autobrowse creds key add ${site}@<label> --env <NAME>`,
+              ...(swapped
+                ? [`A new value from the vendor's own mint: autobrowse creds key rotate ${address}`]
+                : []),
+            ].join("\n"),
+          );
         const key = await store.put({
           site,
           account,
@@ -171,6 +212,7 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
           ...((o.via ?? there?.via) ? { via: o.via ?? there?.via } : {}),
           ...((o.vendorId ?? there?.vendorId) ? { vendorId: o.vendorId ?? there?.vendorId } : {}),
           ...((cap ?? there?.cap) ? { cap: cap ?? there?.cap } : {}),
+          env: envNames,
           previous: [
             ...(there?.previous ?? []),
             ...(swapped
@@ -188,13 +230,15 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
           `${there ? (swapped ? "replaced" : "kept") : "added"} ${keyAddress(key.site, key.account)} (id ${id}) for ${owner}`,
         );
         if (swapped) say("the old value is still live at the vendor: revoke it there");
-        await reproject(site);
+        await reproject(site, held.length ? { replace: true } : undefined);
       },
     );
 
   keyCmd
     .command("ls")
-    .description("Keys: address, owner, purposes, status, id, uses and last use; never a value")
+    .description(
+      "Keys: address, owner, purposes, status, id, uses, last use and the env names each fills; never a value",
+    )
     .option("--vendor <vendor>", "one vendor")
     .option("--all", "revoked keys too")
     .action(async (o: { vendor?: string; all?: boolean }) => {
@@ -214,6 +258,7 @@ export function registerKeyCommands(creds: Command, settings: Settings, deps: Ke
             k.id,
             u ? `${u.uses} uses, last ${u.lastUsedAt}` : "no uses",
             k.cap ? `cap ${k.cap.amount} ${k.cap.unit}` : "",
+            k.env.length ? `env ${k.env.join(",")}` : "",
             k.via ? `via ${k.via}` : "",
           ]
             .filter(Boolean)

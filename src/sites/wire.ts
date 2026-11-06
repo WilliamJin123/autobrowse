@@ -203,6 +203,7 @@ export function sitesFor(p: SiteParts): SiteFacade {
     ...(p.render ? { render: p.render } : {}),
     env: (name) => made.get(name) ?? env(name),
     sink: {
+      get: async (name) => (await p.sink.get?.(name)) ?? null,
       put: async (name, value, o) => {
         // Held first: a rolled refresh token whose store write fails still serves this process.
         made.set(name, value);

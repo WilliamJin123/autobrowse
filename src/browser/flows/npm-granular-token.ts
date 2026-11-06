@@ -41,6 +41,8 @@ export interface GranularTokenInput {
   expiresDays?: 7 | 30 | 60 | 90;
   /** Where the token is kept when a setup step runs this; the token is never printed. */
   sink?: SecretSink;
+  /** Yes: NPM_TOKEN may hold a token, and this one replaces it (a renewal says so). */
+  replace?: boolean;
 }
 
 export interface GranularTokenResult {
@@ -80,6 +82,7 @@ export const npmGranularToken = defineFlow<GranularTokenInput, GranularTokenResu
   secret: true,
   site: "npm",
   name: "granular-token",
+  keeps: () => [NPM_TOKEN],
   async run(fp, input) {
     await fp.open("https://www.npmjs.com/settings");
     const user = await signedInUser(fp);

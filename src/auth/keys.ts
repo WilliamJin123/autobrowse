@@ -105,6 +105,18 @@ export async function rotateKey(
   return { key, old: { id: oldId, ...(old.vendorId ? { vendorId: old.vendorId } : {}) } };
 }
 
+/** The address of the owner's usable key that fills an env name (`env` on the key), or null. */
+export async function envNameKey(
+  store: Pick<KeyStore, "list">,
+  owner: string,
+  name: string,
+): Promise<string | null> {
+  const key = (await store.list()).find(
+    (k) => k.owner === owner && k.status !== "revoked" && k.env.includes(name),
+  );
+  return key?.address ?? null;
+}
+
 /** Mark a key out of credit until `until`. */
 export async function spendKey(store: KeyStore, address: string, until: Date): Promise<ApiKey> {
   const key = await getKey(store, address);

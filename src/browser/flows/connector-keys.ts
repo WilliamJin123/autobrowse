@@ -40,6 +40,8 @@ export interface ConnectorKeysInput {
   /** The app's page on its developer console (`site status connectors` shows wren's). */
   url: string;
   sink?: SecretSink;
+  /** Yes: the names may hold other keys (the console made new ones), and these replace them. */
+  replace?: boolean;
 }
 
 /** Text of the nth match, retried while the page renders. */
@@ -62,12 +64,14 @@ async function keep(
   names: readonly [string, string],
   id: string,
   secret: string,
+  replace = false,
 ) {
   // A label or a mask read by mistake must never overwrite a good key.
   if (!KEYISH.test(id) || !KEYISH.test(secret) || id === secret)
     return fp.human(`${names[0]}: the page showed no id or secret`);
-  await sink?.put(names[0], id);
-  await sink?.put(names[1], secret);
+  // Read off the console, not made here: the same values again are no replace.
+  await sink?.put(names[0], id, { replace });
+  await sink?.put(names[1], secret, { replace });
   return { kept: [...names] };
 }
 
@@ -83,7 +87,7 @@ export const hubspotConnectorKeys = defineFlow<ConnectorKeysInput, { kept: strin
     await fp.act({ kind: "click" }, { role: "button", text: "Show" }, { goal: "show the secret" });
     const id = await textAt(fp, "[role=tabpanel] p", 1);
     const secret = await textAt(fp, "[role=tabpanel] p", 3);
-    return keep(fp, input.sink, CONNECTOR_KEYS.hubspot, id, secret);
+    return keep(fp, input.sink, CONNECTOR_KEYS.hubspot, id, secret, input.replace);
   },
 });
 
@@ -112,6 +116,7 @@ export const quickbooksConnectorKeys = defineFlow<
       CONNECTOR_KEYS[input.dev ? "quickbooks-dev" : "quickbooks"],
       id,
       secret,
+      input.replace,
     );
   },
 });
@@ -142,6 +147,6 @@ export const jobberConnectorKeys = defineFlow<ConnectorKeysInput, { kept: string
       id = await after("Client ID");
       secret = await after("Client secret");
     }
-    return keep(fp, input.sink, CONNECTOR_KEYS.jobber, id, secret);
+    return keep(fp, input.sink, CONNECTOR_KEYS.jobber, id, secret, input.replace);
   },
 });

@@ -5,7 +5,7 @@
  * that lapses says when (`expiresAt`), so `needs` reopens its row in time.
  */
 import { createHash } from "node:crypto";
-import { envFileStore, type PutOptions } from "credvault";
+import { envFileStore, type PutOptions, WouldReplace } from "credvault";
 
 export interface SecretSink {
   put(name: string, value: string, o?: PutOptions): Promise<void>;
@@ -27,37 +27,41 @@ export async function heldOther(
   return held === null || held === value ? null : held;
 }
 
-/** A name that holds another value than the one about to be written. */
-export interface Clash {
+/** A name that holds another value than the one about to be written. Never the value. */
+export interface Held {
   name: string;
-  held: string;
+  length: number;
   /** Where it is held: "the store", or an env file's path. */
   where: string;
+  /** When the held value was set, when the store says. */
+  since?: string | null;
+  expiresAt?: string | null;
 }
 
+export const heldLine = (h: Held): string =>
+  `  ${h.name} in ${h.where}: ${h.length} chars${h.since ? `, set ${h.since}` : ""}${h.expiresAt ? `, lapses ${h.expiresAt}` : ""}`;
+
 /**
- * What a refused replace says (WA-1124, credvault designs/2026-11-05-no-silent-overwrite.md).
- * 2026-11-05: an agent's `keep` replaced a live Cloudflare token twice with no warning.
+ * Phase one of a replace: what would go, then yes or no (WA-1124, WA-1126;
+ * credvault designs/2026-11-05-no-silent-overwrite.md). `yes` is the same action with the confirmation.
+ * 2026-11-05: an agent's `keep` replaced a live Cloudflare token twice with no question.
  */
-export function replaceWarning(clashes: Clash[], confirm: string): string {
-  const first = clashes[0]?.name ?? "NAME";
+export function replaceQuestion(held: Held[], yes: string): string {
+  const first = held[0]?.name ?? "NAME";
   return [
-    "STOP: nothing was written. Another value is already held:",
-    ...clashes.map(
-      (c) => `  ${c.name} in ${c.where}: mark ${valueMark(c.held)}, ${c.held.length} chars`,
-    ),
-    "A replace takes the held value from every reader of the name: a working key stops working for them.",
-    "Keep both: store the new value under another name.",
-    `Replace only when the person said so in this conversation, or this session minted the held value: ${confirm}`,
-    `The way back after a wrong replace: autobrowse env history ${first} (a value only in an env file has no history).`,
+    "Nothing was written. This would replace a value already held:",
+    ...held.map(heldLine),
+    "Every reader of the name gets the new value; a key that works for them now may stop.",
+    "Is that intended?",
+    `  yes: ${yes}`,
+    "  no: do nothing, or keep both: store the new value under another name.",
+    `Say yes only when the person said so in this conversation, or this session made the held value. The way back: autobrowse env history ${first}`,
   ].join("\n");
 }
 
-/** The marks a person confirmed (`a1b2c3d4,…`); the clashes none of them covers. */
-export function unconfirmed(clashes: Clash[], replace: string | undefined): Clash[] {
-  const ok = new Set((replace ?? "").split(",").map((m) => m.trim()));
-  return clashes.filter((c) => !ok.has(valueMark(c.held)));
-}
+/** A store's refusal as the question. */
+export const questionOf = (err: WouldReplace, yes: string): string =>
+  replaceQuestion([{ name: err.key, length: err.heldLength, where: err.where }], yes);
 
 /** Upsert `NAME=value` in an env file; other lines untouched; also sets `process.env` so this process sees it. */
 export function envFileSink(path: string, env: NodeJS.ProcessEnv = process.env): SecretSink {
@@ -74,7 +78,11 @@ export function memorySink(): SecretSink & {
     values,
     expires,
     get: async (name) => values[name] ?? null,
+    // The store's rule, so a test meets the refusal a live store gives.
     async put(name, value, o) {
+      const held = values[name];
+      if (held !== undefined && held !== value && !o?.replace)
+        throw new WouldReplace(name, held.length);
       values[name] = value;
       if (o?.expiresAt) expires[name] = o.expiresAt;
       else delete expires[name];

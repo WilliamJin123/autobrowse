@@ -48,6 +48,7 @@ import {
   seeded,
 } from "./human/index.js";
 import { inPage } from "./in-page.js";
+import { asQuestion, settleKeeps } from "./keeps.js";
 import { type Hints, locate, textOf } from "./locate.js";
 import { KeyedMutex } from "./lock.js";
 import { htmlForFile, NetLog, networkOn } from "./network.js";
@@ -257,6 +258,12 @@ export interface BrowserFlow<I, O> {
    */
   profile?: "provider";
   run(fp: FlowPage, input: I): Promise<O>;
+  /**
+   * Env names the run makes a new value for and keeps. The runner asks before the first act
+   * when one holds a value (`settleKeeps`). A flow that reads a value the site already has
+   * names none: the store's own refusal covers it, and nothing is lost.
+   */
+  keeps?(input: I): readonly string[];
   /**
    * The part of `run` safe to do before anyone says yes: open the page, find the box. Armed
    * (`sites/arm`), it runs early in its own tab; the call then runs `run` there, and `run`'s
@@ -1278,7 +1285,13 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           if (reach) reach.reached = true;
         };
         if (reach) session.context.on("response", onResponse);
-        const run = tallied(() => flow.run(fp, input));
+        const run = tallied(async () => {
+          try {
+            return await flow.run(fp, await settleKeeps(flow.keeps?.(input) ?? [], input));
+          } catch (err) {
+            throw asQuestion(err);
+          }
+        });
         try {
           const out = await run.done;
           if (call) resumes?.clear(call);

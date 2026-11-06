@@ -25,7 +25,7 @@ import {
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import type { SecretAudit } from "credvault";
+import { keyId, parseKeyAddress, type SecretAudit } from "credvault";
 import type { Page } from "playwright";
 import type { z } from "zod";
 import { writeRecords } from "../agent/records.js";
@@ -82,7 +82,7 @@ import {
   type Wall,
 } from "../browser/session.js";
 import type { KeyKeeper } from "../deps/keys.js";
-import { heldOther, replaceWarning, type SecretSink, valueMark } from "../deps/sink.js";
+import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
 import { macDesktop } from "../desktop/mac.js";
 import { type Desktop, type DesktopOp, noDesktop, treeText } from "../desktop/types.js";
 import type { Effects } from "../engine/effects.js";
@@ -245,6 +245,12 @@ export interface PageChange {
   gone: number;
   /** Added rows past the cap. */
   more?: number;
+}
+
+/** The vault's key at an address; a keep with `key` needs the vault. */
+async function vaultKey(keeper: KeyKeeper | undefined, address: string) {
+  if (!keeper) throw new Error("keep: no key vault here; keep under an env name alone");
+  return keeper.get(address);
 }
 
 /**
@@ -688,6 +694,8 @@ async function serve(
   let closedWhy: string | null = null;
   /** `close` was sent: nothing of this run is left to resume. */
   let closing = false;
+  // keep's first phase: the name asked about → the mark of the value that would be written.
+  const keepAsked = new Map<string, string>();
   /** The page the command in flight acts on, as it was before the act. */
   let lookBefore: PageLook | null = null;
   /**
@@ -2397,26 +2405,69 @@ async function serve(
       }
       case "keep": {
         if (!opts.sink) throw new Error("keep needs a secret sink (SECRET_SINK / .env)");
+        const keeper = opts.workflows?.keys;
         const value = await textOf(find(c));
         if (!value) throw new Error("keep: the element is empty");
-        // Two phases (WA-1124): the refusal names the held value's mark, the replace must quote it.
+        const there = c.key ? await vaultKey(keeper, c.key) : null;
+        if (!c.key) {
+          const filled = (await keeper?.filledBy?.(c.env)) ?? null;
+          if (filled)
+            throw new Error(
+              `keep: ${c.env} is filled by the vault key ${filled}. A second key takes its own address and env name: add "key":"${filled.split("@")[0]}@<label>". A new value for ${filled} is a person's call: autobrowse creds key rotate ${filled}`,
+            );
+        } else if (there && there.secret !== value)
+          throw new Error(
+            `keep: ${c.key} already holds another key (id ${keyId(there.secret)}). A second key takes its own label; a new value for this one is a person's call: autobrowse creds key rotate ${c.key}`,
+          );
+        // Two phases (WA-1126): phase one asks and writes nothing; a yes counts only for a
+        // question this session asked about this name and this value.
         const held = await heldOther(opts.sink, c.env, value);
-        if (held !== null && c.replace !== valueMark(held))
+        if (held !== null) {
+          const mark = valueMark(value);
+          if (!(c.confirm === true && keepAsked.get(c.env) === mark)) {
+            keepAsked.set(c.env, mark);
+            const row: Held = { name: c.env, length: held.length, where: "the store" };
+            return {
+              ok: false,
+              kept: false,
+              held: { env: c.env, length: held.length },
+              question: replaceQuestion([row], 'send the same command with "confirm":true'),
+            };
+          }
+        }
+        keepAsked.delete(c.env);
+        if (c.key) {
+          if (!keeper) throw new Error("keep: no key vault here; keep under an env name alone");
+          const { site, account } = parseKeyAddress(c.key);
+          if (!there)
+            await keeper.put({
+              site,
+              account,
+              owner: keeper.owner,
+              secret: value,
+              status: "live",
+              madeAt: new Date().toISOString(),
+              via: await keeper.login(site),
+              env: [c.env],
+            });
+          else if (!there.env.includes(c.env))
+            await keeper.put({ ...there, env: [...there.env, c.env] });
+          // The projection writes the env name; not journaled: a compiled mint is the vendor's own workflow.
+          await keeper.project([site], { replace: held !== null });
           return {
-            ok: false,
-            kept: false,
-            held: { env: c.env, mark: valueMark(held), length: held.length },
-            warning: replaceWarning(
-              [{ name: c.env, held, where: "the store" }],
-              `send the same command with "replace":"${valueMark(held)}"`,
-            ),
+            key: c.key,
+            id: keyId(value),
+            env: c.env,
+            length: value.length,
+            ...(held !== null ? { replaced: true } : {}),
           };
-        await opts.sink.put(c.env, value);
+        }
+        await opts.sink.put(c.env, value, { replace: held !== null });
         journalAct(c, (target) => ({ kind: "keep", target, env: c.env }));
         return {
           env: c.env,
           length: value.length,
-          ...(held !== null ? { replaced: valueMark(held) } : {}),
+          ...(held !== null ? { replaced: true } : {}),
         };
       }
       case "captcha": {

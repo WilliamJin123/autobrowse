@@ -215,6 +215,14 @@ interface Channel {
   topic?: string | null;
 }
 const WEBHOOK_NAME = "Wren";
+
+/** Before a webhook is made: its URL is kept under `name`, and a held name is never replaced. */
+async function freeName(leg: ApiLeg, name: string): Promise<void> {
+  if (await leg.held?.(name))
+    throw new Error(
+      `discord: ${name} already holds a value; no webhook was made. Give another name, or remove it first: autobrowse env rm ${name}`,
+    );
+}
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
@@ -268,6 +276,7 @@ export async function applyLayout(leg: ApiLeg, guild: string, layout: Layout) {
         const hooks = await call<Webhook[]>(leg, "GET", `/channels/${ch.id}/webhooks`);
         let hook = hooks.find((w) => w.name === WEBHOOK_NAME && w.token);
         if (!hook) {
+          await freeName(leg, want.webhook);
           hook = await call<Webhook>(leg, "POST", `/channels/${ch.id}/webhooks`, {
             name: WEBHOOK_NAME,
           });
@@ -482,6 +491,7 @@ export const discord: SiteApi = {
       }),
       api: async ({ channel, name, keep }, leg) => {
         if (!leg.keep) throw new Error("discord: no sink to keep the webhook URL in");
+        await freeName(leg, keep);
         const w = await call<Webhook>(leg, "POST", `/channels/${channel}/webhooks`, { name });
         if (!w.url) throw new Error("discord: the new webhook came back without its URL");
         await leg.keep(keep, w.url);

@@ -405,16 +405,27 @@ export function registerSiteCommands(
       "--input <json|file>",
       "over the step's input, key by key (a token's name, scopes, expiry); `site status` shows what it takes",
     )
+    .option(
+      "--confirm",
+      "yes to the question the first run asked: a name the step makes holds a value, and the new one replaces it",
+    )
     .action(
       async (
         name: string,
         step: string,
-        o: { account?: string; profile?: string; input?: string },
+        o: { account?: string; profile?: string; input?: string; confirm?: boolean },
       ) => {
         const sites = local().backend.sites;
         if (!sites) throw new Error("no site apis here");
         const input = o.input ? ((await readJson(o.input)) as Record<string, unknown>) : undefined;
-        const { made } = await sites.setup(name, step, o.account ?? null, o.profile ?? null, input);
+        const { made } = await sites.setup(
+          name,
+          step,
+          o.account ?? null,
+          o.profile ?? null,
+          input,
+          o.confirm ? { replace: true } : undefined,
+        );
         console.log(`kept ${made.join(", ")}`);
       },
     );

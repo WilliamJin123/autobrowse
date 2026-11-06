@@ -581,7 +581,7 @@ function outcome(s: StepRecord): string {
     code?: number;
     stdout?: string;
     stderr?: string;
-    held?: { env: string; mark: string };
+    held?: { env: string; length: number };
   } | null;
   if (s.step?.action.cmd === "read" && r?.text !== undefined)
     return `ok: ${JSON.stringify(r.text.slice(0, 300))}`;
@@ -593,9 +593,9 @@ function outcome(s: StepRecord): string {
     if (r.code !== undefined)
       return `exit ${r.code}${r.stdout ? `\n${r.stdout.slice(0, 1_500)}` : ""}${r.stderr ? `\nstderr: ${r.stderr.slice(0, 500)}` : ""}`;
   }
-  // The agent's keep has no replace: a held value stays until a person says so.
+  // The agent's keep has no confirm: a held value stays until a person says so.
   if (s.step?.action.cmd === "keep" && r?.held)
-    return `NOT KEPT: ${r.held.env} already holds another value (mark ${r.held.mark}). Nothing was written. Keep it under another env name that says what this key is for; if no other name fits, stop with human.`;
+    return `NOT KEPT: ${r.held.env} already holds another value (${r.held.length} chars). Nothing was written. Keep it under another env name that says what this key is for; if no other name fits, stop with human.`;
   return "ok";
 }
 

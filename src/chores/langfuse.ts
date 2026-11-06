@@ -54,7 +54,8 @@ export async function wireTracing(
   const endpoint = `${base}/api/public/otel`;
   const wrote: string[] = [];
   const put = async (name: string, value: string) => {
-    await env.put(name, value);
+    // Derived from the key pair: a new pair makes new values.
+    await env.put(name, value, { replace: true });
     wrote.push(name);
   };
   await put(LANGFUSE_BASE_URL, base);

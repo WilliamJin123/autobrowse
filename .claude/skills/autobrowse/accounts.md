@@ -41,7 +41,9 @@ autobrowse env history <NAME>              # each version the store holds: date,
 autobrowse env restore <NAME> <version>    # an earlier version back, in the store and the env file
 ```
 
-**No replace without a yes.** `env set`, `env push`, `env pull` and explore `keep` write nothing when a name already holds another value: they print "STOP", the held value's mark and the line to replace it (`--replace <marks>`). Default: keep both, the new value under another name that says what it is for. Run the replace line only when William said to replace it in this conversation, or this session minted the held value. `env rm` deletes every version: it needs `--confirm <mark>` and William's yes.
+**No replace without a yes.** Two phases, everywhere a stored value could be replaced or removed (`env set|push|pull|rm`, `creds key add`, `site setup`, explore `keep`, a minting flow). Phase one writes nothing and asks: what is held (name, place, length, date; never the value), "Is that intended?", then the yes line and the no line. Phase two is the yes line: the same command with `--confirm` (explore: `"confirm":true`; a flow or workflow: `"replace": true`). Default is no: keep both, the new value under another name or vault label that says what it is for. Run the yes line only when William said yes to that question in this conversation, or this session made the held value. `env rm` keeps the last value under `removed/` in the store.
+
+**Many keys per vendor.** The vault holds a list of keys for each vendor, one label each: `autobrowse creds key add cloudflare@pages --env CLOUDFLARE_PAGES_TOKEN --clipboard`. `--env` names the env names that key fills; one name, one key. `creds key ls --vendor <vendor>` lists labels, ids and env names, never a value. A name a vault key fills is not set by hand: `creds key rotate <address>` gives it a new value.
 
 A wrong value under an existing name: `env history`, then `env restore`. The store keeps the newest 100 versions.
 

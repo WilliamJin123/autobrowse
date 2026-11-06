@@ -80,7 +80,8 @@ const accountId: Step<"account-id"> = {
       deps.browser.run(cloudflareAccountId, undefined),
     );
     await fx.run("write CLOUDFLARE_ACCOUNT_ID", () =>
-      deps.sink.put("CLOUDFLARE_ACCOUNT_ID", accountId),
+      // Reached with no id here, or with force: the page's id is the account's own.
+      deps.sink.put("CLOUDFLARE_ACCOUNT_ID", accountId, { replace: true }),
     );
     memo.accountId = accountId;
     return done(`account ${accountId.slice(0, 6)}…`);
@@ -106,7 +107,8 @@ const apiToken: Step<"api-token"> = {
         permissions: plan.permissions,
       });
       if (!(await deps.verifyCloudflareToken(token))) return "minted a token the API rejects";
-      await deps.sink.put(plan.envKey, token);
+      // The held token failed the API's check, or the plan said force: the new one replaces it.
+      await deps.sink.put(plan.envKey, token, { replace: true });
       return "ok";
     });
     if (outcome !== "ok") throw new Error(outcome);

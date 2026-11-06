@@ -104,14 +104,12 @@ describe("autobrowse env", () => {
   it("pulls into a 0600 env file (merged), as exports, or to stdout; sidecars for multi-line values", async () => {
     const t = setup({ A: "1", SA: '{\n "k": 1\n}', B: "2" });
     writeFileSync(join(t.dir, ".env"), "LOCAL=keep\nA=old\n");
-    // A file value the store never held has no history: the pull writes nothing until its mark is quoted.
+    // A file value the store never held has no history: the pull asks first and writes nothing.
     await expect(t.run("pull")).rejects.toThrow(
-      new RegExp(
-        `STOP: nothing was written[^]*A in .*: mark ${valueMark("old")}[^]*--replace ${valueMark("old")}`,
-      ),
+      /Nothing was written[\s\S]*A in .*: 3 chars[\s\S]*Is that intended\?[\s\S]*yes: autobrowse env pull --confirm/,
     );
     expect(readFileSync(join(t.dir, ".env"), "utf8")).toBe("LOCAL=keep\nA=old\n");
-    await t.run("pull", "--replace", valueMark("old"));
+    await t.run("pull", "--confirm");
     const env = readFileSync(join(t.dir, ".env"), "utf8");
     expect(env).toBe(`LOCAL=keep\nA=1\nB=2\nSA=${join(t.dir, "sa.json")}\n`);
     expect(statSync(join(t.dir, ".env")).mode & 0o777).toBe(0o600);
@@ -155,10 +153,12 @@ describe("autobrowse env", () => {
       "X",
       "Y",
     ]);
-    // A remove deletes every version: refused until the held value's mark is quoted.
-    await expect(t.run("rm", "X")).rejects.toThrow(/STOP: nothing was removed/);
+    // A remove asks first; the same command with --confirm is the yes.
+    await expect(t.run("rm", "X")).rejects.toThrow(
+      /Nothing was removed[\s\S]*Is that intended\?[\s\S]*yes: autobrowse env rm X --confirm/,
+    );
     expect(t.store.values.X).toBe("1");
-    await t.run("rm", "X", "--confirm", valueMark("1"));
+    await t.run("rm", "X", "--confirm");
     expect(t.store.values.X).toBeUndefined();
     expect(t.said.at(-1)).toBe("removed X");
   });
@@ -178,30 +178,24 @@ describe("autobrowse env", () => {
     await t.run("set", "ONLY_THERE", "--clipboard", "--store-only");
     expect(readFileSync(join(t.dir, ".env"), "utf8")).not.toContain("ONLY_THERE");
   });
-  it("no set or push replaces a held value until the second run quotes its mark", async () => {
+  it("no set or push replaces a held value until the second run confirms", async () => {
     const t = setup({ CF_TOKEN: "live-token-1" });
     t.paste("other-token-2");
     const refusal = await t.run("set", "CF_TOKEN", "--clipboard").then(
       () => "",
       (e: Error) => e.message,
     );
-    expect(refusal).toContain("STOP: nothing was written");
-    expect(refusal).toContain(`CF_TOKEN in the store: mark ${valueMark("live-token-1")}, 12 chars`);
-    expect(refusal).toContain(
-      `autobrowse env set CF_TOKEN --clipboard --replace ${valueMark("live-token-1")}`,
-    );
+    expect(refusal).toContain("Nothing was written");
+    expect(refusal).toContain("CF_TOKEN in the store: 12 chars");
+    expect(refusal).toContain("Is that intended?");
+    expect(refusal).toContain("yes: autobrowse env set CF_TOKEN --clipboard --confirm");
+    expect(refusal).toContain("no: do nothing, or keep both");
     expect(refusal).not.toContain("live-token-1");
     expect(refusal).not.toContain("other-token-2");
     expect(t.store.values.CF_TOKEN).toBe("live-token-1");
     expect(existsSync(join(t.dir, ".env"))).toBe(false);
 
-    // A wrong mark is no confirmation.
-    await expect(t.run("set", "CF_TOKEN", "--clipboard", "--replace", "00000000")).rejects.toThrow(
-      /STOP/,
-    );
-    expect(t.store.values.CF_TOKEN).toBe("live-token-1");
-
-    await t.run("set", "CF_TOKEN", "--clipboard", "--replace", valueMark("live-token-1"));
+    await t.run("set", "CF_TOKEN", "--clipboard", "--confirm");
     expect(t.store.values.CF_TOKEN).toBe("other-token-2");
     expect(t.said.join("\n")).toContain(
       `replaced CF_TOKEN in the store (${valueMark("live-token-1")} → ${valueMark("other-token-2")})`,
@@ -216,12 +210,10 @@ describe("autobrowse env", () => {
     const p = setup({ B: "held" });
     writeFileSync(join(p.dir, ".env"), "A=1\nB=new\n");
     await expect(p.run("push", "A", "B")).rejects.toThrow(
-      new RegExp(
-        `B in the store: mark ${valueMark("held")}[^]*env push A B --replace ${valueMark("held")}`,
-      ),
+      /B in the store: 4 chars[\s\S]*yes: autobrowse env push A B --confirm/,
     );
     expect(p.store.values).toEqual({ B: "held" });
-    await p.run("push", "A", "B", "--replace", valueMark("held"));
+    await p.run("push", "A", "B", "--confirm");
     expect(p.store.values).toEqual({ A: "1", B: "new" });
   });
 
@@ -230,7 +222,7 @@ describe("autobrowse env", () => {
     writeFileSync(join(t.dir, ".env"), "ONLY_HERE=local-1\n");
     t.paste("fresh-2");
     await expect(t.run("set", "ONLY_HERE", "--clipboard")).rejects.toThrow(
-      new RegExp(`ONLY_HERE in .*\\.env: mark ${valueMark("local-1")}`),
+      /ONLY_HERE in .*\.env: 7 chars/,
     );
     expect(t.store.values.ONLY_HERE).toBeUndefined();
 
@@ -254,7 +246,7 @@ describe("autobrowse env", () => {
     await run("pull", "TOKEN");
     expect(readFileSync(join(dir, ".env"), "utf8")).toBe("TOKEN=rotated-2\n");
     writeFileSync(join(dir, ".env"), "LOST=never-stored\n");
-    await expect(run("pull", "LOST")).rejects.toThrow(/STOP: nothing was written/);
+    await expect(run("pull", "LOST")).rejects.toThrow(/Nothing was written/);
     expect(readFileSync(join(dir, ".env"), "utf8")).toBe("LOST=never-stored\n");
   });
 

@@ -7,6 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { Command } from "commander";
+import { envNameKey } from "../auth/keys.js";
 import { cloudflare } from "../clients/cloudflare.js";
 import { httpClient } from "../clients/http.js";
 import type { GateName } from "../engine/effects.js";
@@ -66,6 +67,7 @@ import {
   inboxActivityDepsFor,
   inboxFleetDepsFor,
   keyKeeperFor,
+  keyStoreFor,
   keysDepFor,
   LOCAL_WORKFLOWS,
   loadDataLogins,
@@ -972,11 +974,13 @@ registerAccountsCommands(program, () => ({
   env: (n) => process.env[n],
   envNames: () => Object.keys(process.env),
   workspaceDomain: settings.googleWorkspaceDomain?.toLowerCase() ?? null,
-  push: (text) => envStoreFor(settings).put("AUTOBROWSE_ACCOUNTS", text),
+  // The list is this command's own: each push is the whole list again.
+  push: (text) => envStoreFor(settings).put("AUTOBROWSE_ACCOUNTS", text, { replace: true }),
 }));
 registerEnvCommands(program, settings, {
   store: () => envStoreFor(settings),
   versions: (name) => envVersions(settings, name),
+  filledBy: (name) => envNameKey(keyStoreFor(settings), settings.owner, name),
 });
 registerSettingsCommands(program, settings);
 registerDesktopCommands(program, tmpdir());

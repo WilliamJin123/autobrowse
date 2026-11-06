@@ -626,8 +626,22 @@ export function registerRecordCommands(
           });
           console.log(`${site}: ${made.note}`);
           if (made.token) {
-            await sinkFor(settings).put(made.token.name, made.token.value);
-            console.log(`kept its token as ${made.token.name} (env list)`);
+            const { WouldReplace } = await import("credvault");
+            // Another account's token under the name stays: this account mints its own later.
+            const kept = await sinkFor(settings)
+              .put(made.token.name, made.token.value)
+              .then(
+                () => true,
+                (err: unknown) => {
+                  if (!(err instanceof WouldReplace)) throw err;
+                  return false;
+                },
+              );
+            console.log(
+              kept
+                ? `kept its token as ${made.token.name} (env list)`
+                : `${made.token.name} holds another value: this account's token was not kept (mint one: autobrowse site setup ${site} token)`,
+            );
           }
           const store = credentialsFor(settings);
           const held = await store.get(key);

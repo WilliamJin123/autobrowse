@@ -135,7 +135,7 @@ export function registerAuthCommands(
   registerKeyCommands(creds, settings, {
     keys: () => keyStoreFor(settings),
     env: () => sinkFor(settings),
-    project: (vendors) => projectKeysFor(settings)(vendors),
+    project: (vendors, o) => projectKeysFor(settings)(vendors, o),
     audit: () => auditFor(settings),
     ...(start ? { start } : {}),
   });

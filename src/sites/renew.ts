@@ -135,7 +135,10 @@ export async function renewDue(
   for (const r of plan.due) {
     before?.(r);
     try {
-      const { made } = await facade.setup(r.site, r.step, r.account);
+      // Due because the held value lapses or was refused: making it again is the plan.
+      const { made } = await facade.setup(r.site, r.step, r.account, null, undefined, {
+        replace: true,
+      });
       out.push({ ...r, ok: true, made });
     } catch (err) {
       out.push({

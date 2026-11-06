@@ -17,6 +17,8 @@ export interface CalcomKeyInput {
   name: string;
   /** Where the key is kept; it is never printed or returned. */
   sink?: SecretSink;
+  /** Yes: CALCOM_API_KEY may hold a key, and this one replaces it. */
+  replace?: boolean;
 }
 
 /** `cal_live_…` (`cal_` on older accounts). */
@@ -26,6 +28,7 @@ export const calcomApiKey = defineFlow<CalcomKeyInput, { kept: string }>({
   secret: true,
   site: "calcom",
   name: "api-key",
+  keeps: () => [CALCOM_API_KEY],
   async run(fp, input) {
     await fp.open("https://app.cal.com/settings/developer/api-keys");
     await fp.act({ kind: "click" }, { role: "button", name: "New" }, { goal: "start a key" });

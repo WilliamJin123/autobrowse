@@ -8,7 +8,7 @@ import { memoryAudit } from "credvault";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { compile } from "../src/compiler/index.js";
-import { memorySink, valueMark } from "../src/deps/sink.js";
+import { memorySink } from "../src/deps/sink.js";
 import { fakeDesktop } from "../src/desktop/types.js";
 import {
   journalFileFor,
@@ -305,29 +305,33 @@ describe("explore mode", () => {
     const kept = await send({ cmd: "keep", hints: { css: "#key" }, env: "TEST_MINTED_KEY" });
     expect(kept.body).toEqual({ env: "TEST_MINTED_KEY", length: 54 });
     expect(sink.values.TEST_MINTED_KEY).toMatch(/^sk-ant-minted-key-/);
-    // The same value again is no replace. Another value under the name: refused, nothing written,
-    // nothing journaled, until the command quotes the held value's mark.
+    // The same value again is no replace. Another value under the name: asked, nothing written,
+    // nothing journaled, until the same command comes back with the yes.
     expect(
       (await send({ cmd: "keep", hints: { css: "#key" }, env: "TEST_MINTED_KEY" })).body,
     ).toEqual({ env: "TEST_MINTED_KEY", length: 54 });
     sink.values.TEST_HELD = "live-token-1";
-    const notKept = await send({ cmd: "keep", hints: { css: "#key" }, env: "TEST_HELD" });
+    // A yes sent before any question is asked anyway: the answer is the question.
+    const keepHeld = { cmd: "keep", hints: { css: "#key" }, env: "TEST_HELD" };
+    const notKept = await send({ ...keepHeld, confirm: true });
     expect(notKept.body).toMatchObject({
       ok: false,
       kept: false,
-      held: { env: "TEST_HELD", mark: valueMark("live-token-1"), length: 12 },
+      held: { env: "TEST_HELD", length: 12 },
     });
-    expect(notKept.body.warning).toContain("STOP: nothing was written");
-    expect(notKept.body.warning).toContain(`"replace":"${valueMark("live-token-1")}"`);
+    expect(notKept.body.question).toContain("Nothing was written");
+    expect(notKept.body.question).toContain("TEST_HELD in the store: 12 chars");
+    expect(notKept.body.question).toContain("Is that intended?");
+    expect(notKept.body.question).toContain('"confirm":true');
     expect(JSON.stringify(notKept.body)).not.toContain("live-token-1");
     expect(sink.values.TEST_HELD).toBe("live-token-1");
-    const wrong = { cmd: "keep", hints: { css: "#key" }, env: "TEST_HELD", replace: "00000000" };
-    expect((await send(wrong)).body.ok).toBe(false);
+    // Without the yes it asks again.
+    expect((await send(keepHeld)).body.ok).toBe(false);
     expect(sink.values.TEST_HELD).toBe("live-token-1");
-    expect((await send({ ...wrong, replace: valueMark("live-token-1") })).body).toEqual({
+    expect((await send({ ...keepHeld, confirm: true })).body).toEqual({
       env: "TEST_HELD",
       length: 54,
-      replaced: valueMark("live-token-1"),
+      replaced: true,
     });
     expect(sink.values.TEST_HELD).toMatch(/^sk-ant-minted-key-/);
 

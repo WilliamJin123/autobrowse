@@ -38,6 +38,8 @@ export const planSchema = z.object({
     .regex(/^[A-Z_][A-Z0-9_]*$/, "an env name")
     .default("GOOGLE_OAUTH_CLIENT_SECRET")
     .describe("Env name the client secret is kept as"),
+  /** Yes: the two names may hold a client, and the new one replaces it. */
+  replace: z.boolean().default(false),
 });
 export type Plan = z.infer<typeof planSchema>;
 
@@ -91,11 +93,13 @@ export interface ConsentAndClientInput {
   idEnv: string;
   secretEnv: string;
   sink: SecretSink;
+  replace?: boolean;
 }
 
 const consentAndClientFlow = defineFlow<ConsentAndClientInput, void>({
   site: "google",
   name: "consent-and-client",
+  keeps: (input) => [input.idEnv, input.secretEnv],
   async run(fp, input) {
     await fp.open(
       `https://console.cloud.google.com/auth/overview?project=${encodeURIComponent(input.project)}`,
@@ -210,6 +214,7 @@ const consentAndClient: Step<"consent-and-client"> = {
         idEnv: plan.idEnv,
         secretEnv: plan.secretEnv,
         sink: deps.sink,
+        replace: plan.replace,
       }),
     );
     // TODO proof: GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are in the env store

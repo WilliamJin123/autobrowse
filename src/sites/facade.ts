@@ -310,6 +310,8 @@ export interface SiteFacade {
     profile?: string | null,
     /** Over the step's own input, key by key: a token's name, scopes, expiry for this run. */
     input?: Record<string, unknown>,
+    /** `replace`: yes to the question a step asks when a name it makes holds a value. */
+    o?: { replace?: boolean },
   ): Promise<{ made: readonly string[] }>;
   /**
    * Make again every kept token that lapses within the renew window, by the
@@ -422,7 +424,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
     deps.http,
     deps.env,
     deps.now,
-    (name, value) => deps.sink.put(name, value),
+    // The site rolled it: the old one is dead.
+    (name, value) => deps.sink.put(name, value, { replace: true }),
     deps.minted,
   );
   const identityOf = async (
@@ -1041,7 +1044,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       await revokeGrant(deps.http, spec, deps.env, token);
       return { revoked: [kept] };
     },
-    async setup(name, stepName, account, asProfile, over) {
+    async setup(name, stepName, account, asProfile, over, o) {
       const s = site(name);
       const step = s.setup.find((x) => x.name === stepName);
       if (!step) throw new SiteError(404, `no setup step ${stepName} on ${name}`);
@@ -1067,6 +1070,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           ),
           ...over,
           ...("flow" in step.how ? { sink: deps.sink } : {}),
+          // The yes to a flow's replace question (`settleKeeps`).
+          ...(o?.replace ? { replace: true } : {}),
         };
         await run(input);
         return { made: step.makes };
@@ -1099,6 +1104,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         ...(deps.oauthPort ? { port: deps.oauthPort } : {}),
       });
       const made: string[] = [];
+      // A consent's names are the account's own grant: a new consent for it replaces the old.
+      const OWN = { replace: true } as const;
       // Kept with its lapse date, so `renew` consents again before it stops working.
       const expiresAt = got.expiresIn
         ? { expiresAt: new Date((deps.now?.() ?? Date.now()) + got.expiresIn * 1000).toISOString() }
@@ -1113,13 +1120,13 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           // One real copy; every other name points at it. A site that rolls the refresh
           // token on each use (X) would leave a second copy dead after the first mint.
           const real = accountEnv(spec.refreshToken, names[0] ?? null);
-          await deps.sink.put(at, at === real ? got.refreshToken : pointTo(real));
+          await deps.sink.put(at, at === real ? got.refreshToken : pointTo(real), OWN);
           made.push(at);
         }
         // The access token itself only when nothing mints one (no refresh token came back).
         if (spec.accessToken && !got.refreshToken) {
           const at = accountEnv(spec.accessToken, as);
-          await deps.sink.put(at, got.accessToken, expiresAt);
+          await deps.sink.put(at, got.accessToken, { ...expiresAt, ...OWN });
           made.push(at);
         }
       }
@@ -1130,7 +1137,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         );
       // What the token may do, so a route whose grant this consent added moves to the API.
       for (const as of names)
-        await deps.sink.put(accountEnv(siteEnv(name, "SCOPES"), as), got.scopes.join(" "));
+        await deps.sink.put(accountEnv(siteEnv(name, "SCOPES"), as), got.scopes.join(" "), OWN);
       return { made };
     },
   };

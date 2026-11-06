@@ -32,12 +32,15 @@ export interface DiscordBotInput {
   name: string;
   /** Where the app id and token are kept; the token is never printed or returned. */
   sink?: SecretSink;
+  /** Yes: the names may hold another application's id and token, and these replace them. */
+  replace?: boolean;
 }
 
 export const discordBotToken = defineFlow<DiscordBotInput, { appId: string; kept: string }>({
   secret: true,
   site: "discord",
   name: "bot-token",
+  keeps: () => [DISCORD_APP_ID, DISCORD_BOT_TOKEN],
   async run(fp, input) {
     await fp.open(PORTAL);
     if (await fp.has(SKIP, 3_000))

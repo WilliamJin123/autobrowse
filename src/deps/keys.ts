@@ -9,8 +9,16 @@ import type { ApiKey, ApiKeyInput } from "credvault";
 export interface KeyKeeper {
   put(key: ApiKeyInput): Promise<ApiKey>;
   get(address: string): Promise<ApiKey | null>;
-  /** Make the env names for these vendors equal the vault's keys; answers the names, never values. */
-  project(vendors: string[]): Promise<{ put: string[]; removed: string[] }>;
+  /**
+   * Make the env names for these vendors equal the vault's keys; answers the names, never values.
+   * `replace`: a key's own env name may hold a value the key never had (a person said yes).
+   */
+  project(
+    vendors: string[],
+    o?: { replace?: boolean },
+  ): Promise<{ put: string[]; removed: string[] }>;
+  /** The key that fills an env name (`cloudflare@pages`), or null. Absent: not known here. */
+  filledBy?(name: string): Promise<string | null>;
   /** Whose keys these are. */
   owner: string;
   /** The stored login a browser on `site` signs in with (`anthropic`, `anthropic@william`). */

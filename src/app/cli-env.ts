@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import {
   type EnvEntry,
+  type EnvListing,
   type EnvStore,
   isProjectedName,
   parseDotenv,
@@ -20,7 +21,7 @@ import {
   toExports,
   upsertDotenv,
 } from "credvault";
-import { type Clash, replaceWarning, unconfirmed, valueMark } from "../deps/sink.js";
+import { type Held, heldLine, replaceQuestion, valueMark } from "../deps/sink.js";
 import { expandHome } from "../google/auth.js";
 import { isDefaultOwner } from "../owner.js";
 import type { Settings } from "./config.js";
@@ -37,7 +38,17 @@ export interface EnvCliDeps {
   paste?: () => Promise<string>;
   /** Each version of one name the store still holds, oldest first. */
   versions?: (name: string) => Promise<EnvVersion[]>;
+  /** The vault key that fills an env name (`cloudflare@pages`), or null. Absent: not checked. */
+  filledBy?: (name: string) => Promise<string | null>;
 }
+
+const heldInStore = (name: string, value: string, row?: EnvListing): Held => ({
+  name,
+  length: value.length,
+  where: "the store",
+  since: row?.updatedAt ?? null,
+  expiresAt: row?.expiresAt ?? null,
+});
 
 /** Says which versions hold the same value, never the value. */
 const mark = valueMark;
@@ -46,28 +57,24 @@ interface PullOptions {
   out: string;
   export?: boolean;
   stdout?: boolean;
-  replace?: string;
+  confirm?: boolean;
 }
 
 interface SetOptions {
   clipboard?: boolean;
   out: string;
   storeOnly?: boolean;
-  /** Marks of the held values this set may replace. */
-  replace?: string;
+  confirm?: boolean;
 }
 
-const REPLACE_FLAG = [
-  "--replace <marks>",
-  "a name holds another value: replace it. The marks (a,b) are the ones the refusal printed",
+const CONFIRM_FLAG = [
+  "--confirm",
+  "yes to the question the first run asked: replace the value a name holds",
 ] as const;
 
-/** Two phases: the refusal names each held value's mark, the second run must quote them. */
-function refuseClashes(clashes: Clash[], replace: string | undefined, again: string): void {
-  const open = unconfirmed(clashes, replace);
-  if (!open.length) return;
-  const marks = [...new Set(clashes.map((c) => valueMark(c.held)))].join(",");
-  throw new Error(replaceWarning(open, `${again} --replace ${marks}`));
+/** Two phases: the first run asks and writes nothing; the same command with --confirm is the yes. */
+function askFirst(held: Held[], confirm: boolean | undefined, again: string): void {
+  if (held.length && !confirm) throw new Error(replaceQuestion(held, `${again} --confirm`));
 }
 
 /** The name's value in an env file; null when the file or the name is absent. */
@@ -127,6 +134,13 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
     if (isDefaultOwner(settings.owner))
       say("the box reads the store on its next deploy (push to main)");
   };
+  // A name a vault key fills is the projection's: a hand-set value would split env from vault.
+  const vaultRefusal = async (name: string): Promise<string | null> => {
+    const address = (await deps.filledBy?.(name)) ?? null;
+    return address
+      ? `${name} is filled by the vault key ${address}. A new value for it: autobrowse creds key rotate ${address} --clipboard. A second key: autobrowse creds key add ${address.split("@")[0]}@<label> --env <NAME> --clipboard`
+      : null;
+  };
   const env = program
     .command("env")
     .description(
@@ -167,7 +181,7 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
     .option("--out <file>", "env file to upsert into", settings.envFile)
     .option("--export", "print `export NAME='…'` lines to stdout instead of writing a file")
     .option("--stdout", "print KEY=VALUE lines to stdout instead of writing a file")
-    .option(...REPLACE_FLAG)
+    .option(...CONFIRM_FLAG)
     .action(async (names: string[], o: PullOptions) => {
       const all = await deps.store().all();
       const missing = names.filter((n) => !all.some((e) => e.name === n));
@@ -199,15 +213,15 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       if (o.stdout) return out(text);
       // A file value the store held before is a rotation reaching this machine: it goes.
       // One the store never held exists only here, with no history: that needs a yes.
-      const clashes: Clash[] = [];
+      const held: Held[] = [];
       for (const e of entries) {
         const local = /[\r\n]/.test(e.value) ? null : localValue(file, e.name);
         if (local === null || local === e.value) continue;
         const before = deps.versions ? await deps.versions(e.name) : [];
         if (!before.some((v) => v.value === local))
-          clashes.push({ name: e.name, held: local, where: file });
+          held.push({ name: e.name, length: local.length, where: file });
       }
-      refuseClashes(clashes, o.replace, `autobrowse env pull ${names.join(" ")}`.trim());
+      askFirst(held, o.confirm, `autobrowse env pull ${names.join(" ")}`.trim());
       await mkdir(dirname(file), { recursive: true });
       for (const [path, value] of sidecars) await writeSecretFile(path, value);
       const current = existsSync(file) ? await readFile(file, "utf8") : "";
@@ -238,8 +252,8 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       "Values from an env file into the store: named ones from .env, or every key of --from <file>",
     )
     .option("--from <file>", "env file to read (default .env; required when no names are given)")
-    .option(...REPLACE_FLAG)
-    .action(async (names: string[], o: { from?: string; replace?: string }) => {
+    .option(...CONFIRM_FLAG)
+    .action(async (names: string[], o: { from?: string; confirm?: boolean }) => {
       if (!names.length && !o.from)
         throw new Error("name what to push, or --from <file> to push every key in a file");
       const file = resolve(expandHome(o.from ?? settings.envFile));
@@ -264,17 +278,18 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
         say(`already in the store, not in ${file}: ${missing.join(", ")}`);
       }
       const there = await store.getMany(chosen.map((e) => e.name));
-      refuseClashes(
+      const rows = new Map((await store.list()).map((r) => [r.name, r]));
+      askFirst(
         chosen.flatMap((e) => {
           const held = there[e.name];
           return held === undefined || held === e.value
             ? []
-            : [{ name: e.name, held, where: "the store" }];
+            : [heldInStore(e.name, held, rows.get(e.name))];
         }),
-        o.replace,
+        o.confirm,
         `autobrowse env push ${o.from ? `--from ${o.from}` : names.join(" ")}`,
       );
-      for (const e of chosen) await store.put(e.name, e.value);
+      for (const e of chosen) await store.put(e.name, e.value, { replace: o.confirm === true });
       if (chosen.length) say(`pushed ${chosen.length}: ${chosen.map((e) => e.name).join(", ")}`);
       boxHint();
     });
@@ -287,10 +302,10 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
     .option("--clipboard", "read the value from the clipboard (macOS)")
     .option("--out <file>", "env file that gets it too (merged, 0600)", settings.envFile)
     .option("--store-only", "the store alone, not the local env file")
-    .option(...REPLACE_FLAG)
+    .option(...CONFIRM_FLAG)
     .action(async (name: string, o: SetOptions) => {
       if (!/^[A-Z][A-Z0-9_]*$/.test(name)) throw new Error(`not an env name: ${name}`);
-      const refused = projectedRefusal(name);
+      const refused = projectedRefusal(name) ?? (await vaultRefusal(name));
       if (refused) throw new Error(refused);
       const value = cleanValue(
         name,
@@ -300,16 +315,23 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       const file = resolve(expandHome(o.out));
       const held = await store.get(name);
       const local = o.storeOnly ? null : localValue(file, name);
-      const clashes: Clash[] = [];
-      if (held !== null && held !== value) clashes.push({ name, held, where: "the store" });
+      const clashes: Held[] = [];
+      if (held !== null && held !== value)
+        clashes.push(
+          heldInStore(
+            name,
+            held,
+            (await store.list()).find((r) => r.name === name),
+          ),
+        );
       if (local !== null && local !== value && local !== held)
-        clashes.push({ name, held: local, where: file });
-      refuseClashes(
+        clashes.push({ name, length: local.length, where: file });
+      askFirst(
         clashes,
-        o.replace,
+        o.confirm,
         `autobrowse env set ${name}${o.clipboard ? " --clipboard" : ""}`,
       );
-      await store.put(name, value);
+      await store.put(name, value, { replace: o.confirm === true });
       say(
         held === null || held === value
           ? `set ${name} in the store (${value.length} chars)`
@@ -385,10 +407,12 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
       if (!want)
         throw new Error(`${name} has no version ${version}: autobrowse env history ${name}`);
       const now = rows.at(-1);
+      // The command names the version: that is the yes. The value it replaces stays in the history.
       if (now && now.value !== want.value)
-        await deps
-          .store()
-          .put(name, want.value, want.expiresAt ? { expiresAt: want.expiresAt } : {});
+        await deps.store().put(name, want.value, {
+          replace: true,
+          ...(want.expiresAt ? { expiresAt: want.expiresAt } : {}),
+        });
       say(
         now && now.value === want.value
           ? `${name}: the store already holds v${want.version}'s value`
@@ -407,19 +431,27 @@ export function registerEnvCommands(program: Command, settings: Settings, deps: 
   env
     .command("rm <name>")
     .description("Remove one value from the store, with every earlier version of it")
-    .option("--confirm <mark>", "the mark of the value to remove, as the refusal printed it")
-    .action(async (name: string, o: { confirm?: string }) => {
-      const refused = projectedRefusal(name);
+    .option("--confirm", "yes to the question the first run asked")
+    .action(async (name: string, o: { confirm?: boolean }) => {
+      const refused = projectedRefusal(name) ?? (await vaultRefusal(name));
       if (refused) throw new Error(refused);
       const store = deps.store();
       const held = await store.get(name);
-      // The store deletes the name's whole history (SSM DeleteParameter): no way back.
-      if (held !== null && o.confirm !== mark(held))
+      if (held !== null && !o.confirm)
         throw new Error(
           [
-            `STOP: nothing was removed. ${name} holds a value (mark ${mark(held)}, ${held.length} chars).`,
-            "A remove deletes it and every earlier version: there is no way back, and each reader of the name fails.",
-            `Remove only when the person said so in this conversation: autobrowse env rm ${name} --confirm ${mark(held)}`,
+            "Nothing was removed. This would remove a value in use:",
+            heldLine(
+              heldInStore(
+                name,
+                held,
+                (await store.list()).find((r) => r.name === name),
+              ),
+            ),
+            "Each reader of the name fails after it. The store keeps the last value under removed/, no earlier one.",
+            "Is that intended?",
+            `  yes: autobrowse env rm ${name} --confirm`,
+            "  no: do nothing.",
           ].join("\n"),
         );
       say((await store.remove(name)) ? `removed ${name}` : `${name} was not in the store`);

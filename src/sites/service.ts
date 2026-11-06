@@ -103,7 +103,11 @@ const call = site.extend({
   until: z.string().datetime({ offset: true }).optional(),
 });
 const verdictReq = z.object({ sendKey: z.string().min(1).max(200) });
-const setup = site.extend({ step: z.string().min(1) });
+const setup = site.extend({
+  step: z.string().min(1),
+  /** Yes to the step's replace question: a name it makes holds a value. */
+  replace: z.boolean().optional(),
+});
 const revoke = site.extend({
   /** Minutes before the re-make runs (a consent screen filmed first); at once by default. */
   after: z
@@ -942,7 +946,14 @@ export function sitesService(
           step,
           () =>
             terminalOnSiteError(`${ctx.request().id} ${step}`, () =>
-              facade.setup(req.site, req.step, req.account),
+              facade.setup(
+                req.site,
+                req.step,
+                req.account,
+                null,
+                undefined,
+                req.replace ? { replace: true } : undefined,
+              ),
             ),
           { retry: WRITE_RETRY, ...(o.wait ? { wait: o.wait } : {}) },
         );

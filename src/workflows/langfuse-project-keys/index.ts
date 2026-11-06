@@ -18,6 +18,8 @@ import {
 export const planSchema = z.object({
   dryRun: z.boolean().default(false),
   noteOptional: z.string().min(1).describe("Note (optional)"), // e.g. "autobrowse tracing"
+  /** Yes: the two names may hold a key pair, and the new pair replaces it. */
+  replace: z.boolean().default(false),
 });
 export type Plan = z.infer<typeof planSchema>;
 
@@ -34,11 +36,13 @@ type Step<S extends string> = StepDef<Plan, Deps, Memo, S>;
 export interface CreateNewApiKeysInput {
   noteOptional: string;
   sink: SecretSink;
+  replace?: boolean;
 }
 
 const createNewApiKeysFlow = defineFlow<CreateNewApiKeysInput, void>({
   site: "langfuse",
   name: "create-new-api-keys",
+  keeps: () => ["LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY"],
   async run(fp, input) {
     await fp.open("https://cloud.langfuse.com/project/cmucofs5801xvad0d4o21fb4p/settings/api-keys");
     await fp.act(
@@ -75,7 +79,11 @@ const createNewApiKeys: Step<"create-new-api-keys"> = {
     );
     if (!answer.approved) return rejected(answer.note ?? "declined");
     await fx.run("browser create-new-api-keys", () =>
-      deps.browser.run(createNewApiKeysFlow, { noteOptional: plan.noteOptional, sink: deps.sink }),
+      deps.browser.run(createNewApiKeysFlow, {
+        noteOptional: plan.noteOptional,
+        sink: deps.sink,
+        replace: plan.replace,
+      }),
     );
     // TODO proof: GET /projects/{projectId}/api-keys returns a list containing the newly created keys.
     return done("Click the button to start creating new API keys for the Langfuse project.");
