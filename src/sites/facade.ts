@@ -35,7 +35,7 @@ import type { Approver } from "../gates/payment.js";
 import { envSource, ringCount, type SpentKeys } from "../reach/key-ring.js";
 import { type KeysDep, keyCall } from "../reach/key-source.js";
 import type { Proof, RunAs } from "../workflows/proof.js";
-import { type DailyCaps, type MeteredCall, RETRY_BUFFER } from "./caps.js";
+import { type DailyCaps, type Hold, type MeteredCall, RETRY_BUFFER } from "./caps.js";
 import { type Effective, effective, type LimitStore, type SiteLimits } from "./limits.js";
 import {
   accessTokens,
@@ -252,6 +252,8 @@ export interface CapsReport {
   used: Record<string, number>;
   /** Tries by the same key: `used` plus the failures that reached the site. */
   tried: Record<string, number>;
+  /** Buckets held now (the site undid an act): when each hold ends and its step. */
+  held: Record<string, Hold>;
   calls: MeteredCall[];
 }
 
@@ -743,12 +745,13 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       const today = new Date((deps.now ?? Date.now)()).toISOString().slice(0, 10);
       const at = day ?? today;
       const caps = at === today ? deps.caps : undefined;
-      const mine = (r: Record<string, number>) =>
+      const mine = <V>(r: Record<string, V>) =>
         Object.fromEntries(Object.entries(r).filter(([k]) => !only || k.startsWith(`${only}|`)));
       return {
         day: at,
         used: mine(caps?.today() ?? {}),
         tried: mine(caps?.tried() ?? {}),
+        held: mine(caps?.held() ?? {}),
         calls: (deps.caps?.calls(at) ?? []).filter((c) => !only || c.site === only),
       };
     },
@@ -842,11 +845,13 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           const who = chosen ?? "the default account";
           throw new SiteError(
             429,
-            t.cap === 0
-              ? `${s.site} ${t.bucket} reads are off for ${who} (cap 0)`
-              : t.tries
-                ? `${s.site} ${t.bucket} tries for ${who} are used (${t.used}/${t.cap} today, failures included); retry after ${t.retryAfter}s`
-                : `${s.site} ${t.bucket} cap for ${who} is used (${t.used}/${t.cap} today); retry after ${t.retryAfter}s`,
+            t.held
+              ? `${s.site} ${t.bucket} is held for ${who}: the site undid an act, the account may be limited; retry after ${t.retryAfter}s`
+              : t.cap === 0
+                ? `${s.site} ${t.bucket} reads are off for ${who} (cap 0)`
+                : t.tries
+                  ? `${s.site} ${t.bucket} tries for ${who} are used (${t.used}/${t.cap} today, failures included); retry after ${t.retryAfter}s`
+                  : `${s.site} ${t.bucket} cap for ${who} is used (${t.used}/${t.cap} today); retry after ${t.retryAfter}s`,
             t.retryAfter,
           );
         }
@@ -866,12 +871,18 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         } else if (taken && use && deps.caps && reach.already)
           // The thing was there (already following): the site saw a load, not the act.
           deps.caps.giveBack(s.site, chosen ?? s.site, use, true);
+        // The site kept the act: an earlier hold's steps start again.
+        if (taken && use && !reach.already)
+          deps.caps?.kept(s.site, chosen ?? s.site, Object.keys(use));
         return out;
       } catch (e) {
         // The profile was open elsewhere, the browser down, offline: nothing reached the site.
         const reached = reach.reached && !profileBusyOf(e);
         // Only a use that worked counts to the cap; a failure that reached the site is a try.
         if (taken && use) deps.caps?.giveBack(s.site, chosen ?? s.site, use, reached);
+        // The site undid the act: none of it for this account until the hold ends.
+        if (taken && use && reach.limited)
+          deps.caps?.hold(s.site, chosen ?? s.site, Object.keys(use));
         if (profileBusyOf(e)) throw e;
         note("failed", undefined, reached);
         if (!use || !lim.caps || e instanceof SiteError || !reached) throw e;
@@ -925,6 +936,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
             http: deps.http,
             env: deps.env,
             keep: async (name, value) => deps.sink.put(name, value),
+            held: async (name) => ((await deps.sink.get?.(name)) ?? null) !== null,
             ...(deps.spent ? { spent: deps.spent } : {}),
             ...(deps.keys
               ? {

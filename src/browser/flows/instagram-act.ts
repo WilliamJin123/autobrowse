@@ -17,7 +17,7 @@
  * The flow makes that call from the signed-in page, a page at a time, with a person's pause between.
  */
 import type { Response } from "playwright";
-import { already } from "../attempt.js";
+import { already, markLimited } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
 import { scrollCollect } from "../scroll-collect.js";
@@ -120,8 +120,10 @@ async function actAndProve(
   if (got) return;
   await refused(fp, what);
   await openIg(fp, reload.url);
-  if ((await firstShown(fp, [reload.on, reload.off], MISSING)) !== (want ? 0 : 1))
+  if ((await firstShown(fp, [reload.on, reload.off], MISSING)) !== (want ? 0 : 1)) {
+    markLimited();
     fp.human(`Instagram did not keep the ${what}: the account may be limited`);
+  }
 }
 
 // The first match is the profile's own: suggested accounts below carry their own Follow.

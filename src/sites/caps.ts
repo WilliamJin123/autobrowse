@@ -9,6 +9,12 @@
  * so a few failures leave room to try again and a broken flow still stops. A call that never
  * reached the site (its profile busy, the browser down) spends neither (`giveBack`).
  *
+ * Held: the site undid an act (a follow gone after a reload). Tries in a row are flags on a
+ * limited account, so the bucket is refused for a while and the next try is the probe. Each
+ * undone probe holds longer (`HOLD_STEPS_MS`: 1 h, 3 h, 8 h, 12 h, a day in all, then 12 h
+ * each), so a short limit costs an hour and a lasting one two probes a day (William
+ * 2026-11-05). An act the site keeps, or a day with no undone act, starts the steps again.
+ *
  * Pace: a person does not open ten profiles in ten seconds. A paced site
  * books each call a slot at least `gapMs` (plus up to `jitterMs`, random)
  * after the last one for that account; the caller sleeps until it. A slot
@@ -36,8 +42,16 @@ export interface Taken {
   cap?: number;
   /** The tries ceiling (cap plus buffer) was full, not the cap itself. */
   tries?: true;
+  /** The bucket is held: the site undid an act and its hold has not ended. */
+  held?: true;
   /** Seconds until the day turns. */
   retryAfter?: number;
+}
+
+/** One bucket's hold: when it ends (epoch ms) and which step of `HOLD_STEPS_MS` it is (0 first). */
+export interface Hold {
+  until: number;
+  step: number;
 }
 
 /** Spacing between one account's calls to a site. */
@@ -70,6 +84,12 @@ export interface DailyCaps {
    * `reached` true: it reached the site and did not do the thing, only `used` returns.
    */
   giveBack(site: string, account: string, use: Record<string, number>, reached?: boolean): void;
+  /** The site undid an act: refuse these buckets for the next step of `HOLD_STEPS_MS`. */
+  hold(site: string, account: string, buckets: string[]): void;
+  /** The site kept an act: these buckets' next hold starts at the first step again. */
+  kept(site: string, account: string, buckets: string[]): void;
+  /** The buckets held now, by `site|account|bucket`. */
+  held(): Record<string, Hold>;
   /** Book the next slot for `site|account` under `pace`; nothing is booked when refused. */
   slot(site: string, account: string, pace: Pace): Slot;
   /** What each bucket has used today, by `site|account|bucket`. */
@@ -109,11 +129,18 @@ const KEEP_DAYS = 14;
  */
 export const RETRY_BUFFER = { act: 0.25, read: 0.5 } as const;
 
+/** How long a bucket stays refused after the site undid an act: by undone acts in a row, the last repeats. */
+export const HOLD_STEPS_MS = [1, 3, 8, 12].map((h) => h * 3_600_000);
+/** An ended hold this old is forgotten: the next undone act is a first one. */
+const HOLD_MEMORY_MS = 86_400_000;
+
 interface Day {
   day: string;
   used: Record<string, number>;
   /** Absent in a file from before 2026-10-29: `used` then. */
   tried?: Record<string, number>;
+  /** Buckets the site undid an act on; it outlives the day, and an ended hold stays a day for its step. */
+  held?: Record<string, Hold>;
   /** The earliest next call per `site|account`, epoch ms; it outlives the day. */
   next?: Record<string, number>;
 }
@@ -142,8 +169,15 @@ function capsOn(
     const d = load();
     const day = dayOf(now());
     if (d && d.day === day) return d;
-    return { day, used: {}, ...(d?.next ? { next: d.next } : {}) };
+    return {
+      day,
+      used: {},
+      ...(d?.next ? { next: d.next } : {}),
+      ...(d?.held ? { held: d.held } : {}),
+    };
   };
+  const heldNow = (d: Day) =>
+    Object.fromEntries(Object.entries(d.held ?? {}).filter(([, h]) => h.until > now()));
   const keyOf = (site: string, account: string, b: string) =>
     `${site}|${account.trim().toLowerCase()}|${b}`;
   const triedOf = (d: Day) => d.tried ?? { ...d.used };
@@ -157,6 +191,9 @@ function capsOn(
         if (cap === undefined) continue;
         const used = d.used[key(bucket)] ?? 0;
         const retryAfter = untilTomorrow(now());
+        const until = d.held?.[key(bucket)]?.until ?? 0;
+        if (until > now())
+          return { ok: false, bucket, held: true, retryAfter: Math.ceil((until - now()) / 1000) };
         if (used + n > cap) return { ok: false, bucket, used, cap, retryAfter };
         // at least one spare try on any cap above 0
         const ceiling = cap + (cap > 0 && buffer > 0 ? Math.max(1, Math.ceil(cap * buffer)) : 0);
@@ -183,6 +220,28 @@ function capsOn(
       d.tried = tried;
       save(d);
     },
+    hold(site, account, buckets) {
+      const d = current();
+      const t = now();
+      const held = Object.fromEntries(
+        Object.entries(d.held ?? {}).filter(([, h]) => h.until + HOLD_MEMORY_MS > t),
+      );
+      for (const b of buckets) {
+        const last = held[keyOf(site, account, b)];
+        const step = last ? Math.min(last.step + 1, HOLD_STEPS_MS.length - 1) : 0;
+        held[keyOf(site, account, b)] = { until: t + (HOLD_STEPS_MS[step] ?? 0), step };
+      }
+      d.held = held;
+      save(d);
+    },
+    kept(site, account, buckets) {
+      const d = current();
+      const mine = buckets.map((b) => keyOf(site, account, b)).filter((k) => d.held?.[k]);
+      if (!mine.length) return;
+      d.held = Object.fromEntries(Object.entries(d.held ?? {}).filter(([k]) => !mine.includes(k)));
+      save(d);
+    },
+    held: () => heldNow(current()),
     slot(site, account, pace) {
       const d = current();
       const key = `${site}|${account.trim().toLowerCase()}`;

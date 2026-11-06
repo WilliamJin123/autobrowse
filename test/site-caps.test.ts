@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Credential, CredentialStore } from "credvault";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { already, markReached } from "../src/browser/attempt.js";
+import { already, markLimited, markReached } from "../src/browser/attempt.js";
 import { linkedinCompanyJobs, linkedinConnect } from "../src/browser/flows/linkedin-reach.js";
 import { xProfile, xSearch } from "../src/browser/flows/x-read.js";
 import { httpClient } from "../src/clients/http.js";
@@ -562,8 +562,8 @@ describe("tries over a cap", () => {
     expect(caps.take("x", "a", { like: 1 }, { like: 3 }, 0.34).ok).toBe(false);
   });
 
-  const follows = (out: () => Promise<unknown>) => {
-    const caps = memoryCaps(() => noon);
+  const follows = (out: () => Promise<unknown>, now: () => number = () => noon) => {
+    const caps = memoryCaps(now);
     const browser = fakeBrowser([]);
     browser.on(linkedinConnect, out as never);
     const sites = siteFacade([{ ...linkedin, pace: { gapMs: 0 } }], {
@@ -573,7 +573,7 @@ describe("tries over a cap", () => {
       runner: browser,
       flow: (n) => (n === "linkedin/connect" ? (linkedinConnect as never) : null),
       caps,
-      now: () => noon,
+      now,
       accountOf: async (_site, name) => (name === "linkedin@wren" ? "w@x.com" : null),
     });
     const call = () =>
@@ -602,6 +602,82 @@ describe("tries over a cap", () => {
     await call();
     expect(Object.values(caps.today()).every((n) => n === 0)).toBe(true);
     expect(Object.values(caps.tried()).some((n) => n > 0)).toBe(true);
+  });
+
+  it("an act the site undid holds its bucket: 1 h, 3 h, 8 h, then 12 h each; a kept act starts again", () => {
+    const H = 3_600_000;
+    let t = noon;
+    const caps = memoryCaps(() => t);
+    const take = () => caps.take("tiktok", "w@x.com", { follow: 1 }, { follow: 100 });
+    const undone = () => {
+      expect(take().ok).toBe(true);
+      caps.giveBack("tiktok", "w@x.com", { follow: 1 }, true);
+      caps.hold("tiktok", "w@x.com", ["follow"]);
+    };
+    undone();
+    expect(take()).toMatchObject({ ok: false, bucket: "follow", held: true, retryAfter: 3600 });
+    // another bucket and another account go on
+    expect(caps.take("tiktok", "w@x.com", { like: 1 }, { like: 30 }).ok).toBe(true);
+    expect(caps.take("tiktok", "b@x.com", { follow: 1 }, { follow: 10 }).ok).toBe(true);
+    expect(caps.held()).toEqual({ "tiktok|w@x.com|follow": { until: noon + H, step: 0 } });
+    // each probe the site undoes holds longer, across the day turn: a day in all for four
+    for (const [step, hours] of [3, 8, 12, 12].entries()) {
+      t += (step === 0 ? 1 : ([3, 8, 12][step - 1] ?? 0)) * H;
+      expect(caps.held()).toEqual({});
+      undone();
+      expect(take()).toMatchObject({ held: true, retryAfter: hours * 3600 });
+      expect(Object.values(caps.held())[0]?.step).toBe(Math.min(step + 1, 3));
+    }
+    // the site keeps an act: the next undone one is a first again
+    t += 12 * H;
+    expect(take().ok).toBe(true);
+    caps.kept("tiktok", "w@x.com", ["follow"]);
+    undone();
+    expect(take()).toMatchObject({ held: true, retryAfter: 3600 });
+    // a day with no undone act after a hold ended: the same
+    t += 25 * H + 1;
+    undone();
+    expect(take()).toMatchObject({ held: true, retryAfter: 3600 });
+  });
+
+  it("a leg that says the site undid its act: a 502, then a 429 that runs nothing", async () => {
+    let runs = 0;
+    const { caps, call } = follows(async () => {
+      runs++;
+      markReached();
+      markLimited();
+      throw new Error("LinkedIn did not keep the invite");
+    });
+    expect(await call()).toMatchObject({ status: 502 });
+    expect(Object.keys(caps.held()).length).toBeGreaterThan(0);
+    const again = await call();
+    expect(again).toMatchObject({ status: 429 });
+    expect((again as Error).message).toMatch(/is held for .*: the site undid an act/);
+    expect(runs).toBe(1);
+  });
+
+  it("a leg the site keeps starts its bucket's hold steps again", async () => {
+    let t = noon;
+    let undo = true;
+    const { caps, call } = follows(
+      async () => {
+        markReached();
+        if (!undo) return { sent: true };
+        markLimited();
+        throw new Error("LinkedIn did not keep the invite");
+      },
+      () => t,
+    );
+    const step = () => Object.values(caps.held())[0]?.step;
+    await call();
+    expect(step()).toBe(0);
+    t += 3_600_000;
+    undo = false;
+    expect(await call()).toEqual({ sent: true });
+    undo = true;
+    await call();
+    // without the kept act between them this would be step 1
+    expect(step()).toBe(0);
   });
 });
 

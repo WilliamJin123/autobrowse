@@ -14,7 +14,7 @@
  * Mapped 2026-10-26 in explore on the tiktok profile (reads only; no act was sent).
  */
 import type { Response } from "playwright";
-import { already } from "../attempt.js";
+import { already, markLimited } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
 import { RENDER_MS, SETTLE_MS } from "./kit.js";
@@ -265,6 +265,7 @@ export const tiktokFollow = defineFlow<
       if (now) break;
       await fp.wait(SETTLE_MS);
     }
+    markLimited();
     return fp.human(`TikTok did not keep the follow of @${handle}: the account may be limited`);
   },
 });

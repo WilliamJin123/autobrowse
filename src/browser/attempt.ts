@@ -59,11 +59,13 @@ export const currentCall = (): string | null => calls.getStore()?.key ?? null;
 
 /**
  * What one metered call did at the site (`sites/facade.ts` settles its cap from it): `reached`,
- * the site answered a request; `already`, the thing was there and nothing was done.
+ * the site answered a request; `already`, the thing was there and nothing was done; `limited`,
+ * the site undid the act (a follow gone after a reload), so more tries right now only add flags.
  */
 export interface Reach {
   reached: boolean;
   already?: boolean;
+  limited?: boolean;
 }
 
 const reaches = new AsyncLocalStorage<Reach>();
@@ -115,6 +117,12 @@ export const markAlready = (): void => {
   if (t) t.already = true;
   const r = reaches.getStore();
   if (r) r.already = true;
+};
+
+/** The site undid the act: the facade holds the call's buckets for a while (`HOLD_STEPS_MS`). */
+export const markLimited = (): void => {
+  const r = reaches.getStore();
+  if (r) r.limited = true;
 };
 
 /** `out`, answered as already there (`markAlready`). */
