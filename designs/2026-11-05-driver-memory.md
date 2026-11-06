@@ -102,3 +102,4 @@ Plan was one Chrome for all signed-out reads, many tabs. The flow ledger says it
 - 2026-11-05: The network log is off by default (`AUTOBROWSE_NETWORK`), so its bounds wait.
 - 2026-11-05: Stray tabs close when the agent moves on, never a watcher's tab and never a tab of a run that waits for a person (my call).
 - 2026-11-05: The shared reader waits (my recommendation; William agreed to the reader on 11-05 before these numbers): two signed-out browsers were open together 0.8% of the week.
+- 2026-11-06: The memory gate warns and opens (William, through the onlyfeet session: an agent's start was refused twice while three desk browsers held about 2 GB, and it had no `--force`). The warning gives the free share and each browser's MB. A stop stays at the OS's critical level only (my call): there the kernel kills processes, and the next one may be the desk's. WA-1132.

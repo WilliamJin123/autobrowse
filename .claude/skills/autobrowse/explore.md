@@ -16,10 +16,11 @@ main task needs, you do yourself. Never two browser subagents at once.
 Never `autobrowse agent` from a chat: that is the headless loop for the
 desk and the bench.
 
-Each browser holds 1 to 2 GB. `start.sh` refuses a new one when memory is
-tight (the OS reports pressure, or our browsers would pass half the RAM) and
-lists the open sessions: use one, or stop one of yours that is done, then
-start again. Never stop a session that is not yours. `--force` is a person's call.
+Each browser holds 1 to 2 GB. When memory is tight (the OS reports pressure,
+or our browsers would pass half the RAM), `start.sh` prints a warning with the
+free share and each open browser's MB, then opens: no flag needed. Stop a
+session of yours that is done; never one that is not yours. Only the OS's
+critical level stops a start; there `--force` is a person's call.
 
 ## First: does something already do it?
 

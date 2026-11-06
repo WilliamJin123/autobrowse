@@ -27,6 +27,8 @@ export const EXPLORERS_WARN = 4;
 export const NEW_BROWSER_MB = 1200;
 /** Linux: under this share of RAM available, memory is tight. */
 const AVAILABLE_TIGHT_SHARE = 0.15;
+/** Linux: under this share, one more browser makes the OOM killer pick a victim. macOS has the kernel's own critical level. */
+const AVAILABLE_CRITICAL_SHARE = 0.05;
 
 /** `desk`, `worker`, `explore:<port>`, `agent:<port>`, `teach:<port>`, `cli`, `orphan`, or `other` (launched by none of ours). */
 export type Opener = string;
@@ -308,49 +310,86 @@ function safe<T>(f: () => T, fallback: T): T {
   }
 }
 
-/**
- * Whether the OS says memory is short, apart from our own count: RSS hides what is swapped out.
- * macOS: the kernel's pressure level (1 normal, 2 warn, 4 critical). Linux: MemAvailable.
- */
-export function memoryTight(): boolean {
-  if (process.platform === "darwin") {
-    const level = safe(
-      () =>
-        Number(
-          execFileSync("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"], {
-            encoding: "utf8",
-            timeout: 2000,
-          }),
-        ),
-      1,
-    );
-    return level >= 2;
-  }
-  const info = safe(() => readFileSync("/proc/meminfo", "utf8"), "");
-  const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(info)?.[1] ?? 0);
-  return kb("MemTotal") > 0 && kb("MemAvailable") < kb("MemTotal") * AVAILABLE_TIGHT_SHARE;
+/** What the OS says about memory, apart from our own count: RSS hides what is swapped out. */
+export interface MemoryNow {
+  /** `critical`: the kernel is about to kill processes. `tight`: it is compressing and swapping. */
+  level: "ok" | "tight" | "critical";
+  /** Share of RAM the OS can still give out, 0 to 100; null when it does not say. */
+  freePct: number | null;
 }
 
 /**
- * Admit one more explore browser by memory, not by count: null to open, else why not and what
- * to do. The first browser of ours always opens; the limit scales with the machine's RAM.
+ * macOS: the kernel's pressure level (1 normal, 2 warn, 4 critical) and `memorystatus_level`
+ * (percent available). Linux: MemAvailable. A read that fails says `ok`: never a stop on no data.
  */
-export function admit(v: BrowsersView, tight: boolean): string | null {
+export function memoryNow(): MemoryNow {
+  if (process.platform === "darwin") {
+    const sysctl = (name: string) =>
+      safe(
+        () => Number(execFileSync("sysctl", ["-n", name], { encoding: "utf8", timeout: 2000 })),
+        Number.NaN,
+      );
+    const level = sysctl("kern.memorystatus_vm_pressure_level");
+    const free = sysctl("kern.memorystatus_level");
+    return {
+      level: level >= 4 ? "critical" : level >= 2 ? "tight" : "ok",
+      freePct: Number.isFinite(free) ? free : null,
+    };
+  }
+  const info = safe(() => readFileSync("/proc/meminfo", "utf8"), "");
+  const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(info)?.[1] ?? 0);
+  if (!kb("MemTotal")) return { level: "ok", freePct: null };
+  const share = kb("MemAvailable") / kb("MemTotal");
+  return {
+    level:
+      share < AVAILABLE_CRITICAL_SHARE
+        ? "critical"
+        : share < AVAILABLE_TIGHT_SHARE
+          ? "tight"
+          : "ok",
+    freePct: Math.round(share * 100),
+  };
+}
+
+/** `stop`: do not open (only `--force` does). Else a warning to print; the browser opens. */
+export interface Admission {
+  stop: boolean;
+  text: string;
+}
+
+/**
+ * One more explore browser, by memory: null when there is room. Tight memory, or our browsers
+ * past their share of RAM, is a warning and the browser opens (William, 2026-11-06: an agent
+ * must not need `--force` for a normal run). Only the OS's critical level stops it: there the
+ * kernel kills processes, and the next one may be the desk's. The first browser of ours always opens.
+ */
+export function admit(v: BrowsersView, m: MemoryNow): Admission | null {
   if (!v.browsers.length) return null;
   const over = v.ramMb > 0 && v.totalMb + NEW_BROWSER_MB > v.ramMb * RAM_WARN_SHARE;
-  if (!tight && !over) return null;
-  const why = tight
-    ? "the OS reports memory pressure"
-    : `one more passes ${Math.round(RAM_WARN_SHARE * 100)}% of ${Math.round(v.ramMb / 1024)} GB RAM`;
-  const mbOf = (e: ExplorerRow) => v.browsers.find((b) => b.opener.endsWith(`:${e.port}`))?.mb ?? 0;
-  const open = v.explorers.map(
-    (e) =>
-      `  ${e.port} ${e.site}: ${mbOf(e)} MB, idle ${e.idleMinutes} min${e.held ? ", held" : ""}`,
-  );
-  return [
-    `memory is tight: ${v.browsers.length} browsers of ours hold ${v.totalMb} MB (${why}).`,
-    'Use an open session, or stop one that is done (autobrowse stop <port> achieved|failed "why"), then start again.',
-    ...(open.length ? ["Open explore sessions:", ...open] : []),
-    "Never stop a session that is not yours. `--force` opens anyway: only when a person says so.",
-  ].join("\n");
+  if (m.level === "ok" && !over) return null;
+  const stop = m.level === "critical";
+  const why =
+    m.level === "ok"
+      ? `one more passes ${Math.round(RAM_WARN_SHARE * 100)}% of ${Math.round(v.ramMb / 1024)} GB RAM`
+      : `the OS reports ${stop ? "critical memory pressure" : "memory pressure"}`;
+  const free = m.freePct === null ? "" : ` ${m.freePct}% of RAM is free.`;
+  const explorer = (b: BrowserRow) => v.explorers.find((e) => b.opener.endsWith(`:${e.port}`));
+  const holders = [...v.browsers]
+    .sort((a, b) => b.mb - a.mb)
+    .map((b) => {
+      const e = explorer(b);
+      const idle = e ? `, idle ${e.idleMinutes} min${e.held ? ", held" : ""}` : "";
+      return `  ${b.opener} ${e?.site ?? b.profile}: ${b.mb} MB${idle}`;
+    });
+  return {
+    stop,
+    text: [
+      `${stop ? "memory is critical" : "warning: memory is tight"}: ${v.browsers.length} browsers of ours hold ${v.totalMb} MB (${why}).${free}${stop ? " Not opened." : " Opening anyway."}`,
+      ...holders,
+      stop
+        ? 'Use an open session, or stop one of yours that is done (autobrowse stop <port> achieved|failed "why"), then start again.'
+        : 'When a session of yours is done: autobrowse stop <port> achieved|failed "why".',
+      `Never stop a session that is not yours.${stop ? " `--force` opens anyway: only when a person says so." : ""}`,
+    ].join("\n"),
+  };
 }

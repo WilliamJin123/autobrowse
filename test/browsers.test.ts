@@ -164,18 +164,35 @@ describe("admit: one more explore browser, by memory", () => {
     ramMb,
   });
 
-  it("opens the first browser even under pressure", () => {
-    expect(admit(view([], 16_384), true)).toBeNull();
+  const ok = { level: "ok", freePct: 60 } as const;
+  const tight = { level: "tight", freePct: 32 } as const;
+  const critical = { level: "critical", freePct: 4 } as const;
+
+  it("opens the first browser even at the critical level", () => {
+    expect(admit(view([], 16_384), critical)).toBeNull();
   });
-  it("scales with the machine's RAM", () => {
+  it("past our share of RAM is a warning, scaled to the machine; the browser opens", () => {
     const held = [2000, 2000, 2000, 1500];
-    expect(admit(view(held, 16_384), false)).toMatch(/memory is tight: 4 browsers.*7500 MB/);
-    expect(admit(view(held, 65_536), false)).toBeNull();
-    expect(admit(view([8192 - NEW_BROWSER_MB], 16_384), false)).toBeNull();
+    const warn = admit(view(held, 16_384), ok);
+    expect(warn?.stop).toBe(false);
+    expect(warn?.text).toMatch(/^warning: memory is tight: 4 browsers of ours hold 7500 MB/);
+    expect(warn?.text).toContain("Opening anyway.");
+    expect(admit(view(held, 65_536), ok)).toBeNull();
+    expect(admit(view([8192 - NEW_BROWSER_MB], 16_384), ok)).toBeNull();
   });
-  it("refuses under OS pressure whatever our count says, and names the way out", () => {
-    const no = admit(view([300], 65_536), true);
-    expect(no).toMatch(/the OS reports memory pressure/);
-    expect(no).toMatch(/autobrowse stop <port>/);
+  it("OS pressure is a warning that says what is free and who holds what; no --force needed", () => {
+    const warn = admit(view([300, 900], 65_536), tight);
+    expect(warn?.stop).toBe(false);
+    expect(warn?.text).toMatch(/the OS reports memory pressure\)\. 32% of RAM is free\./);
+    // Largest first, each with its opener.
+    expect(warn?.text).toMatch(/explore:9091 x: 900 MB\n {2}explore:9090 x: 300 MB/);
+    expect(warn?.text).not.toContain("--force");
+  });
+  it("stops only at the critical level, and names the way out", () => {
+    const no = admit(view([300], 65_536), critical);
+    expect(no?.stop).toBe(true);
+    expect(no?.text).toMatch(/^memory is critical.*critical memory pressure.*Not opened\./);
+    expect(no?.text).toMatch(/autobrowse stop <port>/);
+    expect(no?.text).toContain("`--force` opens anyway");
   });
 });
