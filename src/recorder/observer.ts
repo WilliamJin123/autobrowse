@@ -48,9 +48,8 @@ export const HINTS_JS = `
 `;
 
 export const OBSERVER_SCRIPT = `
+// No guard global: a page can read any name on window (WA-1141). Callers run it once per document.
 (() => {
-  if (window.__autobrowseObserving) return;
-  window.__autobrowseObserving = true;
   ${HINTS_JS}
   const at = (e) => (e.composedPath && e.composedPath()[0]) || e.target;
   const interactive = (el) => el.closest('button, a, input, select, textarea, [role], [onclick], label, summary') || el;

@@ -1007,6 +1007,8 @@ async function serve(
     .context()
     .addInitScript(OBSERVER_SCRIPT)
     .catch(() => undefined);
+  // The document already open predates the init script: hook it once, here.
+  await inPage(page, OBSERVER_SCRIPT).catch(() => undefined);
   // A load between commands is a person's only when they also acted (a slow redirect is not).
   page.on("framenavigated", (frame) => {
     if (frame !== page.mainFrame()) return;
@@ -2529,8 +2531,6 @@ async function serve(
         handActs = 0;
         if (history) lookBefore = await lookAt(page).catch(() => null);
         journal({ kind: "pause" });
-        // The page may predate the init script: hook it now.
-        await inPage(page, OBSERVER_SCRIPT).catch(() => undefined);
         return { paused: true };
       case "resume": {
         journal({ kind: "resume" });
