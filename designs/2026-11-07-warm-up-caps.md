@@ -82,4 +82,4 @@ Terms: an **act bucket** is a bucket that a non-GET route meters (`follow`, `lik
 ## Decision log
 
 - 2026-11-07: Draft.
-- 2026-11-07: goldfish review (EGM trial, 7 reviewers): 4 Blockers, 9 Majors, 9 Nits; applied all four Blockers and 7 Majors; rejected 6 fixes (explore metering, network interception, shared test vectors). Fixed: the explore match key (`browser.flow`, not `workflow`), the cap-0 deadlock, `firstSeen` lost at the day roll, `since` breaking the `limits.json` schema, one meaning of "act". Open: the three questions above.
+- 2026-11-07: fresh-eyes review (EGM trial, 7 reviewers): 4 Blockers, 9 Majors, 9 Nits; applied all four Blockers and 7 Majors; rejected 6 fixes (explore metering, network interception, shared test vectors). Fixed: the explore match key (`browser.flow`, not `workflow`), the cap-0 deadlock, `firstSeen` lost at the day roll, `since` breaking the `limits.json` schema, one meaning of "act". Open: the three questions above.
