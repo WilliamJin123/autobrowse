@@ -539,7 +539,7 @@ describe("meta GET /instagram/{username}", () => {
     await sites.call("meta", "GET", "/instagram/c.d", {});
     expect(calls.filter((u) => u.pathname === "/v23.0/me/accounts")).toHaveLength(1);
     expect(caps.today()["meta|meta|reads"]).toBe(2);
-    expect(meta.caps).toEqual({ reads: 300 });
+    expect(meta.caps?.reads).toBe(300);
   });
 
   it("answers found: false for an unknown name or a personal account (Graph 110 / 2207013)", async () => {

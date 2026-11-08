@@ -608,7 +608,8 @@ export const meta: SiteApi = {
   probe: { path: "/me" },
   auth: { oauth: metaOAuth },
   // Each Instagram read is one `business_discovery` call; Meta throttles by app usage.
-  caps: { reads: 300 },
+  // Graph lets 100 Instagram posts a day; the rest are wren's own bounds, under Meta's spam flags.
+  caps: { reads: 300, publish: 10, igPublish: 10, reply: 30, message: 50 },
   // The app, the Page and the ad account live on Wren's own Facebook (the default
   // account, william@): only the card on the ad account is the person's.
   routes: [
@@ -845,6 +846,7 @@ export const meta: SiteApi = {
       summary:
         "A text or link post on a Page (`published:false` + `scheduled_publish_time` schedules)",
       request: feed,
+      meter: () => ({ publish: 1 }),
       irreversible: true,
       verify: {
         words: (b) => b.message,
@@ -863,6 +865,7 @@ export const meta: SiteApi = {
       path: "/{pageId}/photos",
       summary: "A photo post on a Page from a public image URL",
       request: photo,
+      meter: () => ({ publish: 1 }),
       irreversible: true,
       verify: {
         words: (b) => b.message ?? "",
@@ -882,6 +885,7 @@ export const meta: SiteApi = {
       path: "/{pageId}/videos",
       summary: "A video (or Reel) on a Page from a public video URL",
       request: video,
+      meter: () => ({ publish: 1 }),
       irreversible: true,
       verify: {
         words: (b) => b.description ?? b.title ?? "",
@@ -902,6 +906,7 @@ export const meta: SiteApi = {
       summary:
         "A photo story on a Page from a public image URL: the photo goes up unpublished, then the story; answers {post_id}",
       request: photoStory,
+      meter: () => ({ publish: 1 }),
       irreversible: true,
       verify: {
         none: "a story is not in the Page's posts, and no read route lists a Page's stories",
@@ -923,6 +928,7 @@ export const meta: SiteApi = {
       summary:
         "A video story on a Page from a public video URL (9:16, 3 to 90 s): start, hosted upload, finish; answers {post_id}",
       request: videoStory,
+      meter: () => ({ publish: 1 }),
       irreversible: true,
       verify: {
         none: "a story is not in the Page's posts, and no read route lists a Page's stories",
@@ -993,6 +999,7 @@ export const meta: SiteApi = {
       path: "/{igUserId}/media_publish",
       summary: "Publish an Instagram container (step 2); answers the media id",
       request: igPublish,
+      meter: () => ({ igPublish: 1 }),
       irreversible: true,
       verify: {
         // The container says whether it was published: a state, not words.
@@ -1038,6 +1045,7 @@ export const meta: SiteApi = {
       path: "/{commentId}/replies",
       summary: "Reply to an Instagram comment",
       request: igReply,
+      meter: () => ({ reply: 1 }),
       irreversible: true,
       verify: {
         none: "Graph names a replier by username and the input holds no account to tell our reply from another's",
@@ -1050,6 +1058,7 @@ export const meta: SiteApi = {
       path: "/{commentId}/comments",
       summary: "The Page's reply under a Facebook comment",
       request: pageReply,
+      meter: () => ({ reply: 1 }),
       irreversible: true,
       verify: {
         words: (b) => b.message,
@@ -1097,6 +1106,7 @@ export const meta: SiteApi = {
       summary:
         "A DM from the Page (Send API): to someone who wrote first, or a comment's Private Reply",
       request: pageMessage,
+      meter: () => ({ message: 1 }),
       irreversible: true,
       verify: {
         words: (b) => ("text" in b.message ? b.message.text : b.message.attachment.payload.text),
