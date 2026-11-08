@@ -37,6 +37,15 @@ NODE_DIR="$(dirname "$NODE")"
 # Claude Code, for `claude/ask` and the claude-code model; its native installer uses ~/.local/bin.
 CLAUDE_DIR="$(dirname "$(command -v claude || echo "$HOME/.local/bin/claude")")"
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+# Egress proxy (wren/designs/2026-11-08-egress.md): `wren egress apply` writes the desk role's
+# proxy vars; Node's fetch and http then go through it. Chrome stays direct.
+EGRESS="$HOME/.config/wren/egress/desk.env"
+EGRESS_XML=""
+if [ -f "$EGRESS" ]; then
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^[A-Za-z_]+$ ]] && EGRESS_XML+="<key>$k</key><string>$v</string>"
+  done < "$EGRESS"
+fi
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -47,7 +56,7 @@ cat > "$PLIST" <<PLIST
   <array><string>$NODE</string><string>$REPO/node_modules/tsx/dist/cli.mjs</string><string>src/app/desk.ts</string></array>
   <key>WorkingDirectory</key><string>$REPO</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>$NODE_DIR:$CLAUDE_DIR:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+  <dict><key>PATH</key><string>$NODE_DIR:$CLAUDE_DIR:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>$EGRESS_XML</dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
