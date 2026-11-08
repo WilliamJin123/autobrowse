@@ -295,6 +295,8 @@ export const x: SiteApi = {
     follow: 20,
     like: 50,
     reply: 30,
+    // Our own posts (not replies); X's free tier allows 17 a day.
+    post: 15,
     following: 4,
   },
   pace: { gapMs: 5_000, jitterMs: 10_000 },
@@ -355,7 +357,7 @@ export const x: SiteApi = {
         return { id, url: id ? statusUrl(id) : null };
       },
       needs: (b) => (pageReply(b) ? ["replies"] : []),
-      meter: (b) => (b.reply ? { reply: 1 } : {}),
+      meter: (b) => (b.reply ? { reply: 1 } : { post: 1 }),
       browser: {
         flow: "x/reply",
         input: (b) => ({ id: b.reply?.in_reply_to_tweet_id, text: b.text }),

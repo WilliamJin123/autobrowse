@@ -440,12 +440,27 @@ export const youtube: SiteApi = {
   auth: { oauth: youtubeOAuth },
   // Analytics and Reporting have their own Google quotas: a day's reads per account, kept well under them.
   // Studio reads open a page as the channel: a Short per look, a few dozen a day.
-  // Quota is 10,000 units a day: a comment, like or subscribe costs 50, a search 100.
-  caps: { analytics: 1000, reporting: 300, studio: 60, comment: 30, subscribe: 10, like: 30 },
+  // Quota is 10,000 units a day: a comment, like or subscribe costs 50, a search 100, an upload 1,600.
+  // Studio acts (community post, Shorts thumbnail) are a person's few a day.
+  caps: {
+    analytics: 1000,
+    reporting: 300,
+    studio: 60,
+    comment: 30,
+    reply: 30,
+    subscribe: 10,
+    like: 30,
+    upload: 6,
+    community: 3,
+    thumbnail: 12,
+  },
+  // Studio legs only: API legs are never paced.
+  pace: { gapMs: 10_000, jitterMs: 20_000 },
   routes: [
     route({
       method: "POST",
       path: "/upload/youtube/v3/videos",
+      meter: () => ({ upload: 1 }),
       summary:
         "Upload a video (resumable): `snippet`, `status`, and `file` (path or URL); answers the video resource",
       request: upload,
@@ -765,6 +780,7 @@ export const youtube: SiteApi = {
     route({
       method: "POST",
       path: "/youtube/v3/comments",
+      meter: () => ({ reply: 1 }),
       summary: "Reply to a comment (`snippet.parentId`)",
       request: reply,
       irreversible: true,
@@ -952,6 +968,7 @@ export const youtube: SiteApi = {
     route({
       method: "POST",
       path: "/studio/communityPosts",
+      meter: () => ({ community: 1 }),
       standing: { final: "the Data API has no community posts" },
       summary:
         "! A community post (no official API; YouTube in the browser); image is a path or URL; answers {url} (null when the list didn't show it)",
@@ -984,6 +1001,7 @@ export const youtube: SiteApi = {
     route({
       method: "POST",
       path: "/studio/thumbnail",
+      meter: () => ({ thumbnail: 1 }),
       standing: { final: "thumbnails.set refuses Shorts" },
       summary:
         "! A video's custom thumbnail through Studio, Shorts too (thumbnails.set refuses them); file is a path or URL, dry stages then undoes; answers {videoId,saved,dry?}",

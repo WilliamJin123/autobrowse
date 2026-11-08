@@ -357,6 +357,8 @@ export const linkedin: SiteApi = {
   // account that sends more than a few dozen a day is the one it restricts. Outreach ramps
   // under these (wren's reach loop), never at them.
   caps: {
+    // Our own posts, member or Page, either leg.
+    publish: 5,
     profile: 80,
     search: 25,
     company: 40,
@@ -407,6 +409,7 @@ export const linkedin: SiteApi = {
       follow: 0,
       comment: 0,
       comments: 0,
+      publish: 0,
       total: 0,
     },
     // The research alt (2026-10-05): restricted by LinkedIn 2026-10-06 (asks for an ID); off.
@@ -429,6 +432,7 @@ export const linkedin: SiteApi = {
       follow: 0,
       comment: 0,
       comments: 0,
+      publish: 0,
       total: 0,
     },
   },
@@ -452,6 +456,7 @@ export const linkedin: SiteApi = {
     route({
       method: "POST",
       path: "/rest/posts",
+      meter: () => ({ publish: 1 }),
       summary:
         "Publish a post as the member, or as a Page it admins (`author: urn:li:organization:…`, by the browser)",
       request: post,

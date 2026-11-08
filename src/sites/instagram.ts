@@ -186,6 +186,9 @@ export const instagram: SiteApi = {
     threads_like: 30,
     threads_reply: 15,
     threads_follow: 10,
+    // Our own posts (Graph allows 50 a day) and replies under them.
+    publish: 10,
+    reply: 30,
   },
   pace: { gapMs: 8_000, jitterMs: 12_000 },
   routes: [
@@ -220,6 +223,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/{igUserId}/media_publish",
+      meter: () => ({ publish: 1 }),
       summary: "Publish a container (step 2); answers the media id",
       request: publish,
       irreversible: true,
@@ -252,6 +256,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/web/posts",
+      meter: () => ({ publish: 1 }),
       standing: { waits: "instagram-local-upload" },
       summary:
         "A post from a local file with a caption (no official path: the API wants a public URL; the browser leg uploads)",
@@ -362,6 +367,7 @@ export const instagram: SiteApi = {
     route({
       method: "POST",
       path: "/{commentId}/replies",
+      meter: () => ({ reply: 1 }),
       summary: "Reply to a comment",
       request: reply,
       irreversible: true,

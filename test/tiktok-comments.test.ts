@@ -376,7 +376,8 @@ describe("tiktok comments: the flow and the route", () => {
       return { videoId: i.videoId, url: "u", comments: [] };
     });
     const caps = memoryCaps(() => Date.UTC(2026, 8, 29, 12));
-    const sites = siteFacade([tiktok], {
+    // the cap, not the pace, is under test
+    const sites = siteFacade([{ ...tiktok, pace: undefined }], {
       http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
       env: () => undefined,
       sink: memorySink(),

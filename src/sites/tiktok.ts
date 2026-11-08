@@ -247,7 +247,11 @@ export const tiktok: SiteApi = {
     comment: 15,
     like: 30,
     follow: 10,
+    // Our own posts, either leg; replies under our videos.
+    post: 3,
+    reply: 30,
   },
+  pace: { gapMs: 10_000, jitterMs: 20_000 },
   routes: [
     route({
       method: "GET",
@@ -314,6 +318,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/v2/post/publish/video/init/",
+      meter: () => ({ post: 1 }),
       summary:
         "Direct Post a video: `file` (a path or URL) goes up by FILE_UPLOAD in chunks; `source_info` PULL_FROM_URL takes a URL on a verified domain. Answers `publish_id`. Read `creator_info` first: it lists the privacy levels the app may use",
       request: publishInit,
@@ -364,6 +369,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/posts",
+      meter: () => ({ post: 1 }),
       standing: { waits: "tiktok-direct-post" },
       summary:
         "A post from a video file (a path, or a URL it downloads) with a caption, on TikTok Studio (a fallback; `/v2/post/publish/video/init/` posts by the API): `privacy` everyone|friends|only-me (default everyone), `comments`, `reuse` (default on), `aiGenerated`; answers `{ id, url, profile, note? }`, id null when the post went out but the profile does not list it yet",
@@ -477,6 +483,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/web/videos/{videoId}/comments/{commentId}/replies",
+      meter: () => ({ reply: 1 }),
       standing: { waits: "tiktok-business" },
       summary: "Reply to a comment (no public API; browser)",
       request: reply,
