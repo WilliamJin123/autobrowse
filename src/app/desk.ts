@@ -32,6 +32,7 @@ import { studioService, watchRecordings, wrenCheckout, wrenIn } from "../studio/
 import { COMPILED_DIR } from "../workflows/roots.js";
 import { proveCompiled } from "./backend.js";
 import { registerOnBox } from "./box-register.js";
+import { doorHttp, pullFromDoor } from "./door-pull.js";
 import { cloudAdminUrl, planEndpoint } from "./endpoint.js";
 import { awsFor, boot } from "./owner.js";
 import { registerDeployment } from "./register.js";
@@ -150,6 +151,18 @@ if (plan.mode === "tunnel") {
     return registerOnBox(awsFor(settings));
   });
 }
+// Phase 5 (wren designs/2026-11-09-own-runtime.md): calls come from wren's door; Restate's push
+// above stays until the calls it already holds end.
+const pull =
+  settings.deskDoorUrl && settings.deskDoorToken
+    ? await pullFromDoor({
+        door: doorHttp(settings.deskDoorUrl, settings.deskDoorToken),
+        services,
+        retry: OUTAGE_RETRY,
+        concurrency: 8,
+        log: (msg, extra) => log.warn(extra ?? {}, msg),
+      })
+    : null;
 if (wren) watchRecordings(wren, (msg) => log.info({ watch: msg }, "recordings"));
 if (recorder) watchCalls(recorder, (msg) => log.warn({ calls: msg }, "calls"));
 watchers?.start();
@@ -171,6 +184,12 @@ setInterval(() => {
 }, 10_000).unref();
 // deploy/desk/update.mjs waits for this exact message after a restart.
 log.info(
-  { deployment: reg.id, services: reg.services, browser: settings.browser, on: plan.mode },
+  {
+    deployment: reg.id,
+    services: reg.services,
+    pulls: pull?.services ?? [],
+    browser: settings.browser,
+    on: plan.mode,
+  },
   "desk up",
 );

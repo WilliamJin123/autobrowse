@@ -385,6 +385,12 @@ const schema = z.object({
     .string()
     .regex(/^publickeyv1_[1-9A-HJ-NP-Za-km-z]+$/)
     .default("publickeyv1_HcPGxeCdDAVdujTibFvhHboaqNsHrV5CBTSgZsquHjvj"),
+  /**
+   * wren's door (its ingress): the desk claims its calls there (wren designs/2026-11-09-own-runtime.md,
+   * "Phase 5"). Both set: the desk pulls; unset: Restate pushes, as before.
+   */
+  deskDoorUrl: z.string().url().optional(),
+  deskDoorToken: z.string().min(1).optional(),
 });
 
 export type Settings = z.infer<typeof schema>;
@@ -531,6 +537,8 @@ export const ENV_KEYS = {
   restateCloudRegion: "RESTATE_CLOUD_REGION",
   restateIdentityKey: "RESTATE_IDENTITY_KEY",
   restateBoxIdentityKey: "RESTATE_BOX_IDENTITY_KEY",
+  deskDoorUrl: "DESK_DOOR_URL",
+  deskDoorToken: "DESK_DOOR_TOKEN",
 } as const satisfies Record<keyof Settings, string>;
 
 /** The credential-link Worker's URL, or a clear word on the setting it needs. */
