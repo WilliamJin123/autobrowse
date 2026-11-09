@@ -331,6 +331,48 @@ export function registerAuthCommands(
       console.log(`${site}: marked made; copied to the store`);
     });
   creds
+    .command("detail <site> [name] [value]")
+    .description(
+      'A fixed fact the site asks for besides the login (memberNumber, deliveryPostal, warehouse): set it with a value, print it without, list the names with no name; `place{secret:"<site>.<name>"}` types it on the site\'s own pages',
+    )
+    .option("--drop", "remove the named detail")
+    .action(
+      async (
+        siteArg: string,
+        name: string | undefined,
+        value: string | undefined,
+        o: { drop?: boolean },
+      ) => {
+        const site = accountSite(siteArg);
+        const store = credentialsFor(settings);
+        const cred = await store.get(site);
+        if (!cred) throw new Error(`no credential stored for ${site}`);
+        const details = cred.details ?? {};
+        if (!name) {
+          const names = Object.keys(details);
+          console.log(names.length ? names.join("\n") : `${site}: no details`);
+          return;
+        }
+        if (o.drop) {
+          if (!(name in details)) throw new Error(`${site} has no detail ${name}`);
+          const { [name]: _, ...rest } = details;
+          await store.put(site, { ...cred, details: rest });
+          console.log(`${site}: ${name} dropped; copied to the store`);
+          return;
+        }
+        if (value === undefined) {
+          const held = details[name];
+          if (!held) throw new Error(`${site} has no detail ${name}`);
+          console.log(held);
+          return;
+        }
+        await store.put(site, { ...cred, details: { ...details, [name]: value } });
+        console.log(
+          `${site}: ${name} ${name in details ? "replaced" : "set"}; copied to the store`,
+        );
+      },
+    );
+  creds
     .command("username <site> <name>")
     .description(
       "The site signs in with a handle, not the address (npm): the stored username becomes it, and codes are still read from the address's inbox",
@@ -683,6 +725,7 @@ export function registerAuthCommands(
             : {}),
           notes: [
             cred.roles?.length ? `roles: ${cred.roles.join(", ")}` : "",
+            ...Object.entries(cred.details ?? {}).map(([k, v]) => `${k}: ${v}`),
             cred.via ? `signs in via ${cred.via}` : "",
             cred.codesInbox ? `codes to ${cred.codesInbox}` : "",
             cred.passkeys.length ? "passkey: in credvault only" : "",

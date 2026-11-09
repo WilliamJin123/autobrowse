@@ -122,7 +122,7 @@
     "@sentry/node": "10.75.0",
     "@toon-format/toon": "4.4.0",
     "commander": "15.0.0",
-    "credvault": "0.14.1",
+    "credvault": "0.16.0",
     "entities": "8.1.0",
     "fflate": "0.8.3",
     "hono": "4.13.8",

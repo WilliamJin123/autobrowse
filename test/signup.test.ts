@@ -198,6 +198,22 @@ describe("loginSecrets", () => {
     expect(await l.secrets("instagram.code")).toBeNull();
   });
 
+  it("a stored detail, placed only on its site's hosts (WA-1233)", async () => {
+    const store = memoryCredentials();
+    await store.put("shop", {
+      username: "w@uni.example",
+      password: "pw",
+      details: { memberNumber: "111" },
+    });
+    const l = loginSecrets(store, ["shop"]);
+    expect(await l.secrets("shop.memberNumber")).toBe("111");
+    await expect(l.secrets("shop.warehouse")).rejects.toThrow(/creds detail shop warehouse/);
+    expect(l.hosts("www.shop.example", "shop.memberNumber")).toBe(true);
+    // Not on the login address's own domain, unlike the password.
+    expect(l.hosts("adfs.uni.example", "shop.memberNumber")).toBe(false);
+    expect(await l.secrets("other.memberNumber")).toBeNull();
+  });
+
   it("a work account's password also goes on its own domain's sign-in page", async () => {
     const store = memoryCredentials();
     await store.put("outlook@uni", { username: "w@uni.example", password: "pw" });

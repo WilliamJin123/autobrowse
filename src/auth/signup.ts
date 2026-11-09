@@ -7,7 +7,7 @@
  */
 
 import type { Credential, CredentialStore } from "credvault";
-import { newPassword } from "credvault";
+import { DETAIL_NAME, newPassword } from "credvault";
 import type { HttpClient } from "../clients/http.js";
 import { gmailOAuth } from "../sites/gmail.js";
 import { createRegistryUser, NPM_TOKEN } from "../sites/npm.js";
@@ -127,7 +127,8 @@ export function signupSecrets(o: SignupSecretsOptions): SecretValues {
  * codes inbox or our phone got after `since`, when `codes` is given) and
  * `<site>.code` is the stored authenticator's code when there is one, else the newest mailed one.
  * `<site>.phone` / `.phoneLocal` (our phone, for a site that asks one to
- * text), each placed only on that site's own hosts. Names this does not own
+ * text), `<site>.<detail>` (a fixed fact on the credential: a member
+ * number), each placed only on that site's own hosts. Names this does not own
  * fall through to `rest`.
  */
 export function loginSecrets(
@@ -151,7 +152,9 @@ export function loginSecrets(
       name.slice(0, name.lastIndexOf(".")),
       name.slice(name.lastIndexOf(".") + 1),
     ];
-    return sites.includes(site) && fields.includes(field) ? { site, field } : null;
+    return sites.includes(site) && (fields.includes(field) || DETAIL_NAME.test(field))
+      ? { site, field }
+      : null;
   };
   return {
     secrets: async (name) => {
@@ -160,6 +163,14 @@ export function loginSecrets(
       if (hit.field === "phone") return phone ?? null;
       if (hit.field === "phoneLocal") return phone ? localPhone(phone) : null;
       const cred = await store.get(hit.site);
+      if (!fields.includes(hit.field)) {
+        const value = cred?.details?.[hit.field];
+        if (!value)
+          throw new Error(
+            `${name}: ${hit.site} has no detail ${hit.field} (autobrowse creds detail ${hit.site} ${hit.field} <value>)`,
+          );
+        return value;
+      }
       const domain = cred?.username.split("@")[1]?.toLowerCase();
       if (domain) domains.set(hit.site, domain);
       if (hit.field !== "code")
@@ -182,6 +193,7 @@ export function loginSecrets(
     },
     hosts: (host, secret) => {
       const hit = own(secret);
+      if (hit && !fields.includes(hit.field)) return signupHosts(hit.site)(host); // a detail: the site's own hosts only
       if (hit)
         return (
           signupHosts(hit.site)(host) ||

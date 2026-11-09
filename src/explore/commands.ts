@@ -330,7 +330,7 @@ export function placeHint(secret: string): string {
     case "code":
       return "code needs --codes <inbox> or --signup <address>";
     default:
-      return `no flag gives "${secret}": names are phone, phoneLocal, publicPhone, publicPhoneLocal, email, password, code, <site>.username|password|code|phone|phoneLocal, card.*, card.code (the bank's text)`;
+      return `no flag gives "${secret}": names are phone, phoneLocal, publicPhone, publicPhoneLocal, email, password, code, <site>.username|password|code|phone|phoneLocal|<detail>, card.*, card.code (the bank's text)`;
   }
 }
 

@@ -96,7 +96,7 @@ export function registerRecordCommands(
     )
     .option(
       "--login <sites>",
-      'other sites whose stored login this session may type, comma separated (a "Connect Instagram" popup): place{secret:"instagram.password"} (also .username, .code from its codes inbox or our phone, .phone/.phoneLocal = our phone), only on that site\'s hosts',
+      'other sites whose stored login this session may type, comma separated (a "Connect Instagram" popup): place{secret:"instagram.password"} (also .username, .code from its codes inbox or our phone, .phone/.phoneLocal = our phone, .<detail> from `creds detail`), only on that site\'s hosts; the session\'s own site needs no --login',
     )
     .option(
       "--files <sets>",
@@ -149,7 +149,7 @@ export function registerRecordCommands(
           idleMinutes: o.hold ? 0 : Number(o.idle),
           owner: claudeOwner(),
           signIn: !o.signup,
-          ...(await withLogins(await exploreSecrets(site, o), o.login)),
+          ...(await withLogins(await exploreSecrets(site, o), o.login, site)),
           ...(o.files ? { fileSets: listOf(o.files) } : {}),
         });
         // The token lives in an owner-only file, not in this output: logs get pasted, files do not.
@@ -316,14 +316,21 @@ export function registerRecordCommands(
   const withLogins = async (
     base: { secrets?: SecretValues; secretHosts?: (host: string) => boolean },
     login?: string,
+    /** The session's own site: its details (`costco.memberNumber`) need no `--login`. */
+    own?: string,
   ): Promise<{
     secrets?: SecretValues;
     secretHosts?: (host: string, secret: string) => boolean;
   }> => {
-    const sites = (login ?? "")
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
+    const sites = [
+      ...new Set([
+        ...(own ? [own] : []),
+        ...(login ?? "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+      ]),
+    ];
     if (!sites.length) return base;
     const { loginSecrets } = await import("../auth/signup.js");
     const { codesFor, credentialsFor, gmailFor, ourPhone } = await import("./services.js");

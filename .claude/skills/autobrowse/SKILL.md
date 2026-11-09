@@ -45,6 +45,9 @@ A long worker call you need later, not now: start it as a job, do other work, co
   for one: `place{secret:"profile.phone"}` (`.phoneLocal`, `.name`, `.birthday`,
   `.address1`, signup.md). Never ask William for them. A `--signup` or `--login`
   session types its account's own `phone` instead.
+- A site's fixed facts (a member number, a delivery postal code, a home
+  store) are details on its credential: `autobrowse creds detail <site>` lists
+  them, `place{secret:"<site>.<name>"}` types one on that site's pages.
 - Sign in to a site: `{"cmd":"flow","name":"<site>-login"}` in explore (explore.md). `--login`
   is only for another site's login typed into a popup on this page.
 - Money is William's call. A billing field, a button that spends, or an API
