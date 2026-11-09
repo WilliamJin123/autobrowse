@@ -29,7 +29,6 @@ vi.mock("patchright", () => {
 vi.mock("../src/browser/reap.js", () => ({
   reapOrphans: async () => [],
   reapTempDirs: async () => undefined,
-  reapChromeClones: async () => 0,
 }));
 vi.mock("../src/browser/webauthn.js", () => ({
   virtualAuthenticator: () => ({ export: async () => [] }),

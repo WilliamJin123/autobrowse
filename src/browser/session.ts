@@ -20,7 +20,7 @@ import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import type { Hints } from "./locate.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
 import { DISK_CACHE_BYTES } from "./profile-trim.js";
-import { reapChromeClones, reapOrphans, reapTempDirs } from "./reap.js";
+import { reapOrphans, reapTempDirs } from "./reap.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
 
 const run = promisify(execFile);
@@ -208,7 +208,6 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
       reaped.map((o) => o.pid),
     );
     void reapTempDirs(); // files a crashed upload left, in the background
-    void reapChromeClones(); // app copies a killed Chrome left (WA-1218)
     context = await launchLocal(profileDir, opts, opts.egress?.exitFor(profile) ?? null);
     if (opts.headless === false) await keepOutOfTheWay();
     // `navigator.webdriver` is already false (LOCAL_ARGS). No init-script shim: an own
