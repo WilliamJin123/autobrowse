@@ -1036,9 +1036,11 @@ export const meta: SiteApi = {
     route({
       method: "GET",
       path: "/{mediaId}/comments",
-      summary: "Comments on an Instagram post",
+      summary: "Comments on an Instagram post or a Facebook Page post (`<pageId>_<n>`)",
       request: igComments,
-      api: ({ mediaId, ...q }, leg) => get(leg, `${mediaId}/comments`, q),
+      // a Page post reads with the Page's token (code 190 with the user's)
+      api: async ({ mediaId, ...q }, leg) =>
+        get(await objectLeg(leg, mediaId), `${mediaId}/comments`, q),
     }),
     route({
       method: "POST",
