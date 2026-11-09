@@ -209,6 +209,7 @@ describe("formLogin", () => {
     expect(acts.map((a) => a.op)).toEqual([
       { kind: "fill", value: "u" },
       { kind: "fill", value: "p" },
+      { kind: "script", js: "(el) => { if (!el.checked) el.click(); }" }, // keep me signed in
       { kind: "click" },
       { kind: "fill", value: "123456" },
       { kind: "click" },

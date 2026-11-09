@@ -965,6 +965,28 @@ const perplexity: SiteLogin = {
   }),
 };
 
+/**
+ * Costco.com (grocery orders): one form on signin.costco.com, email and
+ * password (ids from the 11-09 snapshot) and a "Keep me signed in" tick.
+ */
+const costco: SiteLogin = {
+  site: "costco",
+  home: "https://www.costco.com/",
+  ask: "William's Costco.com login, for grocery orders",
+  loggedIn: async (fp) =>
+    /^https:\/\/www\.costco\.com\//.test(fp.url()) &&
+    !(await fp.has({ role: "link", name: "/^sign in/i" }, 1_000)),
+  signIn: formLogin("costco", {
+    start: "https://www.costco.com/LogonForm",
+    username: { css: "#signInName" },
+    password: { css: "#password" },
+    submit: { css: "#next" },
+    keepSignedIn: { css: "#rememberMe" },
+    rejected: /incorrect|invalid|not recognized|doesn.t match/i,
+    success: /^https:\/\/www\.costco\.com\/(?!LogonForm)/,
+  }),
+};
+
 export const SITE_LOGINS: readonly SiteLogin[] = [
   cloudflare,
   google,
@@ -990,6 +1012,7 @@ export const SITE_LOGINS: readonly SiteLogin[] = [
   discord,
   hubspot,
   intuit,
+  costco,
   learnLogin,
 ];
 

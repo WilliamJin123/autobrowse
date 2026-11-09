@@ -196,6 +196,8 @@ export interface FormLoginSpec {
   captcha?: Hints;
   /** A second step only a person can answer (Apple's code on William's devices): a pause, not a failure. */
   person?: { asks: RegExp; why: string };
+  /** The keep-me-signed-in tick, when the site words it unlike the usual; ticked before every submit that shows it. */
+  keepSignedIn?: Hints;
   /** "Trust this browser?" after the second step: pressed, so the profile skips it next time. */
   trust?: Hints;
 }
@@ -208,6 +210,20 @@ export class LoginFailed extends Error {
 }
 
 const SETTLE_MS = 1_500;
+
+/** The tick that keeps a profile signed in, by the words sites use. */
+const KEEP_SIGNED_IN = {
+  role: "checkbox",
+  name: "/keep me (signed|logged) in|stay (signed|logged) in|remember me|keep me signed/i",
+} as const;
+
+/** Ticks the keep-signed-in box when the form has one and it is off; no box, no act. */
+async function keepSignedIn(fp: FlowPage, hints: Hints): Promise<void> {
+  if (!(await fp.has(hints, 500))) return;
+  await fp.act({ kind: "script", js: "(el) => { if (!el.checked) el.click(); }" }, hints, {
+    goal: "keep me signed in",
+  });
+}
 
 /** The credential's password, or a clear failure: a `via` credential has none and belongs on the provider path. */
 export function passwordOf(site: string, cred: Credential): string {
@@ -252,6 +268,7 @@ function formWalk(
     if (submitted && !typedPrevious && value === password)
       fail(`the form came back after the password, saying nothing known: ${fp.url()}`);
     await fp.act({ kind: "fill", value }, spec.password, { goal });
+    await keepSignedIn(fp, spec.keepSignedIn ?? KEEP_SIGNED_IN);
     await fp.act({ kind: "click" }, spec.submit, { goal: "submit login form" });
     submitted = true;
   };

@@ -76,6 +76,7 @@ describe("setup", () => {
       "discord",
       "hubspot",
       "intuit",
+      "costco",
       "outlook@uw",
     ]);
     expect((await store.get("cloudflare"))?.via).toBe("google");
@@ -105,6 +106,7 @@ describe("setup", () => {
       discord: { username: "w@x.com", password: "d" },
       hubspot: { username: "w@x.com", password: "-", via: "google" },
       intuit: { username: "w@x.com", password: "i" },
+      costco: { username: "w@x.com", password: "c" },
       "outlook@uw": { username: "w@uwaterloo.ca", password: "u" },
     });
     const { io, asked, said } = scripted([]);
@@ -114,7 +116,7 @@ describe("setup", () => {
       set: { llm: true, codesInbox: true },
     });
     expect(asked).toEqual([]);
-    expect(said.filter((l) => l.endsWith(": stored")).length).toBe(23);
+    expect(said.filter((l) => l.endsWith(": stored")).length).toBe(24);
   });
 
   function envSink() {
