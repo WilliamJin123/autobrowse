@@ -18,7 +18,7 @@ import type { ShareAdmin } from "./presidio.js";
 
 const run = promisify(execFile);
 
-export const REGISTRY = "wrenautomation/autobrowse-flows";
+export const REGISTRY = "WilliamJin123/autobrowse-flows";
 export const REGISTRY_RAW = `https://raw.githubusercontent.com/${REGISTRY}/main`;
 
 export interface FlowPack {

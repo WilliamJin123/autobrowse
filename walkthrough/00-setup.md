@@ -47,12 +47,12 @@ open http://localhost:9080              # runs, gates, explore, recordings, acco
 ```
 
 Settings go to `.env` in the folder you run from (0600, never committed).
-[`.env.example`](https://github.com/wrenautomation/autobrowse/blob/main/.env.example) lists every optional key by tier.
+[`.env.example`](https://github.com/WilliamJin123/autobrowse/blob/main/.env.example) lists every optional key by tier.
 
 ## From a clone
 
 ```sh
-git clone https://github.com/wrenautomation/autobrowse && cd autobrowse
+git clone https://github.com/WilliamJin123/autobrowse && cd autobrowse
 pnpm install && pnpm exec playwright install chromium
 pnpm autobrowse --help                  # same CLI; `pnpm worker` runs the worker from source
 pnpm gates                              # lint + typecheck + tests; the Restate test needs Docker

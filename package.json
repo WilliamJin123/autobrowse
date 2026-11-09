@@ -4,7 +4,7 @@
   "description": "Browser and account automation: recorded flows where no API exists, official API shapes where one does, a person in the loop for money, accounts and consent.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wrenautomation/autobrowse.git"
+    "url": "git+https://github.com/WilliamJin123/autobrowse.git"
   },
   "files": [
     "dist",

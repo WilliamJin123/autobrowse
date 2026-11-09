@@ -42,7 +42,7 @@ install can run.
 | 2 | a local Restate (`brew install restatedev/tap/restate`) | `autobrowse worker`: durable runs that survive restarts, the UI on :9080 |
 
 `autobrowse setup` asks which tier, then only what that tier needs.
-Settings go to `.env` in the folder you run from; [`.env.example`](https://github.com/wrenautomation/autobrowse/blob/main/.env.example)
+Settings go to `.env` in the folder you run from; [`.env.example`](https://github.com/WilliamJin123/autobrowse/blob/main/.env.example)
 lists every key by tier. Tiers 0 to 2 never need AWS. The rest of this README
 also covers the operator setup that runs Wren's fleet (owners, SSM, the
 desk); `deploy/operator.env.example` holds its keys.
@@ -1003,7 +1003,7 @@ Skip one site with `autobrowse share exclude <site>`.
 A compiled workflow whose proof passes is shared the same way: its source
 and step lines, scrubbed, without what it read. Wren checks each one and
 puts the good ones in the public registry,
-[wrenautomation/autobrowse-flows](https://github.com/wrenautomation/autobrowse-flows).
+[WilliamJin123/autobrowse-flows](https://github.com/WilliamJin123/autobrowse-flows).
 Install one with `autobrowse workflows add <name>`.
 
 Wren side (needs `SHARE_ADMIN_TOKEN`): the desk runs Presidio over the

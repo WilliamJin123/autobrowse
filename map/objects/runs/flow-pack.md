@@ -9,7 +9,7 @@ entity: src/share/gate.ts
 
 # Flow pack (shared library)
 
-A compiled workflow sent to Wren after its proof passed, checked, then merged into the public registry `wrenautomation/autobrowse-flows` on William's yes. Design `designs/2026-10-24-shared-library.md`.
+A compiled workflow sent to Wren after its proof passed, checked, then merged into the public registry `WilliamJin123/autobrowse-flows` on William's yes. Design `designs/2026-10-24-shared-library.md`.
 
 ## Why this shape
 

@@ -56,7 +56,7 @@ export function decodeCode(code: string): TrackCode {
   return parsed.data;
 }
 
-const BASE = "https://raw.githubusercontent.com/wrenautomation/autotrack/main/install";
+const BASE = "https://raw.githubusercontent.com/WilliamJin123/autotrack/main/install";
 
 /**
  * The two one-line installs, with the code filled in. Windows is for a PowerShell window: wrapped
