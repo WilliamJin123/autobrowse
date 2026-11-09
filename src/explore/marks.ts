@@ -6,7 +6,7 @@
  * hints carry the frame chain.
  */
 import { randomBytes } from "node:crypto";
-import type { Frame, Page } from "playwright";
+import type { Frame, Locator, Page } from "playwright";
 import { framesInView } from "../browser/frames.js";
 import { type Hints, locateAll, planLocator } from "../browser/locate.js";
 import { HINTS_JS } from "../recorder/observer.js";
@@ -239,6 +239,27 @@ const layerScript = (attr: string, found: Found[] | undefined) => `(() => {
  * One session's marks: the last picture's controls, and how to act on one of them. The scripts
  * run in Patchright's isolated world: the page shares the DOM, never these functions.
  */
+/**
+ * Where the element carrying `attr`=`n` sits among `all`'s matches; -1 when none.
+ * Read per element, through the same frame lookup a click uses: on Costco's card iframes
+ * (WA-1235) `evaluateAll` threw "Unable to adopt element handle from a different document".
+ */
+async function markIndex(all: Locator, attr: string, n: string): Promise<number> {
+  const count = Math.min(await all.count(), MAX_MATCHES);
+  for (let i = 0; i < count; i++)
+    if (
+      (await all
+        .nth(i)
+        .getAttribute(attr, { timeout: 1_000 })
+        .catch(() => null)) === n
+    )
+      return i;
+  return -1;
+}
+
+/** Matches read for a mark's place; a looser try past this many is no use as `nth`. */
+const MAX_MATCHES = 300;
+
 export function marksFor() {
   // A random attribute name: the page sees a tag on its controls, never one that names us.
   const attr = `data-m${randomBytes(4).toString("hex")}`;
@@ -288,10 +309,7 @@ export function marksFor() {
       if (own.tag) tries.push({ tag: own.tag, css: own.tag, ...frame });
       for (const t of tries) {
         if (!planLocator(t)) continue;
-        const i = await locateAll(page, t).evaluateAll(
-          (els, m) => els.findIndex((e) => e.getAttribute(m.attr) === m.n),
-          { attr, n: String(n) },
-        );
+        const i = await markIndex(locateAll(page, t), attr, String(n));
         if (i >= 0) return i ? { ...t, nth: i } : t;
       }
       throw new StaleMark(`mark ${n}: no locator finds it; take marks again`);

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { chromium } from "playwright";
 import { describe, expect, it } from "vitest";
 import { digest, hintsFor } from "../src/agent/digest.js";
-import { ariaWithFrames, withFrame } from "../src/browser/frames.js";
+import { ariaWithFrames, captchaInView, withFrame } from "../src/browser/frames.js";
 import { HUMAN_PACE, handsFor } from "../src/browser/human/index.js";
 import { locate } from "../src/browser/locate.js";
 import { marksFor } from "../src/explore/marks.js";
@@ -142,6 +142,49 @@ describe("marks in iframes", () => {
       const target = locate(page, hints);
       await target.click();
       expect(await target.getAttribute("aria-checked")).toBe("true");
+    } finally {
+      await browser.close();
+      srv.close();
+    }
+  });
+
+  it("places a card number two cross-site frames down, through a mark and under a covering label (WA-1235)", async () => {
+    const srv = createServer((req, res) => {
+      res.setHeader("content-type", "text/html");
+      if (req.url === "/checkout")
+        res.end(`<div role="dialog" aria-label="Add Payment" style="position:relative">
+          <iframe id="payments" style="display:block;border:0" width="420" height="200" src="http://127.0.0.1:${port}/payments"></iframe>
+          <iframe title="reCAPTCHA" width="300" height="80" src="http://127.0.0.1:${port}/recaptcha/api2/anchor?k=x"></iframe>
+          </div>`);
+      else if (req.url?.startsWith("/recaptcha/")) res.end("<span>I'm not a robot</span>");
+      else if (req.url === "/payments")
+        res.end(`<div style="position:relative;width:400px;height:60px">
+          <iframe title="Card Number Input" style="position:absolute;inset:0;border:0" width="400" height="60" src="http://localhost:${port}/number"></iframe>
+          <div style="position:absolute;inset:0;padding:4px">Card number</div></div>`);
+      else res.end(`<input aria-label="Card Number Input" style="width:380px;height:40px">`);
+    }).listen(0);
+    const port = (srv.address() as AddressInfo).port;
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://localhost:${port}/checkout`);
+      const number = page
+        .frameLocator("iframe#payments")
+        .frameLocator('iframe[title="Card Number Input"]')
+        .getByRole("textbox");
+      await number.waitFor();
+      // The label over the frame covers the input: the mark is still read, the paste still lands.
+      const hints = await withFrame(page, { role: "textbox", name: "Card Number Input" }, 2_000);
+      expect(hints.frame?.split(">> internal:control=enter-frame >>")).toHaveLength(2);
+      const hands = handsFor({ ...HUMAN_PACE, think: [0, 1] });
+      await hands.paste(locate(page, hints), "4111111111111111", { timeout: 5_000 });
+      expect(await number.inputValue()).toBe("4111111111111111");
+      const marks = marksFor();
+      const { marks: taken } = await marks.take(page, async () => "shot.png");
+      const n = taken.find((m) => m.name === "Card Number Input")?.n;
+      expect(n).toBeDefined();
+      expect((await marks.hints(page, n as number)).frame).toBe(hints.frame);
+      expect(await captchaInView(page)).toBe('iframe[title="reCAPTCHA"]');
     } finally {
       await browser.close();
       srv.close();

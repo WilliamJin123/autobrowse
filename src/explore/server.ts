@@ -51,7 +51,7 @@ import {
   type RunnerOptions,
   seedOf,
 } from "../browser/flow.js";
-import { ariaWithFrames, withFrame } from "../browser/frames.js";
+import { ariaWithFrames, captchaInView, withFrame } from "../browser/frames.js";
 import { freshSeed, handsFor, seeded, type Typed } from "../browser/human/index.js";
 import { inPage } from "../browser/in-page.js";
 import { layoutText } from "../browser/layout.js";
@@ -1306,7 +1306,16 @@ async function serve(
       contacts: { ...card.tell, ...(card.taxId ? { taxId: card.taxId } : {}) },
     };
     const billing = await fillBilling();
-    return { ok: true, secret: c.secret, ...(billing.length ? { billing } : {}) };
+    // A card form often holds a captcha (Instacart's Add Payment): its submit fails until ticked.
+    const captcha = await captchaInView(page).catch(() => null);
+    return {
+      ok: true,
+      secret: c.secret,
+      ...(billing.length ? { billing } : {}),
+      ...(captcha
+        ? { captcha: `a captcha is on this form: {"cmd":"captcha"} before you submit (${captcha})` }
+        : {}),
+    };
   };
   /**
    * The bank's confirmation code (3-D Secure, often in an iframe on the bank's

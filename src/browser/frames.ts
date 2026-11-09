@@ -91,6 +91,17 @@ async function visibleFrames(
   return out;
 }
 
+/** A captcha widget's frame: reCAPTCHA's anchor, hCaptcha's checkbox, Cloudflare Turnstile. */
+const CAPTCHA_FRAME =
+  /\/recaptcha\/(api2|enterprise)\/anchor|hcaptcha\.com\/.*checkbox|challenges\.cloudflare\.com\//i;
+
+/** The chain of a captcha widget in view (a checkbox a form wants ticked before submit), else null. */
+export async function captchaInView(page: Page): Promise<string | null> {
+  for (const { frame, chain } of await visibleFrames(page.mainFrame(), null, 1, []))
+    if (CAPTCHA_FRAME.test(frame.url())) return chain;
+  return null;
+}
+
 /** The page's visible frames, outermost first, each with the chain a `frame` hint takes. */
 export const framesInView = (page: Page) => visibleFrames(page.mainFrame(), null, 1, []);
 

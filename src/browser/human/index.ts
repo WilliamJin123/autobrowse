@@ -206,6 +206,9 @@ const unlogged: HandsLog = () => {};
 /** What the hands log shows for a key of a secret. */
 const HIDDEN_KEY = "•";
 
+/** How long a paste tries the click before it focuses the field instead. */
+const COVERED_MS = 3_000;
+
 export interface ActTimeout {
   timeout: number;
 }
@@ -523,7 +526,12 @@ export function handsFor(
     },
     async paste(target, text, o) {
       if (await chosen(target, text, o, (l) => click(l, o))) return;
-      await click(target, o);
+      await target.waitFor({ state: "visible", timeout: o.timeout });
+      // Covered (a parent's label over a card iframe): focus it, as autofill does.
+      await click(target, { timeout: Math.min(o.timeout, COVERED_MS) }).catch(async (err) => {
+        if (!/Timeout/.test(String(err))) throw err;
+        await target.focus(o);
+      });
       await rest(target.page(), pace.mouse.hover, pace, random, log).catch(() => undefined);
       // A code split one box per character (Microsoft's six digit boxes): a fill lands
       // it all in the first box. Keys, as a person types them, move the widget along.
