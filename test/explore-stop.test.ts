@@ -248,6 +248,28 @@ describe("autobrowse stop", () => {
     expect(signals).toEqual(["SIGTERM"]);
   });
 
+  it("endProcess signals a killed driver's browser only when it stays (WA-1218)", async () => {
+    // driver 1 ignores SIGTERM; browser 2 quits with its driver, or not
+    const trial = async (browserQuits: boolean) => {
+      const up = new Set([1, 2]);
+      const signals: string[] = [];
+      await endProcess(1, 0, {
+        alive: (p) => up.has(p),
+        kill: (p, sig) => {
+          signals.push(`${p}:${sig}`);
+          if (sig === "SIGKILL") up.delete(1);
+          if (sig === "SIGKILL" && browserQuits) up.delete(2);
+          if (p === 2) up.delete(2);
+        },
+        children: () => [2],
+        childWaitMs: 300,
+      });
+      return signals;
+    };
+    expect(await trial(true)).toEqual(["1:SIGTERM", "1:SIGKILL"]);
+    expect(await trial(false)).toEqual(["1:SIGTERM", "1:SIGKILL", "2:SIGTERM"]);
+  }, 20_000);
+
   it("refuses a verdict it does not know", async () => {
     const r = await run(["9091", "maybe"]);
     expect(r.code).toBe(2);

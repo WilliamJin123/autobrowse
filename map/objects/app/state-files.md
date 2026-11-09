@@ -52,7 +52,7 @@ Plain files a person can open, one concern each; secrets sealed; shared truth in
 | Keychain `autobrowse`, `autobrowse-wallet` | seal keys (`src/auth/keep.ts:9-17`) | [[credential]], [[card]] |
 | Keychain `autobrowse-owner-<o>` | owner `<o>`'s seal key (`src/auth/keep.ts:14`) | [[owner]] |
 
-Temp dirs `run-files-*` (old), `upload-*`, `passwords-*` are reaped (`src/browser/reap.ts:72`).
+Temp dirs `run-files-*` (old), `upload-*`, `passwords-*` are reaped (`src/browser/reap.ts:187`). So are Chrome's app copies (`$TMPDIR/../X/com.google.Chrome.code_sign_clone/*`) that no process holds and that are over 10 min old; a signaled or crashed headed Chrome leaves one per launch (`reapChromeClones`, `:146`, WA-1218).
 
 ## Connected to
 

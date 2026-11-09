@@ -113,19 +113,36 @@ export const post: Post = async (port, body) => {
   }
 };
 
+function childPids(pid: number): number[] {
+  try {
+    return execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" })
+      .split("\n")
+      .map(Number)
+      .filter((n) => n > 0);
+  } catch {
+    return []; // no child
+  }
+}
+
 /** How a session's process left: on its own, or by our signal. */
 export type Ended = "exited" | "SIGTERM" | "SIGKILL";
 
 /**
  * Waits `waitMs` for a session's process to leave, then makes it: SIGTERM, and SIGKILL 5 s later.
  * A process that answers no close still holds its browser and profile (WA-1118: a blocked one
- * held both 15 minutes while `stop` said "already closed"). A killed driver's browser gets a
- * SIGTERM of its own, so it closes its profile cleanly.
+ * held both 15 minutes while `stop` said "already closed"). A killed driver's browser quits on
+ * its own when the pipe closes, and so removes its app copy (WA-1218: a signal leaves one).
+ * A browser still up 5 s later gets a SIGTERM.
  */
 export async function endProcess(
   pid: number,
   waitMs: number,
-  deps: { alive?: (pid: number) => boolean; kill?: (pid: number, signal: string) => void } = {},
+  deps: {
+    alive?: (pid: number) => boolean;
+    kill?: (pid: number, signal: string) => void;
+    children?: (pid: number) => number[];
+    childWaitMs?: number;
+  } = {},
 ): Promise<Ended> {
   const alive = deps.alive ?? pidAlive;
   const kill =
@@ -148,17 +165,15 @@ export async function endProcess(
   if (await gone(waitMs)) return "exited";
   kill(pid, "SIGTERM");
   if (await gone(5_000)) return "SIGTERM";
-  let children: number[] = [];
-  try {
-    children = execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" })
-      .split("\n")
-      .map(Number)
-      .filter((n) => n > 0);
-  } catch {
-    // no child
-  }
+  const children = (deps.children ?? childPids)(pid);
   kill(pid, "SIGKILL");
-  for (const c of children) kill(c, "SIGTERM");
+  let left = children;
+  const until = Date.now() + (deps.childWaitMs ?? 5_000);
+  while (left.length && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 100));
+    left = left.filter((c) => alive(c));
+  }
+  for (const c of left) kill(c, "SIGTERM");
   return "SIGKILL";
 }
 

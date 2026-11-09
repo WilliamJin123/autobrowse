@@ -7,7 +7,8 @@
  * explore session closes itself when idle).
  */
 import { execFile } from "node:child_process";
-import { basename } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 export interface Proc {
@@ -107,6 +108,72 @@ export async function reapOrphans(
       return false; // gone already
     }
   });
+}
+
+/**
+ * macOS Chrome copies its app per headed launch (code_sign_clone) and removes the copy on a
+ * clean exit. A signal or a crash leaves it: 62 by 11-08 (WA-1218). Copies share blocks with
+ * Chrome.app until an update; then each pins the old version.
+ */
+export const chromeCloneDir = (): string =>
+  join(dirname(tmpdir()), "X", "com.google.Chrome.code_sign_clone");
+
+/** Copies some process holds open: a running Chrome's. Null when lsof cannot say. */
+async function heldClones(dir: string): Promise<Set<string> | null> {
+  const r = await promisify(execFile)("lsof", ["-Fn", "+D", dir], { timeout: 20_000 }).then(
+    (x) => x.stdout,
+    // exit 1 with no stderr: nothing open
+    (e: { code?: unknown; stdout?: string; stderr?: string }) =>
+      e.code === 1 && !e.stderr?.trim() ? (e.stdout ?? "") : null,
+  );
+  if (r === null) return null;
+  return new Set([...r.matchAll(/code_sign_clone\.[A-Za-z0-9]+/g)].map((m) => m[0]));
+}
+
+/** Is any Google Chrome running? It then holds at least one copy. */
+async function chromeRunning(): Promise<boolean> {
+  return promisify(execFile)("pgrep", ["-x", "Google Chrome"]).then(
+    () => true,
+    () => false,
+  );
+}
+
+/**
+ * Remove Chrome's app copies that no process holds and older than `olderThanMs`.
+ * Removes none when lsof fails, or when it sees none held while a Chrome runs (lsof missed it).
+ * Returns how many went. Never throws.
+ */
+export async function reapChromeClones(
+  o: {
+    dir?: string;
+    held?: (dir: string) => Promise<Set<string> | null>;
+    running?: () => Promise<boolean>;
+    olderThanMs?: number;
+    now?: number;
+  } = {},
+): Promise<number> {
+  if (!o.dir && process.platform !== "darwin") return 0;
+  const { readdir, rm, stat } = await import("node:fs/promises");
+  const dir = o.dir ?? chromeCloneDir();
+  const names = (await readdir(dir).catch(() => [] as string[])).filter((n) =>
+    n.startsWith("code_sign_clone."),
+  );
+  if (!names.length) return 0;
+  const held = await (o.held ?? heldClones)(dir).catch(() => null);
+  if (!held || (!held.size && (await (o.running ?? chromeRunning)()))) return 0;
+  const cutoff = (o.now ?? Date.now()) - (o.olderThanMs ?? 10 * 60_000);
+  let gone = 0;
+  for (const name of names) {
+    if (held.has(name)) continue;
+    const path = join(dir, name);
+    const st = await stat(path).catch(() => null);
+    if (!st?.isDirectory() || st.mtimeMs > cutoff) continue;
+    await rm(path, { recursive: true, force: true }).then(
+      () => gone++,
+      () => {},
+    );
+  }
+  return gone;
 }
 
 /** Temp dirs a file-handling step makes and removes; one a crash left behind is only ever seconds old when in use. */

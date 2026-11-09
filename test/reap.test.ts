@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orphanBrowsers, reapOrphans } from "../src/browser/reap.js";
+import { orphanBrowsers, reapChromeClones, reapOrphans } from "../src/browser/reap.js";
 
 const dir = "/home/u/.config/autobrowse/profiles";
 const procs = [
@@ -26,5 +26,45 @@ describe("orphaned browsers", () => {
     expect(killed).toEqual([]);
     expect(await reapOrphans(dir, o)).toEqual([{ pid: 10, profile: "npm" }]);
     expect(killed).toEqual([10]);
+  });
+});
+
+describe("Chrome app copies (WA-1218)", () => {
+  const setup = async () => {
+    const { mkdtempSync, mkdirSync, utimesSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "clones-"));
+    const old = Date.now() / 1000 - 3600;
+    for (const n of [
+      "code_sign_clone.held",
+      "code_sign_clone.left",
+      "code_sign_clone.new",
+      "other",
+    ]) {
+      mkdirSync(join(dir, n));
+      if (n !== "code_sign_clone.new") utimesSync(join(dir, n), old, old);
+    }
+    const { readdirSync } = await import("node:fs");
+    return { dir, left: () => readdirSync(dir).sort() };
+  };
+
+  it("removes old copies no process holds", async () => {
+    const { dir, left } = await setup();
+    const n = await reapChromeClones({ dir, held: async () => new Set(["code_sign_clone.held"]) });
+    expect(n).toBe(1);
+    expect(left()).toEqual(["code_sign_clone.held", "code_sign_clone.new", "other"]);
+  });
+
+  it("removes none when lsof fails, or sees none held while Chrome runs", async () => {
+    const { dir, left } = await setup();
+    expect(await reapChromeClones({ dir, held: async () => null })).toBe(0);
+    expect(
+      await reapChromeClones({ dir, held: async () => new Set(), running: async () => true }),
+    ).toBe(0);
+    expect(left()).toHaveLength(4);
+    expect(
+      await reapChromeClones({ dir, held: async () => new Set(), running: async () => false }),
+    ).toBe(2);
   });
 });
