@@ -234,7 +234,8 @@ const INDEED_CARDS = `(() => {
   if (!m) return document.querySelector('[data-testid="noResultsMessage"], [data-testid="empty-serp-result"]') ? { count: "0", jobs: [], meta: null } : null;
   const { results, tierSummaries, pageNumber, searchTimestamp, what, where, radius, radiusUnit } = m;
   return {
-    count: document.querySelector('[data-testid="jobsearch-JobCountAndSortPane-jobCount"]')?.textContent?.trim() || null,
+    // the count pane is gone (11-10); the title still says "Now Hiring: 900 … Jobs in …"
+    count: document.querySelector('[data-testid="jobsearch-JobCountAndSortPane-jobCount"], .jobsearch-JobCountAndSortPane-jobCount')?.textContent?.trim() || document.title.match(/([\\d,]+\\+?) .*jobs/i)?.[1] || null,
     jobs: JSON.parse(JSON.stringify(results || [])),
     meta: JSON.parse(JSON.stringify({ tierSummaries, pageNumber, searchTimestamp, what, where, radius, radiusUnit })),
   };
