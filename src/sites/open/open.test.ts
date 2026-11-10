@@ -3,10 +3,11 @@ import { challengeUrlOf } from "../../browser/flows/page-api.js";
 import { arxivFeed, arxivIdOf } from "./arxiv.js";
 import { postUri } from "./bluesky.js";
 import { type Item, threadOf } from "./hackernews.js";
-import { listOf, mapLimit, parseXml, qs, rssFeed } from "./kit.js";
+import { flag, listOf, mapLimit, parseXml, qs, rssFeed } from "./kit.js";
 import { pagePath } from "./lobsters.js";
 import { abstractOf } from "./openalex.js";
 import { noteKind, notesOf } from "./openreview.js";
+import { launchOf } from "./producthunt.js";
 import { abstractText, pubmedTerm } from "./pubmed.js";
 import { pubHost } from "./substack.js";
 
@@ -207,5 +208,33 @@ describe("rss", () => {
     expect(f).toMatchObject({ found: true, title: "T" });
     expect(f.items).toEqual([{ title: "A", category: ["ai"] }]);
     expect(rssFeed(null).found).toBe(false);
+  });
+});
+
+describe("producthunt", () => {
+  it("reads a launch's tagline and outbound link out of the feed's content", () => {
+    const entry = parseXml(`<feed><entry><id>tag:www.producthunt.com,2005:Post/42</id>
+      <published>2026-11-09T00:16:41-08:00</published>
+      <link rel="alternate" type="text/html" href="https://www.producthunt.com/products/x"/>
+      <title>X &amp; Co</title>
+      <content type="html">&lt;p&gt; Ship &amp;amp; learn &lt;/p&gt;&lt;p&gt;&lt;a href="https://www.producthunt.com/r/p/42?app_id=339"&gt;Link&lt;/a&gt;&lt;/p&gt;</content>
+      <author><name>Ana</name></author></entry></feed>`).feed as { entry: Record<string, unknown> };
+    expect(launchOf(entry.entry)).toMatchObject({
+      postId: "42",
+      name: "X & Co",
+      tagline: "Ship & learn",
+      url: "https://www.producthunt.com/products/x",
+      website: "https://www.producthunt.com/r/p/42?app_id=339",
+      author: "Ana",
+      published: "2026-11-09T00:16:41-08:00",
+    });
+  });
+});
+
+describe("kit flag", () => {
+  it('reads "false" as false', () => {
+    expect(flag(true).parse("false")).toBe(false);
+    expect(flag(false).parse("true")).toBe(true);
+    expect(flag(true).parse(undefined)).toBe(true);
   });
 });

@@ -71,12 +71,15 @@ import { bluesky } from "./open/bluesky.js";
 import { dblp } from "./open/dblp.js";
 import { devto } from "./open/devto.js";
 import { hackernews } from "./open/hackernews.js";
+import { indeed, upwork } from "./open/jobs.js";
 import { lobsters } from "./open/lobsters.js";
 import { medium } from "./open/medium.js";
 import { bbc, bloomberg } from "./open/news.js";
 import { openalex } from "./open/openalex.js";
 import { openreview } from "./open/openreview.js";
+import { producthunt } from "./open/producthunt.js";
 import { pubmed } from "./open/pubmed.js";
+import { googleScholar } from "./open/scholar.js";
 import { stackoverflow } from "./open/stackoverflow.js";
 import { substack } from "./open/substack.js";
 import { wikidata, wikipedia } from "./open/wiki.js";
@@ -113,6 +116,10 @@ export const SITES: readonly SiteApi[] = [
   bbc,
   bloomberg,
   yahooFinance,
+  producthunt,
+  googleScholar,
+  indeed,
+  upwork,
   linkedin,
   youtube,
   instagram,

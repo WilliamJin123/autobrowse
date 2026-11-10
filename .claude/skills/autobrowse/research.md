@@ -32,6 +32,9 @@ Open sites: a host's own public API, no key, whole records. Each is a site:
 - Papers: `arxiv`, `openalex`, `pubmed`, `dblp`, `openreview`; facts: `wikipedia`, `wikidata`.
 - Community: `stackoverflow`, `hackernews`, `lobsters`, `devto`, `bluesky`, `substack`, `medium`.
 - News and markets: `bbc`, `bloomberg` (headlines), `yahoo-finance` (prices, tickers).
+- Launches and jobs: `producthunt` (newest launches), `indeed`, `upwork` (search, one job).
+- Papers by citation: `google-scholar` (search, author pages).
+- `indeed`, `upwork` and `google-scholar` read in a browser: paced, capped, slower.
 
 ```sh
 autobrowse site call hackernews GET "/search?q=playwright&sort=date"

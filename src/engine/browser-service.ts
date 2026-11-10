@@ -78,6 +78,14 @@ import { npmCreateOrg } from "../browser/flows/npm-create-org.js";
 import { npmGranularToken } from "../browser/flows/npm-granular-token.js";
 import { npmTrustedPublisher } from "../browser/flows/npm-trusted-publisher.js";
 import { googleOauthConsent } from "../browser/flows/oauth-consent.js";
+import {
+  indeedJob,
+  indeedSearch,
+  scholarAuthor,
+  scholarSearch,
+  upworkJob,
+  upworkSearch,
+} from "../browser/flows/open-pages.js";
 import { outlookOauthConsent } from "../browser/flows/outlook-oauth-consent.js";
 import { dblpApi, openreviewApi } from "../browser/flows/page-api.js";
 import { perplexityAsk } from "../browser/flows/perplexity-ask.js";
@@ -161,6 +169,12 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     googlePlace,
     dblpApi,
     openreviewApi,
+    scholarSearch,
+    scholarAuthor,
+    indeedSearch,
+    indeedJob,
+    upworkSearch,
+    upworkJob,
     googleReviews,
     proofShot,
     perplexityAsk,

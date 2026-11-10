@@ -3,6 +3,7 @@
  * Each answer goes back whole; a route only picks the list out of the envelope.
  */
 import { XMLParser } from "fast-xml-parser";
+import { z } from "zod";
 import type { HttpClient } from "../../clients/http.js";
 import { SiteError } from "../types.js";
 
@@ -130,3 +131,7 @@ export function qs(params: Record<string, string | number | boolean | undefined>
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") p.set(k, String(v));
   return p.toString();
 }
+
+/** A query flag: "true"/"false" as sent in a URL (`z.coerce.boolean` reads "false" as true). */
+export const flag = (dflt: boolean) =>
+  z.preprocess((v) => (v === "true" ? true : v === "false" ? false : v), z.boolean()).default(dflt);

@@ -66,6 +66,14 @@ import { npmCreateOrg } from "./npm-create-org.js";
 import { npmGranularToken } from "./npm-granular-token.js";
 import { npmTrustedPublisher } from "./npm-trusted-publisher.js";
 import { googleOauthConsent } from "./oauth-consent.js";
+import {
+  indeedJob,
+  indeedSearch,
+  scholarAuthor,
+  scholarSearch,
+  upworkJob,
+  upworkSearch,
+} from "./open-pages.js";
 import { outlookOauthConsent } from "./outlook-oauth-consent.js";
 import { dblpApi, openreviewApi } from "./page-api.js";
 import { perplexityAsk } from "./perplexity-ask.js";
@@ -187,6 +195,18 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(googleWorkspaceLogo, z.object({ file: z.string() }), true),
   entry(hubspotConnectorKeys, z.object({ url: z.string(), replace: z.boolean().optional() }), true),
+  entry(indeedJob, z.object({ jk: z.string() }), true),
+  entry(
+    indeedSearch,
+    z.object({
+      q: z.string(),
+      l: z.string().optional(),
+      fromage: z.number().optional(),
+      sort: z.union([z.literal("date"), z.literal("relevance")]).optional(),
+      start: z.number().optional(),
+    }),
+    true,
+  ),
   entry(instagramComment, z.object({ text: z.string(), shortcode: z.string() }), true),
   entry(
     instagramCreatePost,
@@ -502,6 +522,27 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(
+    scholarAuthor,
+    z.object({
+      user: z.string(),
+      n: z.number().optional(),
+      sort: z.union([z.literal("date"), z.literal("cited")]).optional(),
+    }),
+    true,
+  ),
+  entry(
+    scholarSearch,
+    z.object({
+      q: z.string(),
+      start: z.number().optional(),
+      n: z.number().optional(),
+      from: z.number().optional(),
+      to: z.number().optional(),
+      sort: z.union([z.literal("date"), z.literal("relevance")]).optional(),
+    }),
+    true,
+  ),
   entry(threadsFollow, z.object({ username: z.string() }), true),
   entry(threadsFollowing, z.object({ max: z.number().optional() }), true),
   entry(threadsLike, z.object({ username: z.string(), code: z.string() }), true),
@@ -580,6 +621,17 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   entry(tiktokProfileName, z.object({ name: z.string() }), true),
   entry(tiktokSearch, z.object({ q: z.string(), max: z.number().optional() }), true),
   entry(tiktokVideoAnalytics, z.object({ videoId: z.string() }), true),
+  entry(upworkJob, z.object({ id: z.string() }), true),
+  entry(
+    upworkSearch,
+    z.object({
+      q: z.string(),
+      page: z.number().optional(),
+      perPage: z.number().optional(),
+      sort: z.union([z.literal("relevance"), z.literal("recency")]).optional(),
+    }),
+    true,
+  ),
   entry(wranglerLogin, z.object({ url: z.string() }), true),
   entry(xFollow, z.object({ username: z.string(), undo: z.boolean().optional() }), true),
   entry(xFollowing, z.object({ max_results: z.number().optional() }), true),

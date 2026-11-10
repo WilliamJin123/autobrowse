@@ -331,6 +331,24 @@ RSS; Bloomberg's feeds moved to www.bloomberg.com/feeds and its articles stay be
 `yahoo-finance` reads the chart and search JSON its pages call; the v7 quote wants a cookie crumb,
 and chart `meta` carries the same live price.
 
+Search backends (11-10): none added. Brave's results page answers Node's fetch and `impit`
+(Chrome's TLS) with a 429 proof-of-work page, and passes only curl; a rung that rests on one
+client's luck is not kept. Yahoo answers 500 to every non-browser client, and its results are
+Bing's, as DuckDuckGo's are. The ladder stays exa, brave (API key), duckduckgo.
+
+Product Hunt (built 11-10): `producthunt GET /posts` reads its public Atom feed (all, or a
+category; `today`). Votes and comments need its GraphQL API token or the page.
+
+Batch B probe (11-10, a scratch browser): Google Scholar, Indeed and Upwork search render
+signed out. Reuters serves a DataDome captcha to the browser too.
+
+Batch B built (11-10): browser flows in `browser/flows/open-pages.ts`, each a site route.
+`google-scholar` (`/search`, `/authors/{user}`) reads the DOM. `indeed` (`/jobs`, `/jobs/{jk}`)
+reads `window.mosaic` and `_initialData` whole; `upwork` (`/jobs`, `/jobs/{id}`) reads its vuex
+store. A probe that reads page globals must run through `inPage`: Patchright's default world is
+isolated, so it sees the DOM but not `window.mosaic` or `__vue_app__`. A challenge title or a
+`/sorry/` URL refuses `platform_blocked`; no early 429 retry. Reuters: not built.
+
 ## Plan once William picks
 
 1. Wave 1 (U1 with its options first).
@@ -371,3 +389,8 @@ and chart `meta` carries the same live price.
 - 2026-11-10: A2 built on A1's pattern. HN lists and comment trees read Firebase one item at a
   time (8 at once), as OpenCLI does; Algolia serves search only. Medium by RSS: no cookie, and each
   item carries the whole post.
+- 2026-11-10: No keyless Brave or Yahoo search rung (my call). Brave passes only curl; Yahoo
+  adds Bing's index again for a browser leg's cost.
+- 2026-11-10: Indeed, Upwork and Scholar read through browser flows, whole records from the
+  page's own state (my call). Indeed retired its API and Scholar never had one: standing final.
+  Upwork waits on an approved GraphQL key.

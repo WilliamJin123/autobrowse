@@ -6,7 +6,7 @@
 import { z } from "zod";
 import type { ApiLeg } from "../types.js";
 import { route, type SiteApi } from "../types.js";
-import { getJson, ported, qs } from "./kit.js";
+import { flag, getJson, ported, qs } from "./kit.js";
 
 const HOME = "https://substack.com/api/v1";
 const GAP_MS = 500;
@@ -86,20 +86,19 @@ export const substack: SiteApi = {
       request: z.object({
         pub,
         slug: z.string().regex(/^[\w-]+$/),
-        comments: z.enum(["true", "false"]).default("false"),
+        comments: flag(false),
       }),
       api: async ({ pub, slug, comments }, leg) => {
         const base = `https://${pubHost(pub)}/api/v1`;
         const post = await get(leg, `${base}/posts/${slug}`, "/posts");
         if (!post || post.error) return { found: false, post: null };
-        const tree =
-          comments === "true"
-            ? await get(
-                leg,
-                `${base}/post/${post.id}/comments?${qs({ all_comments: true, sort: "best_first" })}`,
-                "/comments",
-              )
-            : null;
+        const tree = comments
+          ? await get(
+              leg,
+              `${base}/post/${post.id}/comments?${qs({ all_comments: true, sort: "best_first" })}`,
+              "/comments",
+            )
+          : null;
         return { found: true, post, ...(tree ? { comments: tree.comments ?? [] } : {}) };
       },
     }),
