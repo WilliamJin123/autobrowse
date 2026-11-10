@@ -95,6 +95,11 @@ export interface SiteRoute<I = unknown, O = unknown> {
    * unless set here (a POST search reads). A label, not a gate.
    */
   access?: Access;
+  /**
+   * Ported by hand from OpenCLI: `clis/<site>/<file>@<sha>` (github.com/jackwener/opencli).
+   * `autobrowse sites upstream` diffs that file against their main each week (WA-1251.6).
+   */
+  ported?: string;
   /** Publishes something: said in the route listing so an orchestrator gates it. */
   irreversible?: boolean;
   /**

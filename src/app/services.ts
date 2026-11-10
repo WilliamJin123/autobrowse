@@ -186,6 +186,7 @@ export {
   stateDirFor,
   stepLedgerFor,
   tracesFor,
+  upstreamOnTimer,
   walksDirFor,
 } from "./services-state.js";
 export {

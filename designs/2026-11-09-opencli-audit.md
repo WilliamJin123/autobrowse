@@ -334,3 +334,6 @@ with `api` legs; signed-in sites get flows with rungs. Each route gets one live 
   as a token and a doc id as a card run, which hid the one thing a reader looks for.
 - 2026-11-09: The network view groups by URL shape and query name instead of one line per call:
   a page fires 30+ calls to one `/api/graphql`, alike by URL. `rowLine` is gone (no user left).
+- 2026-11-09: Built .6. The watch is a blobless clone and `git log <sha>..origin/HEAD -- <file>`,
+  not the GitHub API: no token, no rate limit. One task per file, deduped by its last commit. It
+  runs on the desk, weekly, beside the other timers.

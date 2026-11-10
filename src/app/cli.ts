@@ -314,7 +314,7 @@ program
     }
   });
 
-program
+const sitesCmd = program
   .command("sites")
   .description(
     "Supported sites: sign-in known, API routes, workflows; `--find` searches them by name",
@@ -350,6 +350,23 @@ program
       ]),
     ))
       console.log(line);
+  });
+
+sitesCmd
+  .command("upstream")
+  .description(
+    "Ported routes whose OpenCLI file changed since its sha; `--task` opens one task per file (weekly on the desk)",
+  )
+  .option("--task", "open a backlog task per changed file, once per upstream change")
+  .action(async (o: { task?: boolean }) => {
+    const { SITES } = await import("../sites/index.js");
+    const { portedOf, taskChanges, upstreamChanges } = await import("../sites/upstream.js");
+    const ported = portedOf(SITES);
+    const changed = await upstreamChanges(ported);
+    const tasks = o.task ? await taskChanges(changed) : [];
+    console.log(
+      JSON.stringify({ ported: ported.length, changed, ...(o.task ? { tasks } : {}) }, null, 2),
+    );
   });
 
 program

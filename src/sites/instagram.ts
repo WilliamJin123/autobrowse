@@ -537,6 +537,7 @@ export const instagram: SiteApi = {
       request: reels,
       meter: () => ({ reels: 1 }),
       browser: { flow: "instagram/reels" },
+      ported: "clis/instagram/user.js@9bc5f5c",
     }),
     route({
       method: "GET",

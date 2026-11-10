@@ -37,6 +37,7 @@ import {
   sendSharedOnTimer,
   shareKnownFor,
   siteCallsDirFor,
+  upstreamOnTimer,
   watchersFor,
 } from "./services.js";
 
@@ -107,6 +108,7 @@ if (recorder) watchCalls(recorder, (msg) => log.warn({ calls: msg }, "calls"));
 watchers?.start();
 keepDiskOnTimer(settings, log);
 sendSharedOnTimer(log);
+upstreamOnTimer(log);
 keepSharedOnTimer(log);
 reproofOnTimer(log, COMPILED_DIR, (name, plan) =>
   proveCompiled(app.catalog, app.browser, name, plan),

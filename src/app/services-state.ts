@@ -352,6 +352,26 @@ export function reproofOnTimer(
   setTimeout(tick, 30 * 60_000).unref();
 }
 
+/** Weekly: ported routes whose OpenCLI file changed open a task each (WA-1251.6). */
+export function upstreamOnTimer(log: Logger): void {
+  const tick = (): void => {
+    void (async () => {
+      const { portedOf, taskChanges, upstreamChanges, upstreamDue } = await import(
+        "../sites/upstream.js"
+      );
+      if (!upstreamDue()) return;
+      const { SITES } = await import("../sites/index.js");
+      const changed = await upstreamChanges(portedOf(SITES));
+      const tasks = await taskChanges(changed);
+      if (tasks.length) log.warn({ tasks }, "upstream: ported files changed");
+    })().catch((err) =>
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "upstream"),
+    );
+  };
+  setInterval(tick, 6 * 60 * 60_000).unref();
+  setTimeout(tick, 60 * 60_000).unref();
+}
+
 export function keepSharedOnTimer(log: Logger): void {
   const token = process.env.SHARE_ADMIN_TOKEN;
   if (!token) return;

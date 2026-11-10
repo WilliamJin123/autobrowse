@@ -184,6 +184,8 @@ export interface RouteRow {
   access: Access;
   /** A laddered browser leg's ways, in order (`browser/ladder`). */
   strategies?: readonly Strategy[];
+  /** Ported from OpenCLI: `clis/<site>/<file>@<sha>`. */
+  ported?: string;
   irreversible: boolean;
   /** Can commit money: gated on the person before the API leg. */
   spends: boolean;
@@ -653,6 +655,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       summary: r.summary,
       ...(standing ? { standing } : {}),
       access: accessOf(r),
+      ...(r.ported ? { ported: r.ported } : {}),
       irreversible: r.irreversible ?? false,
       spends: Boolean(r.spends),
       request: jsonSchemaOf(r.request),
