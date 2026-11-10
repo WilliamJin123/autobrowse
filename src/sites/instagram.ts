@@ -106,6 +106,11 @@ const webSearch = z.object({
 const feed = z.object({ max: z.coerce.number().int().min(1).max(50).default(20) });
 
 const following = z.object({ max: z.coerce.number().int().min(1).max(1000).optional() });
+const reels = z.object({
+  username,
+  /** Most posts read, newest first (reels and others). */
+  max: z.coerce.number().int().min(1).max(2000).optional(),
+});
 const threadsPost = z.object({
   username: z.string().regex(/^@?[\w.]{1,40}$/, "a Threads handle"),
   code: z.string().regex(/^[\w-]{5,20}$/, "a post code"),
@@ -180,6 +185,8 @@ export const instagram: SiteApi = {
     comments: 40,
     search: 10,
     following: 8,
+    // One account's whole reel list: a feed page every 2–5 s.
+    reels: 20,
     feed: 12,
     // Threads through the same profile: its own buckets, under wren's daily caps.
     threads_search: 10,
@@ -517,6 +524,19 @@ export const instagram: SiteApi = {
       request: following,
       meter: () => ({ following: 1 }),
       browser: { flow: "instagram/following" },
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}/reels",
+      standing: {
+        final:
+          "the Graph API lists another account's posts only for business and creator accounts (`meta GET /instagram/{username}/reels`, try that first)",
+      },
+      summary:
+        "Every reel of any account, read in the signed-in profile: the page's own feed call paged to the end, each reel's whole item kept; when Instagram refuses that call, the Reels tab scrolled for links. `{ username, found, source: feed|grid, urls, reels, scanned, pages, feedFailed? }` (`max` posts read, default 1000). Reads only",
+      request: reels,
+      meter: () => ({ reels: 1 }),
+      browser: { flow: "instagram/reels" },
     }),
     route({
       method: "GET",

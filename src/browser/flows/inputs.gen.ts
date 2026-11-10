@@ -30,6 +30,7 @@ import {
 import { instagramPostComments } from "./instagram-comments.js";
 import { instagramCreatePost } from "./instagram-create-post.js";
 import { instagramOauthConsent } from "./instagram-oauth-consent.js";
+import { instagramReels } from "./instagram-reels.js";
 import { learnQuizAttempt, learnQuizReview, learnQuizzes } from "./learn.js";
 import { linkedinFollow, linkedinLike } from "./linkedin-act.js";
 import { linkedinActivity } from "./linkedin-activity.js";
@@ -118,7 +119,7 @@ const entry = <I>(
 
 export const FLOW_INPUTS: readonly FlowInput[] = [
   entry(awsCliLogin, z.object({ url: z.string(), user: z.string().optional() }), true),
-  entry(calcomApiKey, z.object({ name: z.string() }), true),
+  entry(calcomApiKey, z.object({ name: z.string(), replace: z.boolean().optional() }), true),
   entry(cloudflareAccountId, z.undefined(), true),
   entry(
     cloudflareApiToken,
@@ -128,7 +129,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
-  entry(discordBotToken, z.object({ name: z.string() }), true),
+  entry(discordBotToken, z.object({ name: z.string(), replace: z.boolean().optional() }), true),
   entry(discordInvite, z.object({ appId: z.string(), guild: z.string().optional() }), true),
   entry(
     facebookOauthConsent,
@@ -183,7 +184,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(googleWorkspaceLogo, z.object({ file: z.string() }), true),
-  entry(hubspotConnectorKeys, z.object({ url: z.string() }), true),
+  entry(hubspotConnectorKeys, z.object({ url: z.string(), replace: z.boolean().optional() }), true),
   entry(instagramComment, z.object({ text: z.string(), shortcode: z.string() }), true),
   entry(
     instagramCreatePost,
@@ -210,8 +211,9 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(instagramProfileName, z.object({ name: z.string() }), true),
+  entry(instagramReels, z.object({ username: z.string(), max: z.number().optional() }), true),
   entry(instagramSearch, z.object({ q: z.string(), max: z.number().optional() }), true),
-  entry(jobberConnectorKeys, z.object({ url: z.string() }), true),
+  entry(jobberConnectorKeys, z.object({ url: z.string(), replace: z.boolean().optional() }), true),
   entry(
     learnQuizAttempt,
     z.object({
@@ -381,6 +383,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       access: z.union([z.literal("publish"), z.literal("stage")]).optional(),
       bypass2fa: z.boolean().optional(),
       expiresDays: z.union([z.literal(30), z.literal(60), z.literal(7), z.literal(90)]).optional(),
+      replace: z.boolean().optional(),
     }),
     true,
   ),
@@ -411,7 +414,11 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     z.object({ url: z.string(), ref: z.string().optional(), text: z.string().optional() }),
     true,
   ),
-  entry(quickbooksConnectorKeys, z.object({ url: z.string(), dev: z.boolean().optional() }), true),
+  entry(
+    quickbooksConnectorKeys,
+    z.object({ url: z.string(), replace: z.boolean().optional(), dev: z.boolean().optional() }),
+    true,
+  ),
   entry(redditComment, z.object({ thing_id: z.string(), text: z.string() }), true),
   entry(redditMessage, z.object({ to: z.string(), subject: z.string(), text: z.string() }), true),
   entry(redditProfileName, z.object({ name: z.string() }), true),

@@ -76,6 +76,7 @@ describe("browser service", () => {
       "instagram/post",
       "instagram/post-comments",
       "instagram/profile-name",
+      "instagram/reels",
       "instagram/search",
       "instagram/threads-consent",
       "instagram/threads-follow",

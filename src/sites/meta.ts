@@ -324,6 +324,11 @@ const igHashtag = z.object({
     .regex(/^[A-Za-z0-9_=-]{1,512}$/)
     .optional(),
 });
+const igReels = z.object({
+  username: z.string().regex(/^[A-Za-z0-9._]{1,30}$/, "an Instagram username"),
+  /** Most posts read, newest first (reels and others). */
+  max: z.coerce.number().int().min(1).max(2000).default(1000),
+});
 const igLookup = z.object({
   username: z.string().regex(/^[A-Za-z0-9._]{1,30}$/, "an Instagram username"),
   /** The page after this one: a previous answer's `next`. */
@@ -547,6 +552,35 @@ async function igDiscover(
   return must(res, "{igUserId}/business_discovery");
 }
 
+/** Discovery's largest page. */
+const IG_PAGE = 50;
+
+/** Every post of a business or creator account, page by page, keeping the reels whole. */
+async function igAllReels(leg: ApiLeg, { username, max }: { username: string; max: number }) {
+  const media: unknown[] = [];
+  let after: string | undefined;
+  let pages = 0;
+  let profile: unknown = null;
+  do {
+    const page = (await igDiscover(leg, { username, after, limit: IG_PAGE })) as {
+      found?: boolean;
+      profile?: unknown;
+      media?: unknown[];
+      next?: string | null;
+    };
+    pages++;
+    if (!page.found) return page;
+    profile = page.profile;
+    media.push(...(page.media ?? []));
+    after = page.next ?? undefined;
+  } while (after && media.length < max);
+  const reels = media.filter(
+    (m) => (m as { media_product_type?: unknown }).media_product_type === "REELS",
+  );
+  const urls = reels.map((m) => String((m as { permalink?: unknown }).permalink ?? ""));
+  return { found: true, profile, urls, reels, scanned: media.length, pages };
+}
+
 /** The budget on a request, as money, when its status starts delivery. */
 function budgetOf(i: {
   status?: string | undefined;
@@ -681,6 +715,16 @@ export const meta: SiteApi = {
       request: igLookup,
       meter: () => ({ reads: 1 }),
       api: (q, leg) => igDiscover(leg, q),
+    }),
+    route({
+      method: "GET",
+      path: "/instagram/{username}/reels",
+      summary:
+        "Every reel of a business or creator account (`business_discovery` paged to the first post): `{ found: true, profile, urls, reels, scanned, pages }`, each reel's whole Graph item kept, newest first (`max` posts read, default 1000); `{ found: false, reason }` for a personal account: then `instagram GET /web/{username}/reels`. A Graph rate limit is a 429",
+      request: igReels,
+      meter: ({ max }) => ({ reads: Math.ceil(max / IG_PAGE) }),
+      used: (_q, out) => ({ reads: Math.max(1, (out as { pages?: number }).pages ?? 1) }),
+      api: (q, leg) => igAllReels(leg, q),
     }),
     route({
       method: "GET",

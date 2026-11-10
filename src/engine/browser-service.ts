@@ -38,6 +38,7 @@ import {
 import { instagramPostComments } from "../browser/flows/instagram-comments.js";
 import { instagramCreatePost } from "../browser/flows/instagram-create-post.js";
 import { instagramOauthConsent } from "../browser/flows/instagram-oauth-consent.js";
+import { instagramReels } from "../browser/flows/instagram-reels.js";
 import { learnQuizAttempt, learnQuizReview, learnQuizzes } from "../browser/flows/learn.js";
 import { linkedinFollow, linkedinLike } from "../browser/flows/linkedin-act.js";
 import { linkedinActivity } from "../browser/flows/linkedin-activity.js";
@@ -167,6 +168,7 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     instagramFollow,
     instagramFeed,
     instagramFollowing,
+    instagramReels,
     instagramLike,
     instagramComment,
     instagramPost,

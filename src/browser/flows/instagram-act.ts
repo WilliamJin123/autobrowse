@@ -372,7 +372,7 @@ export const instagramSearch = defineFlow<SearchInput, { q: string; shortcodes: 
 });
 
 /** The page's own app id: its calls carry it, and the API refuses one without it. */
-const IG_APP_ID = "936619743392459";
+export const IG_APP_ID = "936619743392459";
 const FOLLOWING_PAGE = 50;
 const FOLLOWING_PAUSE_MS = 2_000;
 

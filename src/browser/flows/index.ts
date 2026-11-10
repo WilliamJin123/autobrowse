@@ -50,6 +50,13 @@ export {
 export { type CreatePostInput, instagramCreatePost } from "./instagram-create-post.js";
 export { instagramOauthConsent } from "./instagram-oauth-consent.js";
 export {
+  instagramReels,
+  type Reels,
+  type ReelsInput,
+  reelCodeOf,
+  reelUrl,
+} from "./instagram-reels.js";
+export {
   type Answer as LearnAnswer,
   type Attempt as LearnAttempt,
   type AttemptInput as LearnAttemptInput,
