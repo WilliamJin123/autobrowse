@@ -253,7 +253,7 @@ export async function search(
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { results?: Array<{ title?: string; url: string }> };
       return (body.results ?? []).map((r) => ({
-        title: r.title ?? r.url,
+        title: r.title || r.url, // exa sends "" for some pages
         url: r.url,
         snippet: null,
         raw: r,
