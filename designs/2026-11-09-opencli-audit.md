@@ -185,14 +185,58 @@ Account rules hold: LinkedIn signed-in reads only as `linkedin@wren`, under its 
 LinkedIn profile reader still needs William's yes (10-28 design). Facebook stays signed out
 (the ad account). Writes stay on our routes.
 
+## Full upgrade list (nine facets)
+
+Facet reports: `2026-11-09-opencli-audit/` (runtime, primitives, discovery, catalog, reliability,
+testing, agentux, stealth, code-quality). Merged and deduped here. None of these waits on B vs C.
+
+| # | Upgrade | Facets | T | Size |
+|---|---|---|---|---|
+| **Wave 1: contracts (every route gains)** |||||
+| U1 | One error contract `{code, message, hint, retryable, outcome, exitCode, artifacts}` in a new `src/errors.ts`, mapped from `SiteError`, `AccessRefused`, `FlowFailed`, gate refusals at the facade edge. CLI answers `{ok, data\|error}` as JSON by default, with an exit-code table. Today 40 error classes have no common base | code-quality, reliability, agentux | T2 | M |
+| U2 | A zod `response` schema on `SiteRoute`, checked in the facade for both legs; remove the type erasure in `route()` (`types.ts:341`) | code-quality | T3 | M |
+| U3 | Hand-written `BrowserFlow` gets a zod `input` and `summary`; a committed `catalog.json` with a test that fails on a dropped route, flow or workflow; one paged `autobrowse list [query]` and `--help --json` with `next` hints, in place of four finder commands | catalog, agentux | T8 | M |
+| U4 | Convention audit for routes and flows in the gates; a route scaffold command | code-quality | | S |
+| U5 | The `strategy` word on each browser leg | | T5 | S |
+| **Wave 2: correctness and account safety** |||||
+| U6 | Command ids on the explore loopback: a retried `click` or submit runs once; `outcome: "unknown"` when the browser dies mid-act | runtime | T2 | M |
+| U7 | Dialog handling: today an unhandled `confirm` or `beforeunload` is dismissed silently | primitives | | S |
+| U8 | Ban-signal table per site (suspended, restricted, checkpoint, "unusual activity", 429) wired into `caps.hold` and the 1/3/8/12 h steps | stealth | | M |
+| U9 | Warm-up ramp by account age (`firstSeen`), per-hour and quiet-hour limits, a cap guard on explore, no `instantHands` on acts for capped sites (WA-1148) | stealth | | M |
+| U10 | Own-browser tab hygiene: a background window, a `{pid, targetId}` ledger, stale-tab reap | runtime | | M |
+| **Wave 3: reads and discovery** |||||
+| U11 | An `api` op in the compiler and the `code` runtime, on one in-page `pageJson` helper (sign-in wall check, named headers, cursor loop, repeated-cursor error). Replaces the hand-written in-page fetches in five flows (reddit, instagram-act, instagram-reels, linkedin-reach, learn) | discovery | T1 | M |
+| U12 | `discover` in explore: response shapes with types keyed by operation, a field filter, a scan of the page's scripts; network capture on by default in explore | discovery | T7 | M |
+| U13 | Per-site `endpoints.json` and `field-map.json` (redacted), written from kept sessions, read by explore and heal | discovery | T7 | S |
+| U14 | A numbered `state` read (scroll-aware, hidden nodes out, stale marks matched again); `wait` barriers; download capture after a click | primitives | | M |
+| U15 | A read-only tab pool per profile with a bounded queue: parallel reads, serial writes | runtime | | M |
+| **Wave 4: health** |||||
+| U16 | Proof `expect` fixtures (`rowCount`, `types`, `patterns`, `notEmpty`, `mustNotContain`), seeded from the first good proof | testing | T3 | S |
+| U17 | Weekly `site-probe` and a re-proof of every compiled workflow, with typed failures, into `autobrowse success` | testing | T3 | M |
+| U18 | `autobrowse auth status` per profile with no sign-in; status per route (`ready / needs_login / cooldown / needs_person / broken / unchecked`); `doctor` gives `issues[]` and exits nonzero | reliability | T4 | S |
+| U19 | An artifact link on each flow-run and site-call row and on the error; trace retention caps | reliability | T6 | S |
+| U20 | Heal rules from their autofix: classify first, empty is not broken, never loosen a fixture, 3 rounds | | T6 | S |
+| **Wave 5: agent surface and later** |||||
+| U21 | The skill and a generated `llms.txt` in the npm package; `autobrowse skills list\|read\|install` | agentux | T8 | S |
+| U22 | An `evals/` suite with a judge, a train/test split and a baseline, run through `agent --json` | testing | | L |
+| U23 | Before/after-call hooks; a mod may add a `SiteApi` (today `SITES` is closed), under the sha256 `--trust` model | catalog | | M |
+
+Small fixes to batch in: explore version in `ExploreInfo` with a skew warning; the holder's op and
+age in `ProfileBusy`; split `flow.ts` (1457 lines) and `facade.ts` (1144); the stray doc comment
+near `types.ts:178`.
+
+Order: U1 first. Its shape is a hard-to-change contract (every caller, wren included), so it
+gets its own options section before the build. U2, U4, U5 next; U7 and U8 before any new write
+route.
+
 ## Plan once William picks
 
-1. T2 typed errors and T5 the strategy word (small, every route gains).
-2. WA-1250: Instagram, in William's order. Graph `business_discovery`; then the feed endpoint
-   (`/api/v1/feed/user/{username}/username/`, paged by `max_id`) as a hand-ported route that
-   keeps every item field; then `scroll-collect` as the last leg.
-3. The shim (C) with the reads in the table above, each with a shape fixture and one live test.
-4. T3 and T4: weekly live checks, a status per route.
+1. Wave 1 (U1 with its options first).
+2. ~~WA-1250~~ done (d35159a): `meta GET /instagram/{username}/reels` (Graph) and
+   `instagram GET /web/{username}/reels` (feed call, then the Reels grid).
+3. B: port the reads in the table above, each with a shape fixture (U16) and one live test,
+   each marked `ported: "<file>@<sha>"` for the upstream watch.
+4. Waves 2 to 4.
 
 ## Decision log
 
@@ -202,3 +246,7 @@ LinkedIn profile reader still needs William's yes (10-28 design). Facebook stays
 - 2026-11-09: William picked T1–T6 plus friendlier agent skills (T8) and step labels (T5); writes
   fine to study; personal Chrome out. Recommendation revised to B + upstream watch: he wants to
   own the code, writes cannot be shimmed, and the watch brings their fixes.
+- 2026-11-09: WA-1250 proof: their Instagram feed endpoint answers 404 (a signed-out page) from
+  our signed-in profile, with or without the page's CSRF, claim and ASBD headers. Their endpoint
+  knowledge is a lead, not a working route: every port gets a live test, and a shim (C) would
+  have failed the same way. One more point for B.
