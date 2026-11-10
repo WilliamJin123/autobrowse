@@ -360,6 +360,7 @@ async function settled(fp: FlowPage): Promise<RawSerp> {
 export const googleSearch = defineFlow<SearchInput, Serp>({
   site: "web",
   name: "google",
+  offscreen: true,
   async run(fp, input) {
     const n = Math.min(Math.max(input.n ?? PER_PAGE, 1), PER_PAGE * MAX_PAGES);
     const pages: RawSerp[] = [];

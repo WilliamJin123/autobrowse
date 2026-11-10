@@ -105,6 +105,7 @@ const CHATGPT_ANSWER = `(() => {
 export const chatgptAsk = defineFlow<{ q: string; search?: boolean }, Answer>({
   site: "chatgpt",
   name: "ask",
+  offscreen: true,
   async run(fp, { q, search = true }) {
     const p = new URLSearchParams({ q });
     if (search) p.set("hints", "search");
@@ -141,6 +142,7 @@ const GEMINI_ANSWER = `(() => {
 export const geminiAsk = defineFlow<{ q: string }, Answer>({
   site: "gemini",
   name: "ask",
+  offscreen: true,
   async run(fp, { q }) {
     await fp.open(`${GEMINI}/app`);
     const box = { role: "textbox", name: "Enter a prompt for Gemini" } as const;

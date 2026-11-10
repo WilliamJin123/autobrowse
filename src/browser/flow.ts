@@ -251,6 +251,11 @@ export interface BrowserFlow<I, O> {
   /** The flow puts a secret on screen (a minted token): no screenshot, trace or step watch keeps it. */
   secret?: boolean;
   /**
+   * A read no person takes over (a search, an open page): on a Mac its headed window is
+   * hidden while it runs (`Session.offscreen`). The next flow without it shows the window again.
+   */
+  offscreen?: true;
+  /**
    * false: no Playwright trace. For a flow that lasts hours (explore): the trace keeps every
    * response body in the driver until the flow ends (WA-1118: 207 MB after ten page opens).
    */
@@ -731,6 +736,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               throw err;
             },
           ));
+        await held.offscreen?.(flow.offscreen === true);
         // An armed tab stands in for the browser's page; everything else is the browser's.
         const armed = on && !on.page.isClosed() ? on.page : null;
         const session: Session = armed
@@ -1305,6 +1311,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           await keepRepairs();
           return out;
         } catch (err) {
+          // a person is asked to look: the window comes back
+          if (err instanceof NeedsHuman) await held.offscreen?.(false);
           const artifacts: Artifacts = watch ? { steps: watch.dir } : {};
           const shot = join(artifactsDir, `${stamp}.png`);
           if (

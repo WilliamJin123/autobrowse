@@ -104,6 +104,7 @@ export function pageApiFlow(
   return defineFlow<PageApiInput, PageApiAnswer>({
     site,
     name: "api",
+    offscreen: true,
     async run(fp, { url }) {
       if (!o.hosts.test(new URL(url).host))
         throw new Error(`${site}/api: not a ${site} url: ${url}`);

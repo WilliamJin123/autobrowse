@@ -114,6 +114,8 @@ export function renderer(deps: RenderDeps): Render {
     const key = (await opts.profileName?.(profile)) ?? profile;
     return locks.withLock(key, async () => {
       const session = (await park?.take(key)) ?? (await openSession(profile, opts));
+      // a fetch is a read no person takes over
+      await session.offscreen?.(true);
       let healthy = false;
       try {
         const page = await session.context.newPage();

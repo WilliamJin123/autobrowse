@@ -123,6 +123,7 @@ export const scholarSearch = defineFlow<
 >({
   site: "google-scholar",
   name: "search",
+  offscreen: true,
   async run(fp, { q, start = 0, n = 10, from, to, sort = "relevance" }) {
     const p = new URLSearchParams({ q, hl: "en", num: String(Math.min(n, 20)) });
     if (start) p.set("start", String(start));
@@ -201,6 +202,7 @@ export const scholarAuthor = defineFlow<
 >({
   site: "google-scholar",
   name: "author",
+  offscreen: true,
   async run(fp, { user, n = 100, sort = "cited" }) {
     const p = new URLSearchParams({ user, hl: "en", pagesize: String(Math.min(n, 100)) });
     if (sort === "date") p.set("sortby", "pubdate");
@@ -247,6 +249,7 @@ export const indeedSearch = defineFlow<
 >({
   site: "indeed",
   name: "search",
+  offscreen: true,
   async run(fp, { q, l, fromage, sort, start }) {
     const p = new URLSearchParams({ q });
     if (l) p.set("l", l);
@@ -280,6 +283,7 @@ const INDEED_JOB = `(() => {
 export const indeedJob = defineFlow<{ jk: string }, { found: boolean; job: unknown }>({
   site: "indeed",
   name: "job",
+  offscreen: true,
   async run(fp, { jk }) {
     await fp.open(`${INDEED}/viewjob?jk=${encodeURIComponent(jk)}`);
     const got = await readWhenReady<{ found: boolean; job?: unknown }>(
@@ -321,6 +325,7 @@ export const upworkSearch = defineFlow<
 >({
   site: "upwork",
   name: "search",
+  offscreen: true,
   async run(fp, { q, page = 1, perPage = 50, sort = "relevance" }) {
     const p = new URLSearchParams({ q, per_page: String(perPage) });
     if (page > 1) p.set("page", String(page));
@@ -354,6 +359,7 @@ const UPWORK_JOB = `(() => {
 export const upworkJob = defineFlow<{ id: string }, { found: boolean; job: unknown }>({
   site: "upwork",
   name: "job",
+  offscreen: true,
   async run(fp, { id }) {
     await fp.open(`${UPWORK}/jobs/${id.startsWith("~") ? id : `~${id}`}`);
     const got = await readWhenReady<{ found: boolean; job?: unknown }>(

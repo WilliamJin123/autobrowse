@@ -251,6 +251,7 @@ const shownCount = (fp: FlowPage) =>
 export const googleReviews = defineFlow<ReviewsInput, PlaceReviews>({
   site: "google",
   name: "maps-reviews",
+  offscreen: true,
   async run(fp, input) {
     const placeId = input.placeId.trim();
     if (!placeId) throw new Error("maps-reviews: placeId is empty");

@@ -159,6 +159,7 @@ async function landed(fp: FlowPage): Promise<RawPlace> {
 export const googlePlace = defineFlow<PlaceInput, Place>({
   site: "web",
   name: "google-place",
+  offscreen: true,
   async run(fp, input) {
     const q = input.q.trim();
     if (!q) throw new Error("google-place: q is empty");

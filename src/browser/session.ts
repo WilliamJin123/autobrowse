@@ -18,10 +18,10 @@ import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
 import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import type { Hints } from "./locate.js";
-import { guardMemory } from "./memory-guard.js";
+import { guardMemory, treeOf } from "./memory-guard.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
 import { DISK_CACHE_BYTES } from "./profile-trim.js";
-import { reapOrphans, reapTempDirs } from "./reap.js";
+import { listProcs, reapOrphans, reapTempDirs } from "./reap.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
 
 const run = promisify(execFile);
@@ -178,6 +178,12 @@ export interface Session {
   filmed?: boolean;
   /** A new IP from the profile's exit, when it rotates (`browser/egress`); false otherwise. */
   newIp?: () => Promise<boolean>;
+  /**
+   * Off the screen or back on it (WA-1214): a headed window on this Mac, for a read no
+   * person takes over. Absent where there is no window to hide (headless, a film, another OS,
+   * a rented or attached browser).
+   */
+  offscreen?: (off: boolean) => Promise<void>;
   close(): Promise<void>;
 }
 
@@ -222,11 +228,16 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
   const film = opts.film ? await filmContext(context, opts.film) : null;
   const passkeys = virtualAuthenticator(context, await opts.passkeys?.(site).catch(() => []));
   const local = opts.tier !== "browserbase" && opts.tier !== "cdp";
+  const hide =
+    local && opts.headless === false && !opts.film && process.platform === "darwin"
+      ? appHider(join(expandHome(opts.profilesDir), profile))
+      : null;
   return {
     context,
     page,
     passkeys,
     ...(film ? { filmed: true } : {}),
+    ...(hide ? { offscreen: hide } : {}),
     ...(local && opts.egress ? { newIp: () => (opts.egress as Egress).newIp(profile) } : {}),
     async close() {
       guard?.stop();
@@ -282,6 +293,35 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
  * parent gets them), so a captcha checkbox never ticks. Best effort; only
  * macOS has the tools.
  */
+/**
+ * Hides or shows the Chrome launched on `profileDir`, as Cmd-H does: the app, not the window.
+ * Each profile is its own Chrome app, so no other window goes with it. Measured 11-10 on
+ * macOS 26: a hidden app's page stays `visible`, its timers and frames run at full rate
+ * (75 s), and loads, clicks and screenshots work. A window moved off the screen does not
+ * work: Chrome clamps `--window-position`, and macOS keeps 40 px of a CDP-moved window in view.
+ */
+function appHider(profileDir: string): (off: boolean) => Promise<void> {
+  let hidden = false;
+  return async (off) => {
+    if (off === hidden) return;
+    try {
+      const [pid] = treeOf(await listProcs(), profileDir);
+      if (!pid) return;
+      await run(
+        "osascript",
+        [
+          "-e",
+          `tell application "System Events" to set visible of (first process whose unix id is ${pid}) to ${!off}`,
+        ],
+        { encoding: "utf8", timeout: 5_000 },
+      );
+      hidden = off;
+    } catch {
+      // no permission, or past the cap: the window stays where it is
+    }
+  };
+}
+
 async function keepOutOfTheWay(): Promise<void> {
   if (process.platform !== "darwin") return;
   // Async, with a cap: a System Events that hangs (memory pressure, a permission prompt) once
