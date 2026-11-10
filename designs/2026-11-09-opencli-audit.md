@@ -347,7 +347,15 @@ Batch B built (11-10): browser flows in `browser/flows/open-pages.ts`, each a si
 reads `window.mosaic` and `_initialData` whole; `upwork` (`/jobs`, `/jobs/{id}`) reads its vuex
 store. A probe that reads page globals must run through `inPage`: Patchright's default world is
 isolated, so it sees the DOM but not `window.mosaic` or `__vue_app__`. A challenge title or a
-`/sorry/` URL refuses `platform_blocked`; no early 429 retry. Reuters: not built.
+`/sorry/` URL refuses `platform_blocked`; no early 429 retry.
+
+Reuters (built 11-10): its feeds and sitemaps answer 401 (DataDome). `reuters GET /news` reads
+Google News' search feed scoped to `site:reuters.com`: headlines, dates, links. No article text.
+
+AI answer engines (built 11-10): `chatgpt GET /ask` and `gemini GET /ask`, signed out, browser
+legs. ChatGPT's `/?q=&hints=search` sends with web search and gives sources; Gemini signed out
+is Flash-Lite with no sources. Grok shows "Sign up to continue" after the question; DeepSeek and
+Claude open on a sign-in. Those three need accounts: not built.
 
 ## Plan once William picks
 
@@ -394,3 +402,7 @@ isolated, so it sees the DOM but not `window.mosaic` or `__vue_app__`. A challen
 - 2026-11-10: Indeed, Upwork and Scholar read through browser flows, whole records from the
   page's own state (my call). Indeed retired its API and Scholar never had one: standing final.
   Upwork waits on an approved GraphQL key.
+- 2026-11-10: Reuters by Google News' feed, not a browser leg (my call): DataDome blocks the
+  browser too, and the feed lists the same articles keyless.
+- 2026-11-10: ChatGPT and Gemini signed out, no account (my call). Grok, DeepSeek and Claude need
+  a sign-in; an account for each is William's call (accounts policy).

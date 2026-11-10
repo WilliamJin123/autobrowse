@@ -66,6 +66,7 @@ import { linkedin } from "./linkedin.js";
 import { loom } from "./loom.js";
 import { meta } from "./meta.js";
 import { npm } from "./npm.js";
+import { chatgpt, gemini } from "./open/answers.js";
 import { arxiv } from "./open/arxiv.js";
 import { bluesky } from "./open/bluesky.js";
 import { dblp } from "./open/dblp.js";
@@ -74,7 +75,7 @@ import { hackernews } from "./open/hackernews.js";
 import { indeed, upwork } from "./open/jobs.js";
 import { lobsters } from "./open/lobsters.js";
 import { medium } from "./open/medium.js";
-import { bbc, bloomberg } from "./open/news.js";
+import { bbc, bloomberg, reuters } from "./open/news.js";
 import { openalex } from "./open/openalex.js";
 import { openreview } from "./open/openreview.js";
 import { producthunt } from "./open/producthunt.js";
@@ -115,11 +116,14 @@ export const SITES: readonly SiteApi[] = [
   // open news and finance (WA-1251.5 A3)
   bbc,
   bloomberg,
+  reuters,
   yahooFinance,
   producthunt,
   googleScholar,
   indeed,
   upwork,
+  chatgpt,
+  gemini,
   linkedin,
   youtube,
   instagram,

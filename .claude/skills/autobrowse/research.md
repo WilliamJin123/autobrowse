@@ -26,12 +26,20 @@ autobrowse site call perplexity POST /chat/completions \
   --body '{"messages":[{"role":"user","content":"…"}]}'
 ```
 
+ChatGPT and Gemini: their pages, signed out, as browser legs. ChatGPT searches
+the web and gives sources; Gemini (Flash-Lite) gives text only.
+
+```sh
+autobrowse site call chatgpt GET "/ask?q=<url-encoded>"   # search=false: no web search
+autobrowse site call gemini GET "/ask?q=<url-encoded>"
+```
+
 Open sites: a host's own public API, no key, whole records. Each is a site:
 `autobrowse site status <site>` lists its routes.
 
 - Papers: `arxiv`, `openalex`, `pubmed`, `dblp`, `openreview`; facts: `wikipedia`, `wikidata`.
 - Community: `stackoverflow`, `hackernews`, `lobsters`, `devto`, `bluesky`, `substack`, `medium`.
-- News and markets: `bbc`, `bloomberg` (headlines), `yahoo-finance` (prices, tickers).
+- News and markets: `bbc`, `bloomberg` (headlines), `reuters` (headlines by Google News), `yahoo-finance` (prices, tickers).
 - Launches and jobs: `producthunt` (newest launches), `indeed`, `upwork` (search, one job).
 - Papers by citation: `google-scholar` (search, author pages).
 - `indeed`, `upwork` and `google-scholar` read in a browser: paced, capped, slower.

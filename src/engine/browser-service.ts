@@ -11,6 +11,7 @@ import * as restate from "@restatedev/restate-sdk";
 import { z } from "zod";
 import { withCall } from "../browser/attempt.js";
 import { type BrowserFlow, FlowFailed, type FlowRunner } from "../browser/flow.js";
+import { chatgptAsk, geminiAsk } from "../browser/flows/answer-engines.js";
 import { calcomApiKey } from "../browser/flows/calcom-api-key.js";
 import {
   hubspotConnectorKeys,
@@ -175,6 +176,8 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     indeedJob,
     upworkSearch,
     upworkJob,
+    chatgptAsk,
+    geminiAsk,
     googleReviews,
     proofShot,
     perplexityAsk,
