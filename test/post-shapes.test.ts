@@ -233,6 +233,20 @@ describe("instagram container shape", () => {
       });
     });
 
+    it(`${site.site}: sends a trial Reel's graduation strategy; refuses one Graph has not`, async () => {
+      const { calls, leg } = recorder(() => Response.json({ id: "c1" }));
+      const reel = { igUserId: "17", video_url: "https://cdn.test/v.mp4", media_type: "REELS" };
+      await container.call(
+        { ...reel, trial_params: { graduation_strategy: "SS_PERFORMANCE" } },
+        leg,
+      );
+      expect(json(calls.at(-1))).toMatchObject({
+        trial_params: { graduation_strategy: "SS_PERFORMANCE" },
+      });
+      const bad = { ...reel, trial_params: { graduation_strategy: "AUTO" } };
+      expect(container.r.request.safeParse(bad).success).toBe(false);
+    });
+
     it(`${site.site}: a carousel item keeps its flag; the parent sends its children as a list`, async () => {
       const { calls, leg } = recorder(() => Response.json({ id: "c1" }));
       await container.call(

@@ -14,6 +14,7 @@ import { OAUTH_PROVIDERS } from "../oauth/providers.js";
 import { INSTAGRAM_LOCAL_UPLOAD, META_APP } from "./blockers.js";
 import { fields } from "./facets/core.js";
 import { THREADS_SEARCH } from "./facets/sets.js";
+import { igContainer } from "./ig-container.js";
 import { WEB_REDIRECT } from "./oauth.js";
 import { bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead } from "./verdict.js";
@@ -32,27 +33,6 @@ export const INSTAGRAM_VERSION = "v23.0";
 const id = z.string().regex(/^[0-9]+$/, "a numeric Instagram id");
 
 const me = z.object({ fields: z.string().default("user_id,username,account_type") });
-const container = z.object({
-  igUserId: id,
-  image_url: z.string().url().optional(),
-  video_url: z.string().url().optional(),
-  media_type: z.enum(["IMAGE", "REELS", "STORIES", "CAROUSEL"]).optional(),
-  caption: z.string().max(2200).optional(),
-  children: z.array(id).optional(),
-  is_carousel_item: z.boolean().optional(),
-  cover_url: z.string().url().optional(),
-  share_to_feed: z.boolean().optional(),
-  /** A Reel's cover frame, in ms from the start (ignored when `cover_url` is set). */
-  thumb_offset: z.number().int().min(0).optional(),
-  /** Up to three accounts invited as collaborators. */
-  collaborators: z
-    .array(z.string().regex(/^[A-Za-z0-9._]{1,30}$/, "an Instagram username"))
-    .min(1)
-    .max(3)
-    .optional(),
-  /** A Reel's audio name (only for original audio). */
-  audio_name: z.string().min(1).optional(),
-});
 const publish = z.object({ igUserId: id, creation_id: id });
 const listMedia = z.object({
   igUserId: id,
@@ -216,7 +196,7 @@ export const instagram: SiteApi = {
       path: "/{igUserId}/media",
       summary:
         "A media container from a public image/video URL (step 1 of publishing); answers its id",
-      request: container,
+      request: igContainer,
       api: async ({ igUserId, ...body }, leg) =>
         must(
           await leg.http.json<unknown>(v(`${igUserId}/media`), {

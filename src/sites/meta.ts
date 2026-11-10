@@ -16,6 +16,7 @@ import { OAUTH_PROVIDERS } from "../oauth/providers.js";
 import { META_APP } from "./blockers.js";
 import { fields, resolve } from "./facets/core.js";
 import { INSTAGRAM_TAGS } from "./facets/sets.js";
+import { igContainer } from "./ig-container.js";
 import { WEB_REDIRECT } from "./oauth.js";
 import { type ApiLeg, bearer, type OAuthSpec, route, type SiteApi, SiteError } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead, VerifyRow } from "./verdict.js";
@@ -272,27 +273,6 @@ const leads = z.object({
   formId: id,
   fields: z.string().default("id,created_time,ad_id,campaign_id,field_data"),
   ...page,
-});
-const igContainer = z.object({
-  igUserId: id,
-  image_url: z.string().url().optional(),
-  video_url: z.string().url().optional(),
-  media_type: z.enum(["IMAGE", "REELS", "STORIES", "CAROUSEL"]).optional(),
-  caption: z.string().max(2200).optional(),
-  children: z.array(id).optional(),
-  is_carousel_item: z.boolean().optional(),
-  cover_url: z.string().url().optional(),
-  share_to_feed: z.boolean().optional(),
-  /** A Reel's cover frame, in ms from the start (ignored when `cover_url` is set). */
-  thumb_offset: z.number().int().min(0).optional(),
-  /** Up to three accounts invited as collaborators. */
-  collaborators: z
-    .array(z.string().regex(/^[A-Za-z0-9._]{1,30}$/, "an Instagram username"))
-    .min(1)
-    .max(3)
-    .optional(),
-  /** A Reel's audio name (only for original audio). */
-  audio_name: z.string().min(1).optional(),
 });
 const igPublish = z.object({ igUserId: id, creation_id: id });
 const igMedia = z.object({
