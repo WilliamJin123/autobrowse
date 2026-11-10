@@ -363,6 +363,7 @@ export function explorerOpener(
       llm: llmFor(settings), // writes `records` code when the driver sends none
       pace: paceFor(settings), // an agent browses at a person's pace: sites watch for the other kind
       sink,
+      credentials: credentialsFor(settings),
       runs: runsDirFor(settings),
       // `flow`: any compiled workflow on the open page, its saved plan under the command's.
       workflows: {

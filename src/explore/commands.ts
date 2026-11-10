@@ -187,6 +187,11 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     /** Yes to the question the server asked about this name. Sent first, it is asked anyway. */
     confirm: z.boolean().optional(),
   }),
+  /**
+   * Seal the authenticator seed the page shows (its otpauth link, or a key in view) into this
+   * site's credential; the seed is never answered. Then `place{secret:"<site>.code"}` types codes.
+   */
+  z.object({ cmd: z.literal("seed"), confirm: z.boolean().optional() }),
   z.object({ cmd: z.literal("note"), text: z.string() }),
   /** A part of the run starts here, named: `walks cut` builds each part as its own walk. */
   z.object({ cmd: z.literal("cut"), name: z.string().regex(/^[a-z][a-z0-9-]*$/) }),

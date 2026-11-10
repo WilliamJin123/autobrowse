@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileCredentials, totp } from "credvault";
 import { describe, expect, it } from "vitest";
-import { enrollTotpFlow, readSecretFromPage } from "../src/auth/enroll.js";
+import { enrollTotpFlow, readSecretFromPage, seedIn } from "../src/auth/enroll.js";
 import type { FlowPage, Op } from "../src/browser/flow.js";
 import type { Hints } from "../src/browser/locate.js";
 import { NeedsHuman } from "../src/browser/session.js";
@@ -143,5 +143,16 @@ describe("enrollTotpFlow", () => {
   it("needs a setup page: the site's, or --url with the guessed walk", () => {
     expect(() => enrollTotpFlow({ site: "x" }, store())).toThrow(/pass --url/);
     expect(enrollTotpFlow({ site: "x" }, store(), "https://x.test/2fa").name).toBe("enroll-totp");
+  });
+});
+
+describe("seedIn", () => {
+  it("reads an otpauth link in HTML, its &amp; undone (Oracle's enrollment)", () => {
+    const html = `<a href="otpauth://totp/Oracle:w@x.test?secret=${SEED}&amp;issuer=Oracle">`;
+    expect(seedIn(html, "", "")).toBe(SEED);
+  });
+  it("falls back to a key in the dialog, then the page text; none: null", () => {
+    expect(seedIn("", `Setup key ${SEED}`, "")).toBe(SEED);
+    expect(seedIn("", "", "nothing here")).toBeNull();
   });
 });

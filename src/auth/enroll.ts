@@ -7,6 +7,7 @@
 
 import type { CredentialStore } from "credvault";
 import { findTotpSecret, totp } from "credvault";
+import type { Page } from "playwright";
 import { defineFlow, type FlowPage } from "../browser/flow.js";
 import { LoginFailed, type SiteLogin, type TotpSetupSpec } from "./login.js";
 
@@ -19,15 +20,31 @@ const RENDER_MS = 8_000;
  * whole page's text can hold other 16-letter runs.
  */
 export async function readSecretFromPage(fp: FlowPage): Promise<string | null> {
-  const html = await fp.html();
-  const uri = html.match(/otpauth:\/\/totp\/[^\s"'<>]+/i)?.[0];
-  if (uri) return findTotpSecret(uri);
-  const dialog = await fp.page
+  return seedIn(await fp.html(), await dialogText(fp.page), await fp.text());
+}
+
+/** The same read on a bare page, every frame's HTML: explore's `seed` (Oracle's sign-in enrollment, 11-10). */
+export async function seedOnPage(page: Page): Promise<string | null> {
+  const htmls = await Promise.all(page.frames().map((f) => f.content().catch(() => "")));
+  const text = await page
+    .locator("body")
+    .innerText({ timeout: 2_000 })
+    .catch(() => "");
+  return seedIn(htmls.join("\n"), await dialogText(page), text);
+}
+
+const dialogText = (page: Page) =>
+  page
     .locator("[role=dialog]")
     .first()
     .innerText({ timeout: 500 })
     .catch(() => "");
-  return findTotpSecret(dialog) ?? findTotpSecret(await fp.text());
+
+/** otpauth link first, then a key in the open dialog, then the page's text. */
+export function seedIn(html: string, dialog: string, text: string): string | null {
+  const uri = html.match(/otpauth:\/\/totp\/[^\s"'<>]+/i)?.[0];
+  if (uri) return findTotpSecret(uri.replaceAll("&amp;", "&"));
+  return findTotpSecret(dialog) ?? findTotpSecret(text);
 }
 
 /** The seed once the page shows it: pages draw the key a beat after the click. */

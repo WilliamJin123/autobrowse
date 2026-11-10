@@ -25,10 +25,11 @@ import {
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { keyId, parseKeyAddress, type SecretAudit } from "credvault";
+import { type CredentialStore, keyId, parseKeyAddress, type SecretAudit } from "credvault";
 import type { Page } from "playwright";
 import type { z } from "zod";
 import { writeRecords } from "../agent/records.js";
+import { seedOnPage } from "../auth/enroll.js";
 import { SecretLeak, urlWithoutQuery } from "../auth/guard.js";
 import { credentialFor } from "../auth/login.js";
 import type { SecretValues } from "../auth/signup.js";
@@ -354,6 +355,8 @@ export interface ExploreOptions {
   llm?: Llm | null;
   /** Where `keep` puts a secret read off the page (.env locally, SSM in prod). */
   sink?: SecretSink;
+  /** The login store `seed` seals an authenticator seed into. Absent: refused. */
+  credentials?: Pick<CredentialStore, "get" | "put">;
   /** What `place` may fill by name; without it `place` is refused. */
   secrets?: SecretValues;
   /** Hosts a placed secret (by name) may land on; any other host refuses the `place`. Absent: any. */
@@ -701,6 +704,8 @@ async function serve(
   let closing = false;
   // keep's first phase: the name asked about → the mark of the value that would be written.
   const keepAsked = new Map<string, string>();
+  /** Logins whose held authenticator seed `seed` asked about replacing. */
+  const seedAsked = new Set<string>();
   /** The page the command in flight acts on, as it was before the act. */
   let lookBefore: PageLook | null = null;
   /**
@@ -2490,6 +2495,38 @@ async function serve(
           env: c.env,
           length: value.length,
           ...(held !== null ? { replaced: true } : {}),
+        };
+      }
+      case "seed": {
+        if (!opts.credentials) throw new Error("seed: no login store in this session");
+        const name = credentialFor(SITE_LOGINS, opts.site);
+        const cred = await opts.credentials.get(name);
+        if (!cred)
+          throw new Error(`seed: no login stored for ${name}; sign up or \`creds add\` first`);
+        const seed = await seedOnPage(page);
+        if (!seed)
+          throw new Error(
+            "seed: no authenticator seed on the page; open the step that shows its QR or setup key (often 'another authenticator app' or 'can't scan')",
+          );
+        // two phases: a held seed is replaced only on a yes to this session's question
+        if (
+          cred.totpSecret &&
+          cred.totpSecret !== seed &&
+          !(c.confirm === true && seedAsked.has(name))
+        ) {
+          seedAsked.add(name);
+          return {
+            ok: false,
+            sealed: false,
+            question: `${name} already holds another authenticator seed. Is that intended? Yes: the same command with "confirm":true. No: stop here; the held seed keeps working.`,
+          };
+        }
+        seedAsked.delete(name);
+        await opts.credentials.put(name, { ...cred, totpSecret: seed });
+        return {
+          ok: true,
+          sealed: name,
+          next: `place {"secret":"${name}.code"} into the code box`,
         };
       }
       case "captcha": {
