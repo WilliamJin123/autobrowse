@@ -60,6 +60,63 @@ Keep our runtime.
    is the same as our rule, written better.
 6. **Help for agents.** `llms.txt`, `[read]`/`[write]` in help, `--format json` on every command.
 
+## How their commands are made, and are they compiled
+
+- **Written by an agent, not compiled.** The `opencli-adapter-author` skill has an agent
+  (Claude Code and others) collect evidence with `opencli browser open|state|network`, find the
+  endpoint, then write the JS file. `adapter init` writes only a stub. Help for the agent:
+  `src/browser/discover.ts` reads the page's script bundles for endpoints (never runs them),
+  and a 24 h cache of captured calls.
+- **They had a compiler and removed it.** `explore`, `synthesize`, `generate`, `cascade` and
+  `record` (a live recorder that captured calls) were deleted in #1094: "agent-facing
+  scaffolding that the new skill handles more flexibly". Recording was too rigid for them.
+- **Deterministic when run, not when made.** A saved command runs the same code each time. But
+  two agents asked for the same command write different code; nothing ties the file to a
+  recording. No journal, no durable rerun (a failure at item 37 starts over), no step-level heal.
+- **Site memory.** The skill keeps `~/.opencli/sites/<site>/` per machine: endpoints, a field
+  map, notes, fixtures, added to on every run. Worth taking (see T7).
+- **Ours:** explore journals every act, compile renders it into a typed workflow, a rerun skips
+  saved calls, heal re-renders the one broken step. Ours is the stronger build system. Theirs
+  is the stronger **discovery**: their skill finds the JSON behind a page (network, then
+  `__INITIAL_STATE__`, then the script bundle, then the token, then an interceptor) where our
+  explore mostly records clicks and reads the DOM.
+
+## Their write commands
+
+Good knowledge, risky execution.
+
+- **Knowledge, good:** the endpoints and selectors are current, and each write checks for
+  proof it landed (Instagram follow fails on "no success evidence"; `outcome:"unknown"` when
+  it cannot tell). LinkedIn `safe-send` opens the exact thread and checks it first.
+- **Execution, risky for Wren's accounts:**
+  - Clicks are `element.click()` inside page JS (`clis/twitter/follow.js:48`,
+    `clis/linkedin/connect.js:303`). The event has `isTrusted: false` and no mouse path: a site
+    can tell it from a person.
+  - Text goes in at once (`Input.insertText`, `execCommand`): no keystrokes.
+  - Many writes skip the UI entirely: Instagram follow is a `POST /api/v1/friendships/create/`
+    with no page action before it. Easy for a site to flag at volume.
+  - No caps; a 0.45–1.15 s jitter in a few LinkedIn commands; pace otherwise up to the caller.
+- **So:** take the endpoints, selectors and success checks; run every write through our
+  Hands, caps, gates and send journal.
+
+## B or C, again (William leans B: "we can own the code")
+
+| | B. Port, own the code | C. Shim, run theirs |
+|---|---|---|
+| Code | Ours: our types, our style, full fields | Theirs, vendored; their row mapping cuts fields (we keep raw JSON from network capture) |
+| Their fixes | Lost, unless we watch for them | A version bump |
+| Writes | Run through our Hands | Their `element.click()`: not safe to shim |
+| Breadth | One route per port (an agent ports one in minutes) | All reads at once |
+| Upkeep | Our routes only | Facade (about 25 methods) + vendored files |
+| Debugging | One code base | Two styles, their errors inside ours |
+
+**Recommendation, revised: B, with an upstream watch.** Each ported route records the
+upstream file and commit it came from (`ported: "instagram/user.js@9bc5f5c"`). A weekly job
+diffs those files against upstream main and opens a task when one changes, with the diff. We
+own the code and still learn of their fixes within a week. That removes B's main cost. C's
+breadth is worth little: Wren needs about 40 of their reads, not 1,000, and writes cannot be
+shimmed at all.
+
 ## Take
 
 | # | What | Where it goes | Size |
@@ -70,6 +127,9 @@ Keep our runtime.
 | T4 | A status per route: `ready / needs_login / cooldown / needs_person / broken / unchecked` + `checked_at` (Agent-Reach's form) | `doctor` and `sites status` | Small, after T3 |
 | T5 | The `strategy` word on each browser leg (`cookie`, `intercept`, `ui`) | `SiteRoute.browser`; shown in route lists | Small |
 | T6 | Autofix's rules in our heal skill: classify first, "empty is not broken", never loosen a fixture, 3 rounds | `.claude/skills/autobrowse/explore.md` | Small |
+| T7 | Their discovery: the 5-layer search for the JSON behind a page, `discover` over script bundles, site memory (endpoints, field map) per site | explore skill + an explore command | Medium |
+| T8 | Agent-facing surface: one shape per command (`site cmd --format json`), `[read]`/`[write]` in help, `llms.txt`, short skills | CLI help, README, skill | Medium |
+| T9 | Their write knowledge (endpoints, selectors, success checks), run through our Hands | our write routes | Per route |
 
 ## Do not take
 
@@ -138,4 +198,7 @@ LinkedIn profile reader still needs William's yes (10-28 design). Facebook stays
 
 - 2026-11-09: OpenCLI is a read catalog, not a runtime to adopt. Its runtime lacks sign-in,
   caps, pace, gates and per-account profiles (table above).
-- 2026-11-09: Port vs shim: **open, William's call**. Recommended C + B + D-explore-only.
+- 2026-11-09: Port vs shim: **open, William's call**. First recommended C + B + D-explore-only.
+- 2026-11-09: William picked T1–T6 plus friendlier agent skills (T8) and step labels (T5); writes
+  fine to study; personal Chrome out. Recommendation revised to B + upstream watch: he wants to
+  own the code, writes cannot be shimmed, and the watch brings their fixes.
