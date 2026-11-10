@@ -23,6 +23,7 @@ import {
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { redactAria, redactText } from "../recorder/redact.js";
+import { CARD_FRAMES } from "./card-mask.js";
 import type { Hints } from "./locate.js";
 
 export type StepKind = "open" | "act" | "captcha" | "new-ip" | "sign-in";
@@ -94,7 +95,7 @@ export function watchSteps(dir: string, now: () => number = Date.now): Watch {
         type: "jpeg",
         quality: 60,
         timeout: 5_000,
-        mask: page.frames().map((f) => f.locator(FIELDS)),
+        mask: page.frames().map((f) => f.locator(`${FIELDS}, ${CARD_FRAMES}`)),
       })
       .then(
         () => true,

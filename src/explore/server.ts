@@ -34,6 +34,7 @@ import { SecretLeak, urlWithoutQuery } from "../auth/guard.js";
 import { credentialFor } from "../auth/login.js";
 import type { SecretValues } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
+import { cardMask, cardShown } from "../browser/card-mask.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
 import { fetchFile } from "../browser/download.js";
 import { collectWhenIdle, holdCollect } from "../browser/driver-memory.js";
@@ -753,7 +754,12 @@ async function serve(
     const c = capture;
     if (!c || page.isClosed() || secretFlow) return null;
     try {
-      const shot = await page.screenshot({ type: "jpeg", quality: 80, scale: "css" });
+      const shot = await page.screenshot({
+        type: "jpeg",
+        quality: 80,
+        scale: "css",
+        mask: cardMask(page),
+      });
       return c.picture(shot);
     } catch {
       return null;
@@ -992,7 +998,7 @@ async function serve(
   const shoot = async (): Promise<string> => {
     const file = join(shotsDir, `${String(shotN++).padStart(4, "0")}.png`);
     // A failed shot is an error, never a path to a file that is not there.
-    await page.screenshot({ path: file });
+    await page.screenshot({ path: file, mask: cardMask(page) });
     return file;
   };
   const journal = (a: Journaled) => {
@@ -1408,7 +1414,9 @@ async function serve(
     }
     if (receiptOutcome(whole) === "unclear" || stillAsking(whole)) return [];
     const text = redactText(whole).slice(0, 6_000);
-    const png = await page.screenshot({ fullPage: true, timeout: 15_000 }).catch(() => undefined);
+    const png = await page
+      .screenshot({ fullPage: true, timeout: 15_000, mask: cardMask(page) })
+      .catch(() => undefined);
     const host = new URL(page.url()).host;
     const kept = placedCard
       ? null
@@ -2571,6 +2579,11 @@ async function serve(
       case "os": {
         const a = c.act;
         await gateDesktop(a, wait);
+        // the OS picture cannot be masked: a card on this session's page stops it
+        if (a.op === "shot" && !page.isClosed() && (await cardShown(page)))
+          throw new Error(
+            "os shot: a card field on this page holds a value; the screen picture would print it. Use `screenshot` (card fields are covered)",
+          );
         const result = await runDesktop(desktop, a, shotsDir, shotN++);
         // Looking (apps, tree, shot) is not journaled; acts are, with typed secrets hidden.
         if (a.op !== "apps" && a.op !== "tree" && a.op !== "shot") {

@@ -33,6 +33,7 @@ import { shareOff, shareTrace } from "../share/share.js";
 import { failureShape, firstTraceOfShape } from "../shots/traces.js";
 import { currentCall, currentReach, type DoneActs, markReached, markSubmitted } from "./attempt.js";
 import { type CaptchaOutcome, type Eyes, solveCaptcha } from "./captcha/index.js";
+import { cardMask } from "./card-mask.js";
 import type { CodeStore } from "./code.js";
 import { collectWhenIdle } from "./driver-memory.js";
 import { filmLog, filmStep } from "./film.js";
@@ -1308,10 +1309,12 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           const shot = join(artifactsDir, `${stamp}.png`);
           if (
             !flow.secret &&
-            (await session.page.screenshot({ path: shot, fullPage: true }).then(
-              () => true,
-              () => false,
-            ))
+            (await session.page
+              .screenshot({ path: shot, fullPage: true, mask: cardMask(session.page) })
+              .then(
+                () => true,
+                () => false,
+              ))
           )
             artifacts.screenshot = shot;
           // The accessibility tree next to the PNG: a reader (or a model)

@@ -6,6 +6,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { cardMask } from "../browser/card-mask.js";
 import { inPage } from "../browser/in-page.js";
 import { secret as holdSecret } from "../browser/secrets.js";
 import type { Session } from "../browser/session.js";
@@ -103,7 +104,7 @@ export async function startBrowserRecording(opts: {
 
   const screenshot = async (): Promise<string | undefined> => {
     const file = join(shots, `${String(shotN++).padStart(4, "0")}.png`);
-    const ok = await session.page.screenshot({ path: file }).then(
+    const ok = await session.page.screenshot({ path: file, mask: cardMask(session.page) }).then(
       () => true,
       () => false,
     );
