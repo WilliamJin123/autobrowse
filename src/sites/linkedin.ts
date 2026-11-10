@@ -378,6 +378,8 @@ export const linkedin: SiteApi = {
     feed: 12,
     // One post's analytics page or the dashboard, on Wren's own account: wren reads its own numbers.
     analytics: 10,
+    // Our own developer app's pages (a product's review state): on demand, never on a timer.
+    developer: 4,
     // Likes on others' posts and follows: wren's reach loop, as linkedin@wren only.
     like: 30,
     follow: 20,
@@ -405,6 +407,7 @@ export const linkedin: SiteApi = {
       posts: 0,
       feed: 0,
       analytics: 0,
+      developer: 0,
       like: 0,
       follow: 0,
       comment: 0,
@@ -428,6 +431,7 @@ export const linkedin: SiteApi = {
       posts: 0,
       feed: 0,
       analytics: 0,
+      developer: 0,
       like: 0,
       follow: 0,
       comment: 0,
@@ -973,7 +977,7 @@ export const linkedin: SiteApi = {
       summary:
         "One developer app's Products tab, read as the account that owns it: the tab's text lines whole and `states` (the lines naming a product's state, as \"Review in progress\"). Reads only",
       request: z.object({ app: z.string().regex(/^\d{6,12}$/) }),
-      meter: () => ({ analytics: 1 }),
+      meter: () => ({ developer: 1 }),
       browser: { flow: "linkedin/developer-app" },
     }),
     route({
