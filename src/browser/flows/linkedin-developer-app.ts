@@ -14,6 +14,8 @@ const RENDER_MS = 20_000;
 const STATE =
   /review|in progress|approved|denied|rejected|pending|added|request access|access granted|not eligible|endorsed|tier/i;
 
+const LINES = `(document.querySelector("main")?.innerText ?? "").split("\\n").map((l) => l.trim()).filter(Boolean)`;
+
 export interface DeveloperApp {
   app: string;
   url: string;
@@ -34,12 +36,7 @@ export const linkedinDeveloperApp = defineFlow<{ app: string }, DeveloperApp>({
       await fp.wait(1_000);
       if (/\/(login|authwall|checkpoint)\b/.test(fp.url()))
         throw new AccessRefused("need_login", `linkedin: developer app ${app} asks for a sign-in`);
-      lines = await fp.page.evaluate(() =>
-        (document.querySelector("main")?.innerText ?? "")
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean),
-      );
+      lines = await fp.page.evaluate<string[]>(LINES);
     }
     if (lines.length < 5)
       throw new AccessRefused(
