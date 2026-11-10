@@ -29,7 +29,7 @@ import { type CredentialStore, keyId, parseKeyAddress, type SecretAudit } from "
 import type { Page } from "playwright";
 import type { z } from "zod";
 import { writeRecords } from "../agent/records.js";
-import { seedOnPage } from "../auth/enroll.js";
+import { seedInCalls, seedOnPage } from "../auth/enroll.js";
 import { SecretLeak, urlWithoutQuery } from "../auth/guard.js";
 import { credentialFor } from "../auth/login.js";
 import type { SecretValues } from "../auth/signup.js";
@@ -2511,7 +2511,8 @@ async function serve(
         const cred = await opts.credentials.get(name);
         if (!cred)
           throw new Error(`seed: no login stored for ${name}; sign up or \`creds add\` first`);
-        const seed = await seedOnPage(page);
+        const seed =
+          seedInCalls(fp.network?.rows().map((r) => r.body) ?? []) ?? (await seedOnPage(page));
         if (!seed)
           throw new Error(
             "seed: no authenticator seed on the page; open the step that shows its QR or setup key (often 'another authenticator app' or 'can't scan')",

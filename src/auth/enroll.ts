@@ -33,6 +33,18 @@ export async function seedOnPage(page: Page): Promise<string | null> {
   return seedIn(htmls.join("\n"), await dialogText(page), text);
 }
 
+/** The newest otpauth link in captured call bodies, oldest first in: the site's own answer beats page text (Plaid, 11-10). */
+export function seedInCalls(bodies: readonly unknown[]): string | null {
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i];
+    if (b === undefined) continue;
+    const s = typeof b === "string" ? b : JSON.stringify(b);
+    const uri = s.match(/otpauth:\/\/totp\/[^\s"'<>\\]+/i)?.[0];
+    if (uri) return findTotpSecret(uri.replaceAll("&amp;", "&"));
+  }
+  return null;
+}
+
 const dialogText = (page: Page) =>
   page
     .locator("[role=dialog]")

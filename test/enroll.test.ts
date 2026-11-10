@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileCredentials, totp } from "credvault";
 import { describe, expect, it } from "vitest";
-import { enrollTotpFlow, readSecretFromPage, seedIn } from "../src/auth/enroll.js";
+import { enrollTotpFlow, readSecretFromPage, seedIn, seedInCalls } from "../src/auth/enroll.js";
 import type { FlowPage, Op } from "../src/browser/flow.js";
 import type { Hints } from "../src/browser/locate.js";
 import { NeedsHuman } from "../src/browser/session.js";
@@ -154,5 +154,15 @@ describe("seedIn", () => {
   it("falls back to a key in the dialog, then the page text; none: null", () => {
     expect(seedIn("", `Setup key ${SEED}`, "")).toBe(SEED);
     expect(seedIn("", "", "nothing here")).toBeNull();
+  });
+});
+
+describe("seedInCalls", () => {
+  it("reads the newest otpauth link in call bodies (Plaid's POST /mfa answer)", () => {
+    const uri = (s: string) => `otpauth://totp/X:a?algorithm=SHA1&digits=6&secret=${s}`;
+    expect(
+      seedInCalls([{ totpURL: uri("JBSWY3DPEHPK3PXP") }, undefined, uri(SEED), { ok: 1 }]),
+    ).toBe(SEED);
+    expect(seedInCalls([{ user: "x" }, undefined])).toBeNull();
   });
 });
