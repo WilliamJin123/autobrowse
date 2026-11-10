@@ -126,7 +126,7 @@ export function registerShareKeep(share: Command): void {
     });
   share
     .command("approve <id>")
-    .description("Wren only: yes to a pack: PR to the public registry, merged")
+    .description("Wren only: yes to a pack: PR to the private registry, merged")
     .action(async (id: string) => {
       const { approvePack } = await import("../share/gate.js");
       console.log(await approvePack(await admin(), id));

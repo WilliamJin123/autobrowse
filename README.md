@@ -1002,7 +1002,7 @@ Skip one site with `autobrowse share exclude <site>`.
 
 A compiled workflow whose proof passes is shared the same way: its source
 and step lines, scrubbed, without what it read. Wren checks each one and
-puts the good ones in the public registry,
+puts the good ones in the private registry,
 [WilliamJin123/autobrowse-flows](https://github.com/WilliamJin123/autobrowse-flows).
 Install one with `autobrowse workflows add <name>`.
 

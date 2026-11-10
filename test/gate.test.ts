@@ -8,8 +8,8 @@ import {
   checkPack,
   type FlowPack,
   gateShared,
+  REGISTRY_API,
   REGISTRY_MARK,
-  REGISTRY_RAW,
   REPROOF_PLAN,
   reproofRegistry,
 } from "../src/share/gate.js";
@@ -154,16 +154,24 @@ describe("addFlow", () => {
       "flows/acme-signup/index.ts": `import { a } from "@wrenautomation/autobrowse";`,
       "flows/acme-signup/outline.json": "{}",
     };
-    const f = (async (url: string) => {
-      const body = files[url.slice(REGISTRY_RAW.length + 1)];
+    const f = (async (url: string, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string> | undefined)?.authorization).toBe("Bearer t");
+      const body = files[url.slice(REGISTRY_API.length + 1).replace(/\?ref=main$/, "")];
       return body === undefined ? new Response(null, { status: 404 }) : new Response(body);
     }) as typeof fetch;
-    await addFlow("acme-signup", { root, lib: "../../index.js", fetch: f });
+    await expect(addFlow("acme-signup", { root, lib: "x", fetch: f, token: null })).rejects.toThrow(
+      /private; sign in/,
+    );
+    await addFlow("acme-signup", { root, lib: "../../index.js", fetch: f, token: "t" });
     expect(readFileSync(join(root, "acme-signup/index.ts"), "utf8")).toBe(
       `import { a } from "../../index.js";`,
     );
-    await expect(addFlow("acme-signup", { root, lib: "x", fetch: f })).rejects.toThrow(/exists/);
-    await expect(addFlow("nope", { root, lib: "x", fetch: f })).rejects.toThrow(/no flow nope/);
+    await expect(addFlow("acme-signup", { root, lib: "x", fetch: f, token: "t" })).rejects.toThrow(
+      /exists/,
+    );
+    await expect(addFlow("nope", { root, lib: "x", fetch: f, token: "t" })).rejects.toThrow(
+      /no flow nope/,
+    );
   });
 });
 

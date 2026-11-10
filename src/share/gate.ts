@@ -1,7 +1,7 @@
 /**
  * The registry gate (designs/2026-10-24-shared-library.md, step 5). Flow packs
  * that passed Presidio (`kept/flows/`) get a static check; a pass waits in
- * `gate/review/` for a person's yes; a yes becomes a merged PR to the public
+ * `gate/review/` for a person's yes; a yes becomes a merged PR to the private
  * registry, opened by this job with Wren's `gh`, never the sharer's.
  * The gate never runs a pack's code: it parses it.
  */
@@ -19,7 +19,15 @@ import type { ShareAdmin } from "./presidio.js";
 const run = promisify(execFile);
 
 export const REGISTRY = "WilliamJin123/autobrowse-flows";
-export const REGISTRY_RAW = `https://raw.githubusercontent.com/${REGISTRY}/main`;
+/** Private since 11-10: files come through the contents API with a GitHub token. */
+export const REGISTRY_API = `https://api.github.com/repos/${REGISTRY}/contents`;
+
+/** GH_TOKEN, GITHUB_TOKEN, else `gh auth token`; null: no sign-in. */
+export async function githubToken(exec: Sh = sh): Promise<string | null> {
+  const set = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if (set) return set;
+  return (await exec("gh", ["auth", "token"]).catch(() => "")).trim() || null;
+}
 
 export interface FlowPack {
   name: string;
@@ -328,12 +336,21 @@ export async function approvePack(admin: ShareAdmin, id: string, exec: Sh = sh):
  */
 export async function addFlow(
   name: string,
-  o: { root: string; lib: string; force?: boolean; fetch?: typeof fetch },
+  o: { root: string; lib: string; force?: boolean; fetch?: typeof fetch; token?: string | null },
 ): Promise<string[]> {
   if (!FLOW_NAME.test(name)) throw new Error(`not a flow name: ${name}`);
   const f = o.fetch ?? fetch;
+  const token = o.token !== undefined ? o.token : await githubToken();
+  if (!token)
+    throw new Error(
+      `the registry ${REGISTRY} is private; sign in with \`gh auth login\` (or set GH_TOKEN)`,
+    );
   const get = async (path: string) => {
-    const rsp = await f(`${REGISTRY_RAW}/${path}`);
+    const rsp = await f(`${REGISTRY_API}/${path}?ref=main`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github.raw+json" },
+    });
+    if (rsp.status === 404 && path === "index.json")
+      throw new Error(`registry ${REGISTRY}: not found; this GitHub sign-in has no access to it`);
     if (!rsp.ok) throw new Error(`registry ${path}: ${rsp.status}`);
     return rsp.text();
   };
