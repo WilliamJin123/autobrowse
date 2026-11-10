@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { challengeUrlOf } from "../../browser/flows/page-api.js";
 import { arxivFeed, arxivIdOf } from "./arxiv.js";
-import { listOf, parseXml, qs } from "./kit.js";
+import { postUri } from "./bluesky.js";
+import { type Item, threadOf } from "./hackernews.js";
+import { listOf, mapLimit, parseXml, qs, rssFeed } from "./kit.js";
+import { pagePath } from "./lobsters.js";
 import { abstractOf } from "./openalex.js";
 import { noteKind, notesOf } from "./openreview.js";
 import { abstractText, pubmedTerm } from "./pubmed.js";
+import { pubHost } from "./substack.js";
 
 const ATOM = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
@@ -131,5 +135,77 @@ describe("page-api", () => {
       challengeUrlOf(JSON.stringify({ details: { challengeUrl: "javascript:x" } })),
     ).toBeNull();
     expect(challengeUrlOf("<html>")).toBeNull();
+  });
+});
+
+describe("kit mapLimit", () => {
+  it("keeps order and never runs more than the limit", async () => {
+    let now = 0;
+    let most = 0;
+    const out = await mapLimit([5, 1, 3, 2], 2, async (x) => {
+      most = Math.max(most, ++now);
+      await new Promise((r) => setTimeout(r, x));
+      now--;
+      return x * 10;
+    });
+    expect(out).toEqual([50, 10, 30, 20]);
+    expect(most).toBe(2);
+  });
+});
+
+describe("hackernews", () => {
+  const items: Record<number, Item> = {
+    1: { id: 1, kids: [2, 3, 4] },
+    2: { id: 2, kids: [5] },
+    3: { id: 3, deleted: true },
+    4: { id: 4 },
+    5: { id: 5, kids: [6] },
+  };
+  const get = async (id: number) => items[id] ?? null;
+  it("walks the tree to depth, drops deleted, counts what was cut", async () => {
+    const t = await threadOf(get, items[1] as Item, 2, 2);
+    expect(t.replies.map((r) => r.id)).toEqual([2]);
+    expect(t.more).toBe(1);
+    expect(t.replies[0]?.replies.map((r) => r.id)).toEqual([5]);
+    expect(t.replies[0]?.replies[0]?.replies).toEqual([]);
+    expect(t.replies[0]?.replies[0]?.more).toBe(1);
+    expect((await threadOf(get, items[1] as Item, 0, 9)).replies).toEqual([]);
+  });
+});
+
+describe("lobsters", () => {
+  it("pages the front list at /page/N, the rest under their own path", () => {
+    expect(pagePath("/hottest", 1)).toBe("/hottest");
+    expect(pagePath("/hottest", 2)).toBe("/page/2");
+    expect(pagePath("/t/rust", 3)).toBe("/t/rust/page/3");
+  });
+});
+
+describe("bluesky", () => {
+  it("turns a bsky.app post link into its at:// URI", () => {
+    expect(postUri("https://bsky.app/profile/a.bsky.social/post/3kx?ref=1")).toBe(
+      "at://a.bsky.social/app.bsky.feed.post/3kx",
+    );
+    expect(postUri("at://did:plc:x/app.bsky.feed.post/y")).toBe(
+      "at://did:plc:x/app.bsky.feed.post/y",
+    );
+  });
+});
+
+describe("substack", () => {
+  it("names a publication's host", () => {
+    expect(pubHost("lenny")).toBe("lenny.substack.com");
+    expect(pubHost("https://www.lennysnewsletter.com/p/x")).toBe("www.lennysnewsletter.com");
+  });
+});
+
+describe("rss", () => {
+  it("keeps each RSS item whole, categories always a list", () => {
+    const f = rssFeed(
+      `<rss><channel><title>T</title><link>https://medium.com/tag/x</link><item><title>A</title><category>ai</category></item></channel></rss>`,
+    );
+    expect(f).toMatchObject({ found: true, title: "T" });
+    expect(f.items).toEqual([{ title: "A", category: ["ai"] }]);
+    expect(rssFeed(null).found).toBe(false);
   });
 });

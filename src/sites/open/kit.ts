@@ -55,7 +55,9 @@ export async function getJson<T = unknown>(
 ): Promise<T | null> {
   const res = await get(http, url, o, "application/json");
   if (!res.ok) return null;
-  if (res.body === null) throw new SiteError(502, `${o.label}: not JSON`);
+  // a literal `null` is JSON too: Firebase's answer for no such item
+  if (res.body === null && res.text?.trim() !== "null")
+    throw new SiteError(502, `${o.label}: not JSON`);
   return res.body as T;
 }
 
@@ -80,6 +82,47 @@ export const parseXml = (text: string): Record<string, unknown> =>
 /** One or many as a list: XML gives a lone child as an object. */
 export const listOf = <T = unknown>(v: unknown): T[] =>
   v === undefined || v === null ? [] : Array.isArray(v) ? (v as T[]) : [v as T];
+
+export interface RssFeed {
+  found: boolean;
+  title: string | null;
+  link: string | null;
+  items: Array<Record<string, unknown>>;
+}
+
+/** An RSS 2.0 feed: each item whole as sent, `category` always a list; found false when none. */
+export function rssFeed(xml: string | null): RssFeed {
+  const rss = parseXml(xml ?? "").rss as { channel?: Record<string, unknown> } | undefined;
+  const channel = rss?.channel;
+  if (!channel) return { found: false, title: null, link: null, items: [] };
+  return {
+    found: true,
+    title: (channel.title as string) ?? null,
+    link: (channel.link as string) ?? null,
+    items: listOf<Record<string, unknown>>(channel.item).map((i) => ({
+      ...i,
+      category: listOf(i.category),
+    })),
+  };
+}
+
+/** `fn` over `items`, at most `limit` at once, answers in order (HN's one call per item). */
+export async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
 
 /** A query string from the set values only. */
 export function qs(params: Record<string, string | number | boolean | undefined>): string {

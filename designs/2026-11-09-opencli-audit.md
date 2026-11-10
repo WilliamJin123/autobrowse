@@ -320,6 +320,17 @@ then the page's fetch reads the API. OpenReview's search stays on the plain leg 
 OpenAlex keyless gives 90 searches a day here (`caps.search`); a key needs William's email, so
 none is made. PubMed reads `NCBI_API_KEY` when set.
 
+Batch A2, community reads (built 11-10): stackoverflow (any Stack Exchange site by `site`),
+hackernews (Firebase lists and items, Algolia search), lobsters, devto, bluesky, substack, medium,
+the same way. Left out, each needs a sign-in: Bluesky post search (403 signed out), Substack's and
+Medium's reader feeds, Medium search. Stack Exchange keyless is 300 calls a day per IP
+(`caps.call` 280); `STACKEXCHANGE_KEY` lifts it.
+
+Batch A3, news and finance (built 11-10): `bbc` and `bloomberg` (`src/sites/open/news.ts`) read
+RSS; Bloomberg's feeds moved to www.bloomberg.com/feeds and its articles stay behind the paywall.
+`yahoo-finance` reads the chart and search JSON its pages call; the v7 quote wants a cookie crumb,
+and chart `meta` carries the same live price.
+
 ## Plan once William picks
 
 1. Wave 1 (U1 with its options first).
@@ -357,3 +368,6 @@ none is made. PubMed reads `NCBI_API_KEY` when set.
   runs on the desk, weekly, beside the other timers.
 - 2026-11-09: A1 built as one open site per host (my call): its caps and pace are the host's.
   Bot-checked APIs read inside the site's page (`pageApiFlow`), not through a solver or a proxy.
+- 2026-11-10: A2 built on A1's pattern. HN lists and comment trees read Firebase one item at a
+  time (8 at once), as OpenCLI does; Algolia serves search only. Medium by RSS: no cookie, and each
+  item carries the whole post.

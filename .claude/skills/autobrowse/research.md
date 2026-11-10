@@ -26,7 +26,21 @@ autobrowse site call perplexity POST /chat/completions \
   --body '{"messages":[{"role":"user","content":"…"}]}'
 ```
 
+Open sites: a host's own public API, no key, whole records. Each is a site:
+`autobrowse site status <site>` lists its routes.
+
+- Papers: `arxiv`, `openalex`, `pubmed`, `dblp`, `openreview`; facts: `wikipedia`, `wikidata`.
+- Community: `stackoverflow`, `hackernews`, `lobsters`, `devto`, `bluesky`, `substack`, `medium`.
+- News and markets: `bbc`, `bloomberg` (headlines), `yahoo-finance` (prices, tickers).
+
+```sh
+autobrowse site call hackernews GET "/search?q=playwright&sort=date"
+autobrowse site call stackoverflow GET "/questions/11227809"   # with answers and comments
+```
+
 Which one:
+
+- Papers, a forum thread, a public profile: the open site, before `search` or `read`.
 
 - A known URL: `read`.
 - Many candidates: `search`, then `read` the few that matter.

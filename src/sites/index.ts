@@ -67,11 +67,20 @@ import { loom } from "./loom.js";
 import { meta } from "./meta.js";
 import { npm } from "./npm.js";
 import { arxiv } from "./open/arxiv.js";
+import { bluesky } from "./open/bluesky.js";
 import { dblp } from "./open/dblp.js";
+import { devto } from "./open/devto.js";
+import { hackernews } from "./open/hackernews.js";
+import { lobsters } from "./open/lobsters.js";
+import { medium } from "./open/medium.js";
+import { bbc, bloomberg } from "./open/news.js";
 import { openalex } from "./open/openalex.js";
 import { openreview } from "./open/openreview.js";
 import { pubmed } from "./open/pubmed.js";
+import { stackoverflow } from "./open/stackoverflow.js";
+import { substack } from "./open/substack.js";
 import { wikidata, wikipedia } from "./open/wiki.js";
+import { yahooFinance } from "./open/yahoo-finance.js";
 import { outlook } from "./outlook.js";
 import { perplexity } from "./perplexity.js";
 import { reddit, redditPublic } from "./reddit.js";
@@ -92,6 +101,18 @@ export const SITES: readonly SiteApi[] = [
   openreview,
   wikipedia,
   wikidata,
+  // open community reads (WA-1251.5 A2)
+  stackoverflow,
+  hackernews,
+  lobsters,
+  devto,
+  bluesky,
+  substack,
+  medium,
+  // open news and finance (WA-1251.5 A3)
+  bbc,
+  bloomberg,
+  yahooFinance,
   linkedin,
   youtube,
   instagram,
