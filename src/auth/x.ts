@@ -11,7 +11,7 @@
  * "Password" field and "Continue" again. The older /i/flow/login says
  * "Phone, email, or username", "Next", "Log in".
  */
-import { LoginFailed, passwordOf, type SignInContext } from "./login.js";
+import { LoginFailed, passwordOf, personStep, type SignInContext } from "./login.js";
 
 const SETTLE_MS = 1_500;
 const RENDER_MS = 8_000;
@@ -66,7 +66,7 @@ export async function signInToX(ctx: SignInContext): Promise<void> {
   if (/verification code|authentication app|confirmation code/i.test(text)) {
     if (!(await fp.has(codeBox, RENDER_MS))) {
       if (/puzzle|arkose|suspicious|locked|verify your identity/i.test(text))
-        return fp.human("X wants a check only a person can pass");
+        return personStep(ctx, "X wants a check only a person can pass");
       throw new LoginFailed(site, `a check without a code box: ${fp.url()}`);
     }
     const kind = /authentication app|authenticator/i.test(text)
@@ -89,7 +89,7 @@ export async function signInToX(ctx: SignInContext): Promise<void> {
   if (/code (is|was) (incorrect|invalid)|incorrect code|try again/i.test(text))
     throw new LoginFailed(site, "code rejected");
   if (/puzzle|arkose|suspicious|locked/i.test(text))
-    return fp.human("X wants a check only a person can pass");
+    return personStep(ctx, "X wants a check only a person can pass");
   if (!(await fp.waitForUrl((u) => !X_LOGIN_URL.test(u), 15_000)))
     throw new LoginFailed(site, `still on ${fp.url()} after the sign-in steps`);
 }

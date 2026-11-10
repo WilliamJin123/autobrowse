@@ -23,6 +23,38 @@ import { type CodeKind, type CodeSource, inboxLock } from "./codes.js";
 import { guardedPage, hostNamed, hostUnder, registrable } from "./guard.js";
 import { type IdentityProvider, type Provider, providerOf } from "./providers.js";
 
+/** The page left the address it was at: a person's step is past. */
+export const movedOn = (fp: FlowPage): (() => Promise<boolean>) => {
+  const at = fp.url();
+  return async () => fp.url() !== at;
+};
+
+/**
+ * A sign-in step only a person can answer on the page (a phone tap's number, a puzzle, an
+ * identity check). In a window: the person is told, the window comes forward and the sign-in
+ * waits till `gone`. Headless: the runner runs the flow again in a window (`fp.person`). Not a
+ * refused sign-in: no hold follows (WA-1028).
+ */
+export async function personStep(
+  ctx: Pick<SignInContext, "fp" | "notify" | "cred">,
+  reason: string,
+  gone: () => Promise<boolean> = movedOn(ctx.fp),
+): Promise<void> {
+  const { fp } = ctx;
+  if (!fp.person) return fp.human(reason);
+  let told = false;
+  await fp.person(reason, async () => {
+    // told once the window is up, not on the headless try that only asks for one
+    if (!told) {
+      told = true;
+      await ctx
+        .notify?.(`Sign-in for ${ctx.cred.username} waits for you in a browser window: ${reason}`)
+        .catch(() => undefined);
+    }
+    return gone();
+  });
+}
+
 export interface SignInContext {
   fp: FlowPage;
   cred: Credential;
@@ -293,10 +325,14 @@ function formWalk(
             name: "captcha",
             looks: "a captcha challenge on the login form",
             shows: [spec.captcha],
-            async act({ fp }: SignInContext) {
-              const got = await fp.captcha();
+            async act(c: SignInContext) {
+              const got = await c.fp.captcha();
               if (!got.solved)
-                fp.human(`${site}: the sign-in captcha is a person's (${got.reason})`);
+                await personStep(
+                  c,
+                  `${site}: the sign-in captcha is a person's (${got.reason})`,
+                  async () => !(await c.fp.has(spec.captcha as Hints)),
+                );
             },
           },
         ]
@@ -349,7 +385,7 @@ function formWalk(
             name: "person's step",
             looks: "a second step only a person's device can answer",
             says: spec.person.asks,
-            act: ({ fp }: SignInContext) => fp.human(`${site}: ${spec.person?.why}`),
+            act: (c: SignInContext) => personStep(c, `${site}: ${spec.person?.why}`),
           },
         ]
       : []),

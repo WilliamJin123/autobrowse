@@ -4,7 +4,7 @@
  * Its slider puzzle is a person's. Unverified until a credential exists
  * (from the public pages 2026-09-21).
  */
-import { LoginFailed, passwordOf, type SignInContext } from "./login.js";
+import { LoginFailed, passwordOf, personStep, type SignInContext } from "./login.js";
 
 const SETTLE_MS = 1_500;
 const RENDER_MS = 8_000;
@@ -45,7 +45,12 @@ export async function signInToTiktok(ctx: SignInContext): Promise<void> {
   if (/doesn.t match our records|incorrect (account|password)|password is incorrect/i.test(text))
     throw new LoginFailed(site, "password rejected");
   if (/drag the slider|verify to continue|slide to verify|captcha/i.test(text))
-    return fp.human("TikTok wants its slider puzzle solved");
+    return personStep(
+      ctx,
+      "TikTok wants its slider puzzle solved",
+      async () =>
+        !/drag the slider|verify to continue|slide to verify|captcha/i.test(await fp.text()),
+    );
 
   // A new device: the 6-digit code TikTok emails.
   const codeBox = {

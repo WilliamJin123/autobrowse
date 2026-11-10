@@ -40,6 +40,11 @@ export class NeedsHuman extends Error {
   /** Set by the runner, not the flow: where the screenshot and trace went. */
   artifacts: Artifacts = {};
   readonly wall?: Wall["kind"] | undefined;
+  /**
+   * A person can answer it on the page itself (a phone tap's number, a puzzle): the runner
+   * may run the flow once more in a window and wait there (`fp.person`, WA-1028).
+   */
+  person = false;
   constructor(
     reason: string,
     /** The wall that stopped the flow, when one did: a read maps it to an access code. */

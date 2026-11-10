@@ -215,6 +215,13 @@ export interface FlowPage {
   newIp(): Promise<boolean>;
   /** Stop here and ask a person. */
   human(reason: string): never;
+  /**
+   * A step a person answers on this page (a phone tap's number, a puzzle). In a window a person
+   * sees: the window comes to the front and the flow waits here till `gone` says the step is
+   * past; no answer in `ms` is a NeedsHuman. In a headless run: a NeedsHuman marked `person`,
+   * and the runner runs the flow once more in a window. Absent in fakes: use `human`.
+   */
+  person?(reason: string, gone: () => Promise<boolean>, ms?: number): Promise<void>;
   /** Under a durable call: `code`'s store for `scope`, kept across retries. Null on a local run. */
   codeStore?(scope: string): CodeStore | null;
   /** What a screens walk asks of the runner: the page's shape, learned screens, a model (`browser/screens`). */
@@ -342,6 +349,12 @@ export class FlowFailed extends Error {
 
 export interface RunnerOptions {
   repairer?: Repairer;
+  /**
+   * A headless run that met a person's step (`fp.person`) runs once more in the browser these
+   * options open: by default the same one, headed, where this machine has a screen. A run
+   * that already sent something, or runs in an armed tab, is never run again. false: never.
+   */
+  person?: false | ((opts: BrowserOptions) => BrowserOptions);
   /**
    * The page-call log's caps (`browser/network`); a flow's short log by default. An explore
    * session keeps more, and sets `on` (capture there by default, WA-1251.4).
@@ -650,6 +663,10 @@ async function uploadFiles(
   throw got;
 }
 
+/** How long a person has for a step on the page, and how often the page is asked. */
+const PERSON_MS = 5 * 60_000;
+const PERSON_POLL_MS = 2_000;
+
 export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): FlowRunner {
   const artifactsDir = expandHome(opts.artifactsDir);
   const locks = runner.locks ?? new KeyedMutex();
@@ -697,9 +714,34 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
         });
       }
     : undefined;
+  const HAS_SCREEN = process.platform === "darwin" || !!process.env.DISPLAY;
+  const inWindow =
+    runner.person === false
+      ? null
+      : (runner.person ??
+        (HAS_SCREEN && opts.tier === "local" && !opts.film
+          ? (o: BrowserOptions): BrowserOptions => ({ ...o, headless: false })
+          : null));
   return {
     ...(tab ? { tab } : {}),
     run: async (flow, input, on) => {
+      try {
+        return await runOnce(flow, input, on, false);
+      } catch (err) {
+        if (!(err instanceof NeedsHuman) || !err.person || !inWindow || on) throw err;
+        return runOnce(flow, input, on, true);
+      }
+    },
+  };
+  async function runOnce<I, O>(
+    flow: BrowserFlow<I, O>,
+    input: I,
+    on: { page: Page } | undefined,
+    /** The run a person answers: its own headed browser, closed after. */
+    withPerson: boolean,
+  ): Promise<O> {
+    {
+      const sessionOpts = withPerson && inWindow ? inWindow(opts) : opts;
       const profile =
         flow.profile === "provider" ? ((await opts.providerProfile?.(flow.site)) ?? null) : null;
       // A profile opens once: everything that lands on one Chrome profile shares one queue and
@@ -710,10 +752,15 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
       return locks.withLock(key, async () => {
         // Opening the browser is the first thing the network or the machine can break.
         const opening = Date.now();
-        const parked = (await runner.park?.take(key)) ?? null;
+        let parked = (await runner.park?.take(key)) ?? null;
+        // the parked browser has no window: this run opens its own on the profile
+        if (withPerson && parked) {
+          await parked.close();
+          parked = null;
+        }
         const held =
           parked ??
-          (await openSession(flow.site, profile ? { ...opts, profile } : opts).catch(
+          (await openSession(flow.site, profile ? { ...sessionOpts, profile } : sessionOpts).catch(
             (err: unknown) => {
               const transient = isTransientBrowserError(err);
               // A run that never got a browser is still a run: the row says it broke here.
@@ -993,6 +1040,21 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           codeStore: (scope) => (call && runner.codeStores ? runner.codeStores(call, scope) : null),
           human(reason) {
             throw new NeedsHuman(`${flow.site}: ${reason}`);
+          },
+          async person(reason, gone, ms = PERSON_MS) {
+            const why = `${flow.site}: ${reason}`;
+            if (!withPerson && sessionOpts.headless !== false) {
+              const err = new NeedsHuman(why);
+              err.person = true;
+              throw err;
+            }
+            await held.offscreen?.(false);
+            await session.page.bringToFront().catch(() => undefined);
+            for (let t = 0; t < ms; t += PERSON_POLL_MS) {
+              await session.page.waitForTimeout(PERSON_POLL_MS).catch(() => undefined);
+              if (session.page.isClosed() || (await gone().catch(() => false))) return;
+            }
+            throw new NeedsHuman(`${why} (no answer in ${Math.round(ms / 60_000)} min)`);
           },
           passkeys: session.passkeys,
           ...(network ? { network } : {}),
@@ -1406,6 +1468,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           runner.onFailure?.(record, artifacts.failure);
           if (err instanceof NeedsHuman) {
             err.artifacts = artifacts;
+            // what was sent is sent: no second run
+            if (submitted) err.person = false;
             throw err;
           }
           if (err instanceof AccessRefused) throw err;
@@ -1459,7 +1523,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               await shareTrace(path, { site: key, flow: flow.name, outcome: "ok" });
             if (path && !watch) rmSync(path, { force: true });
           }
-          if (runner.park && !broken) {
+          if (runner.park && !broken && !withPerson) {
             // A run that waits for a person keeps every tab: the answer may need one.
             if (outcome !== "human" && !session.shared)
               await closeStrayTabs(session.context, session.page);
@@ -1469,6 +1533,6 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           } else await held.close();
         }
       });
-    },
-  };
+    }
+  }
 }

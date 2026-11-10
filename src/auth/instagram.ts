@@ -7,7 +7,7 @@
  * prompts are declined. Unverified until a credential exists (from the
  * public pages 2026-09-21).
  */
-import { LoginFailed, passwordOf, type SignInContext } from "./login.js";
+import { LoginFailed, passwordOf, personStep, type SignInContext } from "./login.js";
 
 const SETTLE_MS = 1_500;
 const RENDER_MS = 8_000;
@@ -51,7 +51,7 @@ export async function signInToInstagram(ctx: SignInContext): Promise<void> {
     }
     if (!(await fp.has(codeBox, RENDER_MS))) {
       if (/suspicious|confirm it.s you|video selfie|captcha/i.test(text))
-        return fp.human("Instagram wants a check only a person can pass");
+        return personStep(ctx, "Instagram wants a check only a person can pass");
       throw new LoginFailed(site, `a challenge without a code box: ${fp.url()}`);
     }
     const kind = /authentication app|authenticator/i.test(text) ? "totp" : "email";

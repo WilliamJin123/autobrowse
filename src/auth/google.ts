@@ -17,7 +17,14 @@
 import type { FlowPage } from "../browser/flow.js";
 import type { Hints } from "../browser/locate.js";
 import { type Screen, type Walk, walk } from "../browser/screens.js";
-import { LoginFailed, passwordOf, type SignInContext, serially } from "./login.js";
+import {
+  LoginFailed,
+  movedOn,
+  passwordOf,
+  personStep,
+  type SignInContext,
+  serially,
+} from "./login.js";
 import { registerProvider } from "./providers.js";
 
 const SETTLE_MS = 1_500;
@@ -287,9 +294,15 @@ export function googleWalk(ctx: SignInContext): Walk<SignInContext> {
       async act({ fp }) {
         // Twice is a real sign-in (before the password, then after it); a third is a loop:
         // the step we pick leads to one we can't answer and back (LinkedIn, 2026-10-05).
-        if (++listed > 2)
+        if (++listed > 2) {
           // a person's step, not a refusal: no 12 h hold (WA-1028)
-          fp.human(only("Google keeps asking for a second step only a person can answer"));
+          listed = 0;
+          return personStep(
+            ctx,
+            only("Google keeps asking for a second step only a person can answer"),
+            async () => !SELECTION.test(fp.url()) && !CHALLENGE.test(fp.url()),
+          );
+        }
         // Before the password, the list offers it (an account with a passkey is asked for that first).
         const password = choice("Enter your password");
         if (!passwordTyped && (await fp.has(password, 3_000))) {
@@ -385,7 +398,11 @@ export function googleWalk(ctx: SignInContext): Walk<SignInContext> {
       async act({ fp }) {
         // a person's step (a phone tap, "Verify it's you"), not a refusal: no 12 h hold (WA-1028)
         if (!(await fp.has(OTHER_WAY)))
-          fp.human("Google asks a second step only a person can answer: a phone tap or a check");
+          return personStep(
+            ctx,
+            "Google asks a second step only a person can answer: a phone tap or a check",
+            movedOn(fp),
+          );
         await otherWay(fp);
       },
     },

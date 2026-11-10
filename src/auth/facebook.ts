@@ -6,7 +6,7 @@
  * browser" and "trust this device" prompts are declined. Unverified until
  * a credential exists (from the public pages 2026-09-22).
  */
-import { LoginFailed, passwordOf, type SignInContext } from "./login.js";
+import { LoginFailed, passwordOf, personStep, type SignInContext } from "./login.js";
 
 const SETTLE_MS = 1_500;
 const RENDER_MS = 8_000;
@@ -51,7 +51,7 @@ export async function signInToFacebook(ctx: SignInContext): Promise<void> {
   ) {
     if (!(await fp.has(codeBox, RENDER_MS))) {
       if (/confirm your identity|video selfie|upload (a )?photo|locked|suspicious/i.test(text))
-        return fp.human("Facebook wants a check only a person can pass");
+        return personStep(ctx, "Facebook wants a check only a person can pass");
       throw new LoginFailed(site, `a checkpoint without a code box: ${fp.url()}`);
     }
     const kind = /authentication app|authenticator/i.test(text)

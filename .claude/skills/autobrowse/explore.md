@@ -113,6 +113,7 @@ Act (journaled):
   - `<site>-login` signs in with a stored credential (through its Google/Microsoft button when the site has one). `"plan":{"account":"…"}` takes an `account` from the list (`google@wren`), a role (`wren`) or an address; none = the profile's own (a profile with none, such as bare `youtube`, must name one). The runner types it; you never hold it. Use it on a sign-in page, a signed-out state or an expired session instead of `--login` and `place`.
   - Accounts: `profile: true` marks the account this browser profile is for. Another one puts its cookies in this profile; for more than a quick task, start a session as that account instead (`start.sh youtube@<label>`).
   - Every money act asks the person, as yours do. A workflow's `purchase`/`password`/`send` gate asks too. Send with `?wait=1` to hold for the answer.
+  - A sign-in step only a person answers (a phone tap, a puzzle, "Verify it's you"): a headless CLI or desk run opens its own window, tells William and waits 5 min; no hold follows. In explore it comes back as `human`: say what the step is and wait.
   - `waiting` with `gate.name` `human`: fix it, then send the same command. The step runs again from its first `open`, so a fix the site keeps (a sign-in, a setting) holds; a fix on the page only (a closed dialog) does not. `choose`: send it again with `"choice":"…"`.
   - `failed`: the same command goes on from the failed step. `"fresh":true` starts over.
   - The journal keeps its acts flat, so `save` makes one recording. A secret flow keeps only its start and end notes.

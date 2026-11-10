@@ -8,7 +8,7 @@
  * one it can't pass, or a phone tap, is a person's. A restricted account
  * (LinkedIn wants an ID) stops the sign-in.
  */
-import { LoginFailed, passwordOf, type SignInContext } from "./login.js";
+import { LoginFailed, passwordOf, personStep, type SignInContext } from "./login.js";
 
 const SETTLE_MS = 1_500;
 const RENDER_MS = 8_000;
@@ -38,7 +38,12 @@ export async function signInToLinkedin(ctx: SignInContext): Promise<void> {
   let text = await fp.text();
   if (SECURITY_CHECK.test(text)) {
     const got = await fp.captcha();
-    if (!got.solved) return fp.human(`LinkedIn's security check: ${got.reason}`);
+    if (!got.solved)
+      return personStep(
+        ctx,
+        `LinkedIn's security check: ${got.reason}`,
+        async () => !SECURITY_CHECK.test(await fp.text()),
+      );
     await fp.wait(SETTLE_MS);
     text = await fp.text();
   }
@@ -55,7 +60,11 @@ export async function signInToLinkedin(ctx: SignInContext): Promise<void> {
   if (CHECKPOINT_URL.test(fp.url()) || /verification code|enter the code/i.test(text)) {
     if (!(await fp.has(otp, RENDER_MS))) {
       if (SECURITY_CHECK.test(text))
-        return fp.human("LinkedIn wants a security check the solver couldn't pass");
+        return personStep(
+          ctx,
+          "LinkedIn wants a security check the solver couldn't pass",
+          async () => !SECURITY_CHECK.test(await fp.text()),
+        );
       throw new LoginFailed(site, `checkpoint without a code box: ${fp.url()}`);
     }
     // The page says where the code comes from; the credential says what we can read.
