@@ -235,6 +235,28 @@ describe("Watchers", () => {
     await w.stop();
   });
 
+  it("renews its tab each hour: the new one opens first, the old one closes, the count holds", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    const w = h.make();
+    w.start();
+    h.titles.now = "(2) Feed | LinkedIn";
+    await w.lease(lease("2026-10-12T18:00:00Z"));
+    const fired = () => h.sent.filter((x) => x.body.kind === "activity").length;
+    await h.tick(10_000);
+    expect(fired()).toBe(1);
+    await h.tick(60 * 60_000);
+    expect(h.tabs).toHaveLength(2);
+    expect(h.tabs[0]?.gone).toBe(true);
+    expect(h.tabs[0]?.reload).not.toHaveBeenCalled();
+    expect(w.states()[0]).toMatchObject({ open: true, count: 2, error: null });
+    // the old tab's close is no closed watch, and the same count is no rise
+    await h.tick(30_000);
+    expect(fired()).toBe(1);
+    expect(h.tabs).toHaveLength(2);
+    await w.stop();
+  });
+
   it("opens one tab when two leases meet while the tab opens", async () => {
     vi.useFakeTimers();
     let go = () => {};

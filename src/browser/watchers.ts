@@ -6,7 +6,7 @@
  *
  * Reading the title is a local CDP call every `everyMs`: the site sees one open tab, never a
  * request from us. The tab blocks images, media and fonts (not in the person's own browser),
- * reloads every `reloadMs` to keep its memory flat, and reopens with a backoff when the
+ * renews its tab every `renewMs` to keep its memory flat, and reopens with a backoff when the
  * browser under it closes (a broken run, a restart).
  *
  * While titles read, the sink also hears `kind: "alive"` every `beatMs`: the caller may then poll
@@ -85,7 +85,8 @@ export interface WatchersDeps {
   log?: (msg: string, extra?: Record<string, unknown>) => void;
   now?: () => number;
   everyMs?: number;
-  reloadMs?: number;
+  /** A fresh tab this often; the old one closes. */
+  renewMs?: number;
   /** Two rises closer than this send once. */
   quietMs?: number;
   /** How often a reading watcher says it is alive. */
@@ -138,7 +139,7 @@ export class Watchers {
   private sweeper: ReturnType<typeof setInterval> | null = null;
   private readonly now: () => number;
   private readonly everyMs: number;
-  private readonly reloadMs: number;
+  private readonly renewMs: number;
   private readonly quietMs: number;
   private readonly beatMs: number;
   private readonly specs: Record<string, WatchSpec>;
@@ -148,7 +149,7 @@ export class Watchers {
     this.d = d;
     this.now = d.now ?? Date.now;
     this.everyMs = d.everyMs ?? 20_000;
-    this.reloadMs = d.reloadMs ?? 3 * 60 * 60_000;
+    this.renewMs = d.renewMs ?? 60 * 60_000;
     this.quietMs = d.quietMs ?? 30_000;
     this.beatMs = d.beatMs ?? 10 * 60_000;
     this.specs = d.specs ?? WATCH_SPECS;
@@ -238,21 +239,31 @@ export class Watchers {
         this.write();
         await this.close(l);
       } else if (!l.held && l.retryAt <= now) await this.open(l);
-      else if (l.held && now - l.openedAt >= this.reloadMs) {
-        l.openedAt = now;
-        await l.held.page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
-      }
+      else if (l.held && !l.opening && now - l.openedAt >= this.renewMs) await this.renew(l);
     }
   }
 
-  private open(l: Live): Promise<void> {
-    l.opening ??= this.opened(l).finally(() => {
+  /**
+   * A fresh tab, then the old one closes: a reload keeps the renderer's heap (a LinkedIn watch
+   * held 2.6 GB on 11-09). The new tab opens first, so the browser's pin never drops to none.
+   */
+  private async renew(l: Live): Promise<void> {
+    const old = l.held;
+    if (l.timer) clearInterval(l.timer);
+    l.timer = null;
+    l.held = null;
+    await this.open(l, true);
+    await old?.release().catch(() => undefined);
+  }
+
+  private open(l: Live, renewing = false): Promise<void> {
+    l.opening ??= this.opened(l, renewing).finally(() => {
       l.opening = null;
     });
     return l.opening;
   }
 
-  private async opened(l: Live): Promise<void> {
+  private async opened(l: Live, renewing: boolean): Promise<void> {
     const spec = this.specs[l.lease.site];
     if (!spec || !this.d.runner.tab) return;
     try {
@@ -285,7 +296,8 @@ export class Watchers {
       l.state.error = null;
       if (l.state.paused) this.d.log?.("watch resumed", { id: l.state.id });
       l.state.paused = null;
-      l.state.count = null;
+      // a renewed tab keeps the count: the unread already seen is no rise
+      if (!renewing) l.state.count = null;
       l.timer = setInterval(() => void this.check(l, page, spec), this.everyMs);
       l.timer.unref?.();
       await this.check(l, page, spec);

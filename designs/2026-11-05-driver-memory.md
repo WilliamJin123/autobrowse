@@ -95,7 +95,7 @@ Plan was one Chrome for all signed-out reads, many tabs. The flow ledger says it
 
 Incident, 11-10 02:06–02:46 UTC: explore 9302 (another session's) drove Meta Business Suite's composer for 40 minutes (21 opens, 8 uploads). Its headed Chrome grew until macOS ran out of memory. William force-quit it at 02:45:48 and his session crashed. Swap was full (8 GB) with gates and other sessions running. Nothing of ours acted: `autobrowse browsers` warns only when asked.
 
-Ruled out: the desk's renders (headless shell, one at a time per profile, 82 MB at 02:46), the internships `mail.mjs` job (closes its Chrome; pid 73229 was a live run), weaver (launches no browser), the explore network capture (Playwright keeps Chrome's default buffers; our log is capped at 32 MB in Node).
+Ruled out: the desk's renders (full Chrome in `--headless`, not the headless shell; one at a time per profile; 82 MB at 02:46), the internships `mail.mjs` job (closes its Chrome; pid 73229 was a live run), weaver (launches no browser), the explore network capture (Playwright keeps Chrome's default buffers; our log is capped at 32 MB in Node).
 
 | Option | Verdict |
 |---|---|
@@ -105,6 +105,24 @@ Ruled out: the desk's renders (headless shell, one at a time per profile, 82 MB 
 | D. Chrome flags (`--js-flags=--max-old-space-size`) | No: caps the JS heap of one renderer only; images, DOM and GPU memory pass it |
 
 Cap: a quarter of RAM, 2 to 6 GB (4 GB here); `AUTOBROWSE_BROWSER_CAP_MB` sets it. Half the cap is enough under the OS's critical level. Past 60% it warns once. Each warn and close is a line in `~/.config/autobrowse/browser-memory.jsonl` with the pages' URLs. A close that hangs 10 s is a kill. Explore restarts the browser and resumes its journal; a flow fails retryable; the park drops a dead browser.
+
+### What the 19 GB was (found later on 11-09)
+
+William: an "out of application memory" panel, a Chrome at about 19 GB; once he killed it, two more 19 GB Chromes appeared. The system log (`log show`, loginwindow and runningboardd) gives the facts:
+
+- He force-quit Chrome 25851 at 21:45:42 EST. It started at 21:06:29: the Business Suite explore browser.
+- The two that appeared were Chrome 73984 and 74029, started 21:46:28 and 21:46:30, force-quit together at 21:46:50. One was that session's agent starting its explore again ("browser died, restarting"); one was my explore 9322. Each was about 20 s old.
+- A 20 s old Chrome cannot hold 19 GB. So the panel's number per Chrome row is not that process's memory. Each explore start in the window measured all our browsers at 2 to 6 GB by footprint: the Business Suite explore 1.5 GB, the desk's LinkedIn watch 2.6 GB, its X watch 1.1 GB.
+- About 30 Chromes started and stopped between 21:36 and 21:50 (CLI and desk fetches, explore restarts).
+- William's own browser is Opera. Every Google Chrome on this Mac is ours.
+
+So the Mac ran out because many things were large at once: Claude sessions (6.5 GB at 22:30 for 8), the Docker VM (2 GB), gates (`tsc` about 2.8 GB each), and our browsers. No single process held 19 GB.
+
+What changed:
+
+- The cap per browser above.
+- The desk writes what holds memory each minute while the OS reports pressure: `~/.config/autobrowse/memory/pressure-<YYYY-MM>.jsonl`, the top 20 apps and processes by top's MEM (compressed pages too), each Chrome by its profile. The next incident names its holders.
+- A watch tab renews each hour (a new tab, then the old one closes) instead of a reload every 3 h. A reload keeps the renderer, and the LinkedIn watch reached 2.6 GB on a page meant to be light.
 
 ## Decision log
 
@@ -119,3 +137,5 @@ Cap: a quarter of RAM, 2 to 6 GB (4 GB here); `AUTOBROWSE_BROWSER_CAP_MB` sets i
 - 2026-11-05: The shared reader waits (my recommendation; William agreed to the reader on 11-05 before these numbers): two signed-out browsers were open together 0.8% of the week.
 - 2026-11-06: The memory gate warns and opens (William, through the onlyfeet session: an agent's start was refused twice while three desk browsers held about 2 GB, and it had no `--force`). The warning gives the free share and each browser's MB. A stop stays at the OS's critical level only (my call): there the kernel kills processes, and the next one may be the desk's. WA-1132.
 - 2026-11-09: A cap per browser, closed past it (my call, after William's "how did it get to 18gb in the first place is the bug to fix"). This reverses "no heap cap" for the browser only: a lost page beats a crashed Mac. The driver stays uncapped.
+- 2026-11-09: Under pressure the desk logs the top holders each minute (my call): the Force Quit panel gave one number for every Chrome, and nothing of ours kept a record. `top -l 1` costs 0.7 s; `footprint` over every process costs 7 s and 2.5 cores, so it is not used.
+- 2026-11-09: A watch renews its tab hourly instead of a reload every 3 h (my call): a fresh renderer frees what a reload keeps.

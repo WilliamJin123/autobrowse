@@ -13,6 +13,7 @@
 import { resolve } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import pino from "pino";
+import { logPressureOnTimer } from "../browser/memory-pressure-log.js";
 import { obsBooth } from "../calls/obs.js";
 import { Recorder } from "../calls/recorder.js";
 import { callsService, macBanner, watchCalls } from "../calls/service.js";
@@ -109,6 +110,8 @@ watchers?.start();
 keepDiskOnTimer(settings, log);
 sendSharedOnTimer(log);
 upstreamOnTimer(log);
+// what holds memory, each minute under pressure (11-09 incident)
+logPressureOnTimer((e) => log.warn({ err: String(e) }, "memory pressure log"));
 keepSharedOnTimer(log);
 reproofOnTimer(log, COMPILED_DIR, (name, plan) =>
   proveCompiled(app.catalog, app.browser, name, plan),
