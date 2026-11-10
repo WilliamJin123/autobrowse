@@ -107,6 +107,7 @@ describe("browser service", () => {
       "linkedin/connections",
       "linkedin/create-post",
       "linkedin/dashboard",
+      "linkedin/developer-app",
       "linkedin/feed",
       "linkedin/follow",
       "linkedin/inbox",

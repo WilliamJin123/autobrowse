@@ -968,6 +968,16 @@ export const linkedin: SiteApi = {
     }),
     route({
       method: "GET",
+      path: "/developer/apps/{app}",
+      standing: { final: "LinkedIn has no API for its developer portal" },
+      summary:
+        "One developer app's Products tab, read as the account that owns it: the tab's text lines whole and `states` (the lines naming a product's state, as \"Review in progress\"). Reads only",
+      request: z.object({ app: z.string().regex(/^\d{6,12}$/) }),
+      meter: () => ({ analytics: 1 }),
+      browser: { flow: "linkedin/developer-app" },
+    }),
+    route({
+      method: "GET",
       path: "/messaging",
       standing: { waits: "linkedin-partner" },
       summary:

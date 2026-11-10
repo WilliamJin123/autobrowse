@@ -39,6 +39,7 @@ import { linkedinAudience } from "./linkedin-audience.js";
 import { linkedinComment, linkedinPostComments, linkedinPostStats } from "./linkedin-comment.js";
 import { linkedinCreatePost } from "./linkedin-create-post.js";
 import { linkedinDashboard } from "./linkedin-dashboard.js";
+import { linkedinDeveloperApp } from "./linkedin-developer-app.js";
 import { linkedinNotifications } from "./linkedin-notifications.js";
 import { linkedinOauthConsent } from "./linkedin-oauth-consent.js";
 import { linkedinPostAnalytics } from "./linkedin-post-analytics.js";
@@ -285,6 +286,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(linkedinDashboard, z.record(z.string(), z.never()), true),
+  entry(linkedinDeveloperApp, z.object({ app: z.string() }), true),
   entry(linkedinFeed, z.object({ max: z.number().optional() }), true),
   entry(
     linkedinFollow,
