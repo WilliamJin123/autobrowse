@@ -66,6 +66,12 @@ import { linkedin } from "./linkedin.js";
 import { loom } from "./loom.js";
 import { meta } from "./meta.js";
 import { npm } from "./npm.js";
+import { arxiv } from "./open/arxiv.js";
+import { dblp } from "./open/dblp.js";
+import { openalex } from "./open/openalex.js";
+import { openreview } from "./open/openreview.js";
+import { pubmed } from "./open/pubmed.js";
+import { wikidata, wikipedia } from "./open/wiki.js";
 import { outlook } from "./outlook.js";
 import { perplexity } from "./perplexity.js";
 import { reddit, redditPublic } from "./reddit.js";
@@ -78,6 +84,14 @@ import { youtube } from "./youtube.js";
 
 /** Every site autobrowse serves under its official API's shape. */
 export const SITES: readonly SiteApi[] = [
+  // open research reads, ported from OpenCLI (WA-1251.5)
+  arxiv,
+  openalex,
+  pubmed,
+  dblp,
+  openreview,
+  wikipedia,
+  wikidata,
   linkedin,
   youtube,
   instagram,

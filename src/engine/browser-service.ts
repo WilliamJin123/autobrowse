@@ -79,6 +79,7 @@ import { npmGranularToken } from "../browser/flows/npm-granular-token.js";
 import { npmTrustedPublisher } from "../browser/flows/npm-trusted-publisher.js";
 import { googleOauthConsent } from "../browser/flows/oauth-consent.js";
 import { outlookOauthConsent } from "../browser/flows/outlook-oauth-consent.js";
+import { dblpApi, openreviewApi } from "../browser/flows/page-api.js";
 import { perplexityAsk } from "../browser/flows/perplexity-ask.js";
 import {
   instagramProfileName,
@@ -158,6 +159,8 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     googleOauthConsent,
     googleSearch,
     googlePlace,
+    dblpApi,
+    openreviewApi,
     googleReviews,
     proofShot,
     perplexityAsk,

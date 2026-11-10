@@ -183,6 +183,13 @@ describe("tiktok sign-in", () => {
 describe("instagram and tiktok consents and OAuth shapes", () => {
   it("are registered sites whose consent legs are catalogued flows", () => {
     expect(SITES.map((s) => s.site)).toEqual([
+      "arxiv",
+      "openalex",
+      "pubmed",
+      "dblp",
+      "openreview",
+      "wikipedia",
+      "wikidata",
       "linkedin",
       "youtube",
       "instagram",

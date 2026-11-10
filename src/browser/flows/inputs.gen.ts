@@ -67,6 +67,7 @@ import { npmGranularToken } from "./npm-granular-token.js";
 import { npmTrustedPublisher } from "./npm-trusted-publisher.js";
 import { googleOauthConsent } from "./oauth-consent.js";
 import { outlookOauthConsent } from "./outlook-oauth-consent.js";
+import { dblpApi, openreviewApi } from "./page-api.js";
 import { perplexityAsk } from "./perplexity-ask.js";
 import {
   instagramProfileName,
@@ -129,6 +130,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(dblpApi, z.object({ url: z.string() }), true),
   entry(discordBotToken, z.object({ name: z.string(), replace: z.boolean().optional() }), true),
   entry(discordInvite, z.object({ appId: z.string(), guild: z.string().optional() }), true),
   entry(
@@ -399,6 +401,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(openreviewApi, z.object({ url: z.string() }), true),
   entry(
     outlookOauthConsent,
     z.object({

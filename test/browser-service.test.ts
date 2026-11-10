@@ -52,6 +52,7 @@ describe("browser service", () => {
     expect(Object.keys(BROWSER_FLOWS).sort()).toEqual([
       "account/reset-mail-probe",
       "calcom/api-key",
+      "dblp/api",
       "discord/bot-token",
       "discord/invite",
       "facebook/oauth-consent",
@@ -123,6 +124,7 @@ describe("browser service", () => {
       "npm/create-org",
       "npm/granular-token",
       "npm/trusted-publisher",
+      "openreview/api",
       "outlook/oauth-consent",
       "perplexity/ask",
       "reddit/comment",

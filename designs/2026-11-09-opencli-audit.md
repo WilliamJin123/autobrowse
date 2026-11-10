@@ -302,6 +302,24 @@ with `api` legs; signed-in sites get flows with rungs. Each route gets one live 
 `autobrowse sites upstream` lists each ported file whose upstream copy changed since its sha;
 `--task` opens a backlog task for each. It runs weekly.
 
+Batch A1, research reads (built 11-09): arxiv, openalex, pubmed, wikipedia, wikidata, dblp,
+openreview, in `src/sites/open/`, one file per host, helpers in `kit.ts` (named User-Agent, a
+gap per host, XML as a plain object). Answers whole: each entry, work, note or record as sent,
+plus a few derived fields (`arxivId`, `abstract`, `kind`).
+
+| Option | Verdict |
+|---|---|
+| One open site per host (`site call arxiv GET /search`) | **Chosen**. Its caps, pace and errors are the host's; the facade lists it like any site |
+| One `research` site with a `source` field | No: one cap and one pace for seven hosts; errors lose the host |
+| A generic `GET /json?url=` | No: the agent learns each API's shape each time; nothing to watch upstream |
+
+Two hosts refuse every plain client since 11-09: dblp answers an Anubis proof of work (202),
+OpenReview's `/notes` a Cloudflare Turnstile (403 with `details.challengeUrl`). Both read
+through `pageApiFlow` (`src/browser/flows/page-api.ts`): the site's own page passes the check,
+then the page's fetch reads the API. OpenReview's search stays on the plain leg (it answers).
+OpenAlex keyless gives 90 searches a day here (`caps.search`); a key needs William's email, so
+none is made. PubMed reads `NCBI_API_KEY` when set.
+
 ## Plan once William picks
 
 1. Wave 1 (U1 with its options first).
@@ -337,3 +355,5 @@ with `api` legs; signed-in sites get flows with rungs. Each route gets one live 
 - 2026-11-09: Built .6. The watch is a blobless clone and `git log <sha>..origin/HEAD -- <file>`,
   not the GitHub API: no token, no rate limit. One task per file, deduped by its last commit. It
   runs on the desk, weekly, beside the other timers.
+- 2026-11-09: A1 built as one open site per host (my call): its caps and pace are the host's.
+  Bot-checked APIs read inside the site's page (`pageApiFlow`), not through a solver or a proxy.
