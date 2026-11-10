@@ -1234,17 +1234,24 @@ describe("network and html", () => {
     type Calls = { calls: string[]; file: string };
     const callsOf = async (ex: Awaited<ReturnType<typeof session>>) => {
       await expect
-        .poll(async () => ((await ex.exec({ cmd: "network" })) as Calls).calls.length)
+        .poll(async () => ((await ex.exec({ cmd: "network", all: true })) as Calls).calls.length)
         .toBe(2);
-      return (await ex.exec({ cmd: "network" })) as Calls;
+      return (await ex.exec({ cmd: "network", all: true })) as Calls;
     };
     try {
       const one = await session();
       await one.exec({ cmd: "open", url });
       const listed = await callsOf(one);
-      expect(listed.calls[0]).toMatch(/^\d+ GET 200 127\.0\.0\.1:\d+ \(page\)/);
-      expect(listed.calls[1]).toMatch(/GET 200 127\.0\.0\.1:\d+\/api\/ads .*\{ads,session\}$/);
+      expect(listed.calls[0]).toMatch(/^\d+ GET 127\.0\.0\.1:\d+ \(page\) 200 /);
+      expect(listed.calls[1]).toMatch(/GET 127\.0\.0\.1:\d+\/api\/ads 200 .*\{ads,session\}$/);
+      // JSON calls only by default
+      expect(((await one.exec({ cmd: "network" })) as Calls).calls).toHaveLength(1);
       const id = Number(listed.calls[1]?.split(" ")[0]);
+      expect(await one.exec({ cmd: "network", find: "acme" })).toMatchObject({
+        found: [{ id, paths: ["ads[0].advertiser"] }],
+      });
+      const part = (await one.exec({ cmd: "network", id, pick: "ads[0]" })) as { body: string };
+      expect(JSON.parse(part.body)).toEqual({ advertiser: "Acme" });
       const call = (await one.exec({ cmd: "network", id })) as { url: string; body: string };
       expect(call.url).toContain("token=%3Credacted%3E");
       expect(call.body).toContain('"<redacted>"');

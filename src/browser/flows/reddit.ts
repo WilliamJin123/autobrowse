@@ -22,6 +22,7 @@
 import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
+import { pageFetch, parseJson } from "../page-json.js";
 import { AccessRefused } from "../session.js";
 import { passCaptcha } from "./kit.js";
 import {
@@ -315,24 +316,17 @@ async function fetchJson(
     await fp.open(`${origin}/`, origin === WWW ? { allowWall: true } : undefined);
   // %20, not +: Reddit's search reads a + as part of the word ("agency+owners" finds nothing).
   const q = new URLSearchParams({ ...query, raw_json: "1" }).toString().replace(/\+/g, "%20");
-  return fp.page.evaluate(
-    async (url) => {
-      const res = await fetch(url, {
-        credentials: "include",
-        headers: { accept: "application/json" },
-      });
-      return { status: res.status, body: res.ok ? ((await res.json()) as unknown) : null };
-    },
-    `${origin}${path}${bare ? "" : ".json"}?${q}`,
-  );
+  const f = await pageFetch(fp, `${origin}${path}${bare ? "" : ".json"}?${q}`, {
+    headers: { accept: "application/json" },
+  });
+  const parsed = f.status >= 200 && f.status < 300 ? parseJson(f.text) : null;
+  return { status: f.status, body: parsed?.ok ? parsed.json : null };
 }
 
 /** GET a page's text from inside the page (www, the session's cookies): the status and, when it answered, the body. */
 async function fetchText(fp: FlowPage, url: string) {
-  return fp.page.evaluate(async (u) => {
-    const res = await fetch(u, { credentials: "include" });
-    return { status: res.status, text: res.ok ? await res.text() : "" };
-  }, url);
+  const f = await pageFetch(fp, url);
+  return { status: f.status, text: f.status >= 200 && f.status < 300 ? f.text : "" };
 }
 
 /** The signed-out reads a feed can answer, and how: a listing, or a thread (post, then comments). */

@@ -31,6 +31,7 @@
 import { LEARN } from "../../auth/uwaterloo.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
+import { pageFetch } from "../page-json.js";
 
 /** The little of the DOM these page scripts touch; the project compiles without lib dom. */
 interface El {
@@ -60,13 +61,10 @@ const squash = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").
 /** One Valence GET from the signed-in page; a refusal goes to a person. */
 async function valence<T>(fp: FlowPage, path: string): Promise<T> {
   if (!fp.url().startsWith(`${LEARN}/d2l/`)) await fp.open(`${LEARN}/d2l/home`);
-  const res = await fp.page.evaluate(async (p) => {
-    const r = await fetch(p, { credentials: "include" });
-    return { status: r.status, body: r.ok ? await r.text() : (await r.text()).slice(0, 200) };
-  }, path);
+  const res = await pageFetch(fp, path);
   if (res.status !== 200)
-    return fp.human(`LEARN's API answered ${res.status} for ${path}: ${res.body}`);
-  return JSON.parse(res.body) as T;
+    return fp.human(`LEARN's API answered ${res.status} for ${path}: ${res.text.slice(0, 200)}`);
+  return JSON.parse(res.text) as T;
 }
 
 /** One row of a course's list page: its name and what each column says. */

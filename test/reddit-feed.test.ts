@@ -267,7 +267,9 @@ function wwwPage(o: {
       : (feed?.[1] ?? { status: 404 });
     return {
       status: a.status,
+      url: u,
       ok: a.status >= 200 && a.status < 300,
+      headers: { get: () => null },
       json: async () => ({}),
       text: async () => a.text ?? "",
     };

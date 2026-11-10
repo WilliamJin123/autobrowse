@@ -25,6 +25,7 @@ import {
 } from "../browser/attempt.js";
 import { profileBusyOf } from "../browser/browsers.js";
 import type { BrowserFlow, FlowRunner, HeldTab } from "../browser/flow.js";
+import type { Strategy } from "../browser/ladder.js";
 import type { Render } from "../browser/render.js";
 import { type AccessCode, AccessRefused, NeedsHuman } from "../browser/session.js";
 import { type HttpClient, lastingRefusal } from "../clients/http.js";
@@ -56,7 +57,9 @@ import { runLeg } from "../engine/leg.js";
 import type { RenewReport } from "./renew.js";
 import { standingOf } from "./standing.js";
 import {
+  type Access,
   type ApiLeg,
+  accessOf,
   type Leg,
   legName,
   type Method,
@@ -177,6 +180,10 @@ export interface RouteRow {
   missing?: string;
   /** Why this leg: for good, or what it waits on (`sites/standing.ts`). Absent: the API, nothing gated. */
   standing?: Standing;
+  /** `read` or `write` (`accessOf`). */
+  access: Access;
+  /** A laddered browser leg's ways, in order (`browser/ladder`). */
+  strategies?: readonly Strategy[];
   irreversible: boolean;
   /** Can commit money: gated on the person before the API leg. */
   spends: boolean;
@@ -645,10 +652,14 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       path: r.path,
       summary: r.summary,
       ...(standing ? { standing } : {}),
+      access: accessOf(r),
       irreversible: r.irreversible ?? false,
       spends: Boolean(r.spends),
       request: jsonSchemaOf(r.request),
     };
+    const ways =
+      r.browser && "flow" in r.browser ? deps.flow(r.browser.flow)?.strategies : undefined;
+    if (ways?.length) Object.assign(base, { strategies: ways });
     const recorded = r.browser ? Boolean(await legOf(r.browser)) : false;
     if (r.api && !prefersBrowser(r) && hasToken(s, account) && !lacks.length)
       return { ...base, via: "api" };

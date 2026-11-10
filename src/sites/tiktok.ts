@@ -270,6 +270,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/v2/video/list/",
+      access: "read",
       summary: "The account's videos with counts, newest first (`max_count`, `cursor`)",
       request: videoList,
       api: async ({ fields, ...body }, leg) =>
@@ -286,6 +287,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/v2/video/query/",
+      access: "read",
       summary: "Given videos with their view/like/comment/share counts (`filters.video_ids`)",
       request: videoQuery,
       api: async ({ fields, filters }, leg) =>
@@ -302,6 +304,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/v2/post/publish/creator_info/query/",
+      access: "read",
       summary:
         "What the account may post now: `privacy_level_options` (only SELF_ONLY until the Direct Post audit passes), the comment/duet/stitch locks, the longest video; TikTok wants it read before each post. Reads only",
       request: z.object({}).strict(),
@@ -346,6 +349,7 @@ export const tiktok: SiteApi = {
     route({
       method: "POST",
       path: "/v2/post/publish/status/fetch/",
+      access: "read",
       summary: "Where a publish stands (`publish_id`)",
       request: publishStatus,
       api: async ({ wait, ...body }, leg) => {

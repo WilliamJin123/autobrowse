@@ -117,14 +117,19 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     clear: z.boolean().optional(),
   }),
   /**
-   * The page calls (XHR, fetch, page loads), redacted: the newest `last` (40) as lines,
-   * `filter` on the URL; `id` = one call with its body; `diff` = call shapes and response
-   * keys against this site's last session. A personal profile's rows have no content.
+   * The page's JSON calls, redacted, grouped by URL shape and GraphQL query name: the newest
+   * `last` (40) groups with ids, count, status, size and data keys; `all` adds pages and non-JSON.
+   * `filter` on the URL or query name. `find` = the calls whose body holds that text, with key
+   * paths. `id` = one call with its body; `pick` = one path of it. `diff` = call shapes against
+   * this site's last session. On by default here; a personal profile's rows have no content.
    */
   z.object({
     cmd: z.literal("network"),
     id: z.number().int().positive().optional(),
+    pick: z.string().min(1).optional(),
+    find: z.string().min(2).optional(),
     filter: z.string().optional(),
+    all: z.boolean().optional(),
     last: z.number().int().positive().optional(),
     diff: z.boolean().optional(),
     limit: z.number().int().positive().optional(),

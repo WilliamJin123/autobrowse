@@ -1,18 +1,23 @@
 import { chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  callName,
+  dataKeys,
   diffHtml,
   diffShapes,
+  exploreNetworkOn,
+  findText,
+  groupRows,
   htmlForFile,
   isPersonalProfile,
   NetLog,
   type NetRow,
   networkOn,
   parseRows,
+  pickPath,
   redactBody,
   redactHeaders,
   redactUrl,
-  rowLine,
   secretName,
   shapes,
 } from "../src/browser/network.js";
@@ -27,6 +32,13 @@ describe("networkOn", () => {
     expect(networkOn("1")).toBe(true);
     expect(networkOn("TRUE")).toBe(true);
     expect(networkOn(" on ")).toBe(true);
+  });
+
+  it("explore captures unless AUTOBROWSE_NETWORK says 0, false or off", () => {
+    expect(exploreNetworkOn(undefined)).toBe(true);
+    expect(exploreNetworkOn("1")).toBe(true);
+    expect(exploreNetworkOn("0")).toBe(false);
+    expect(exploreNetworkOn(" OFF ")).toBe(false);
   });
 });
 
@@ -133,10 +145,7 @@ describe("shapes and diffs", () => {
     });
   });
 
-  it("writes one line per call and reads a file back, torn lines skipped", () => {
-    expect(rowLine(row(3, "https://api.test/ads", { data: [], paging: {} }))).toBe(
-      "3 GET 200 api.test/ads 10B {data,paging}",
-    );
+  it("reads a file back, torn lines skipped", () => {
     const text = `${JSON.stringify(row(1, "https://a.test/x", null))}\n{"id":2,"me`;
     expect(parseRows(text).map((r) => r.id)).toEqual([1]);
   });
@@ -286,4 +295,76 @@ describe("a failed flow", () => {
     const record = JSON.parse(readFileSync(artifacts.failure ?? "", "utf8"));
     expect(record).toMatchObject({ network: artifacts.network, html: artifacts.html });
   }, 60_000);
+});
+
+describe("network view", () => {
+  const row = (id: number, url: string, body: unknown): NetRow => ({
+    id,
+    t: 0,
+    method: "GET",
+    url,
+    status: 200,
+    type: "fetch",
+    size: 10,
+    body,
+  });
+  const gql = (id: number, name: string, data: unknown): NetRow => ({
+    ...row(id, "https://ig.test/api/graphql", { data }),
+    method: "POST",
+    reqBody: { fb_api_req_friendly_name: name, doc_id: "28662115313489455" },
+  });
+
+  it("names a GraphQL call by its query, from the header, the form or the URL", () => {
+    expect(callName(gql(1, "ReelsQuery", {}))).toBe("ReelsQuery");
+    expect(
+      callName({ ...row(2, "https://a.test/x", {}), reqHeaders: { "x-fb-friendly-name": "Q" } }),
+    ).toBe("Q");
+    expect(callName(row(3, "https://a.test/graphql?operationName=Feed", {}))).toBe("Feed");
+    expect(callName(row(4, "https://a.test/x", {}))).toBeNull();
+    expect(dataKeys({ data: { user: 1, viewer: 2 } })).toEqual(["data.user", "data.viewer"]);
+    expect(dataKeys({ items: [] })).toEqual(["items"]);
+  });
+
+  it("groups JSON calls by shape and query, newest last; pages only with all", () => {
+    const rows = [
+      { ...row(1, "https://ig.test/u", null), type: "document" },
+      gql(2, "ReelsQuery", { clips: {} }),
+      gql(3, "BadgeQuery", { badge: 1 }),
+      gql(4, "ReelsQuery", { clips: {} }),
+      { ...row(5, "https://ig.test/x.js", "text"), status: 200 },
+      { ...row(6, "https://ig.test/api/v1/feed", "<html>"), status: 404 },
+    ];
+    expect(groupRows(rows)).toEqual([
+      "3 POST ig.test/api/graphql BadgeQuery 200 10B {data.badge}",
+      "2,4 POST ig.test/api/graphql ReelsQuery ×2 200 20B {data.clips}",
+      "6 GET ig.test/api/v1/feed 404 10B",
+    ]);
+    expect(groupRows(rows, true)).toHaveLength(5);
+  });
+
+  it("finds text in bodies with its key paths, and picks a path", () => {
+    const body = {
+      data: { edges: [{ node: { caption: "Roof repair" } }, { node: { caption: "x" } }] },
+    };
+    const rows = [row(1, "https://a.test/a", { other: 1 }), row(2, "https://a.test/b", body)];
+    expect(findText(rows, "roof")).toEqual([
+      { id: 2, call: "GET a.test/b", paths: ["data.edges[0].node.caption"] },
+    ]);
+    expect(pickPath(body, "data.edges[1].node")).toEqual({ caption: "x" });
+    expect(pickPath(body, "data.nope.x")).toBeUndefined();
+  });
+
+  it("keeps GraphQL query names and ids as sent", () => {
+    const long = "PolarisProfileReelsTabContentQuery_connectionRefetchQuery";
+    expect(
+      redactBody(
+        `fb_api_req_friendly_name=${long}&doc_id=28662115313489455&fb_dtsg=abc`,
+        "application/x-www-form-urlencoded",
+      ),
+    ).toEqual({
+      fb_api_req_friendly_name: long,
+      doc_id: "28662115313489455",
+      fb_dtsg: "<redacted>",
+    });
+  });
 });

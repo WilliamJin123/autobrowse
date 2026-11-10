@@ -38,6 +38,7 @@ import type { RunEvent } from "../engine/events.js";
 import { jsonSchemaOf } from "../engine/inputs.js";
 import type { RunRow } from "../engine/registry.js";
 import { cursorOf, LIST_LIMIT, type ListQuery, ROW_STATUSES } from "../engine/rows.js";
+import { errorOf } from "../errors.js";
 import { commandSchema } from "../explore/server.js";
 import { listRecordingSummaries, loadRecording, recordingDir } from "../recorder/store.js";
 import { mergePages } from "../runs/engine.js";
@@ -87,16 +88,26 @@ export const LIMITS = { reads: 600, writes: 120, hooks: 60, bodyBytes: 1_000_000
 function siteError(c: Context, err: unknown) {
   if (err instanceof SiteError) {
     if (err.retryAfter !== undefined) c.header("Retry-After", String(err.retryAfter));
+    const e = errorOf(err);
     return fail(c, err.status, err.message, {
       ...(err.status === 404 ? { code: "not_found" as const } : {}),
       ...(err.code ? { code: err.code } : {}),
       ...(err.retryAfter !== undefined ? { retryAfter: err.retryAfter } : {}),
+      hint: e.hint,
+      retryable: e.retryable,
+      ...(e.outcome ? { outcome: e.outcome } : {}),
     });
   }
   if (err instanceof HttpError) {
     const up = err.status || 0;
     const status = up >= 400 && up < 500 && up !== 401 && up !== 403 ? up : 502;
-    return fail(c, status, err.message, { code: "upstream_error", upstreamStatus: up || null });
+    const e = errorOf(err);
+    return fail(c, status, err.message, {
+      code: "upstream_error",
+      upstreamStatus: up || null,
+      hint: e.hint,
+      retryable: e.retryable,
+    });
   }
   throw err;
 }

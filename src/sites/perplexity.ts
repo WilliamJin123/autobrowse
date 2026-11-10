@@ -65,6 +65,7 @@ export const perplexity: SiteApi = {
     route({
       method: "POST",
       path: "/chat/completions",
+      access: "read",
       summary:
         "An answer from the web with its citations (`messages`, `model` default sonar): the API with a key, else the signed-in page (the last user message only)",
       request: completion,

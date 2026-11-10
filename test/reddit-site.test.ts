@@ -525,9 +525,10 @@ describe("reddit-public", () => {
         url: () => at,
         open: async (u: string) => urls.push(`open ${u}`),
         page: {
-          evaluate: async (_fn: unknown, url: string) => {
+          evaluate: async (_fn: unknown, { url }: { url: string }) => {
             urls.push(url);
-            return { status: 200, body: { data: { children: [] } } };
+            const text = JSON.stringify({ data: { children: [] } });
+            return { status: 200, url, contentType: "application/json", text };
           },
         },
       }) as unknown as FlowPage;

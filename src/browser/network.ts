@@ -72,8 +72,16 @@ export function networkOn(env = process.env.AUTOBROWSE_NETWORK): boolean {
   return /^(1|true|on)$/i.test((env ?? "").trim());
 }
 
+/**
+ * Explore captures unless `AUTOBROWSE_NETWORK` is 0, false or off: an agent mapping a page needs
+ * the JSON behind it, and the view is lean (WA-1251.4). The dump on failure was the cost, not this.
+ */
+export function exploreNetworkOn(env = process.env.AUTOBROWSE_NETWORK): boolean {
+  return !/^(0|false|off)$/i.test((env ?? "").trim());
+}
+
 /** The error the network and html commands give while capture is off. */
-export const NETWORK_OFF = "network capture is off: set AUTOBROWSE_NETWORK=1 to turn it on";
+export const NETWORK_OFF = "network capture is off: AUTOBROWSE_NETWORK=0 turned it off";
 
 /** `x`, `linkedin@main` → personal; `x@wren` is not. `NETWORK_PERSONAL` (comma list) adds profiles. */
 export function isPersonalProfile(site: string, env = process.env.NETWORK_PERSONAL): boolean {
@@ -86,11 +94,21 @@ export function isPersonalProfile(site: string, env = process.env.NETWORK_PERSON
   return PERSONAL_PROFILES.includes(base ?? "") && (!label || label === "main");
 }
 
+/**
+ * A GraphQL query's name and id: in the page's own scripts, never a secret, and the one thing a
+ * reader looks for. Kept as sent: a long name reads as an opaque token, a doc id as a card run.
+ */
+const QUERY_NAME_KEYS =
+  /^(fb_api_req_friendly_name|x-fb-friendly-name|doc_id|operationName|query_hash|queryId)$/i;
+const asSent = (k: string, v: unknown): v is string =>
+  QUERY_NAME_KEYS.test(k) && typeof v === "string" && /^[\w.:-]{1,200}$/.test(v);
+
 /** Headers kept (a short allow list), any secret-named one never. */
 export function redactHeaders(h: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(h))
-    if (KEEP_HEADERS.test(k) && !secretName(k)) out[k.toLowerCase()] = redactText(v);
+    if (KEEP_HEADERS.test(k) && !secretName(k))
+      out[k.toLowerCase()] = asSent(k, v) ? v : redactText(v);
   return out;
 }
 
@@ -115,7 +133,11 @@ export function redactJson(v: unknown, depth = 0): unknown {
     return Object.fromEntries(
       Object.entries(v).map(([k, x]) => [
         k,
-        secretName(k) && x !== null && typeof x !== "object" ? REDACTED : redactJson(x, depth + 1),
+        asSent(k, x)
+          ? x
+          : secretName(k) && x !== null && typeof x !== "object"
+            ? REDACTED
+            : redactJson(x, depth + 1),
       ]),
     );
   return v;
@@ -135,7 +157,7 @@ export function redactBody(text: string, contentType = ""): unknown {
   if (/x-www-form-urlencoded/i.test(contentType)) {
     const form = new URLSearchParams(t);
     return Object.fromEntries(
-      [...form].map(([k, v]) => [k, secretName(k) ? REDACTED : redactText(v)]),
+      [...form].map(([k, v]) => [k, asSent(k, v) ? v : secretName(k) ? REDACTED : redactText(v)]),
     );
   }
   return redactText(text);
@@ -205,18 +227,6 @@ export function parseRows(text: string): NetRow[] {
     }
   }
   return out;
-}
-
-/** One row as a line: `12 GET 200 host/path 3.1kB {data,paging}`. */
-export function rowLine(r: NetRow): string {
-  const kb = r.size >= 1024 ? `${(r.size / 1024).toFixed(1)}kB` : `${r.size}B`;
-  const top =
-    r.body && typeof r.body === "object" && !Array.isArray(r.body)
-      ? ` {${Object.keys(r.body).slice(0, 6).join(",")}}`
-      : Array.isArray(r.body)
-        ? ` [${r.body.length}]`
-        : "";
-  return `${r.id} ${r.method} ${r.status} ${urlShape(r.url)}${r.type === "document" ? " (page)" : ""} ${kb}${top}`;
 }
 
 export interface NetLogOptions {
@@ -390,4 +400,108 @@ export function diffHtml(before: string, after: string): { added: string[]; remo
   for (const [l, n] of b) for (let i = a.get(l) ?? 0; i < n; i++) added.push(l);
   for (const [l, n] of a) for (let i = b.get(l) ?? 0; i < n; i++) removed.push(l);
   return { added, removed };
+}
+
+/** A call's query name: the GraphQL friendly name or operation, else null. */
+export function callName(r: NetRow): string | null {
+  const b =
+    r.reqBody && typeof r.reqBody === "object" ? (r.reqBody as Record<string, unknown>) : {};
+  let op: string | null = null;
+  try {
+    op = new URL(r.url).searchParams.get("operationName");
+  } catch {}
+  const v =
+    r.reqHeaders?.["x-fb-friendly-name"] ?? b.fb_api_req_friendly_name ?? b.operationName ?? op;
+  return typeof v === "string" && v && v !== REDACTED ? v : null;
+}
+
+const isJson = (r: NetRow) => r.body !== null && typeof r.body === "object";
+
+/** A body's top keys; a GraphQL answer's `data.<key>` instead, where its data is. */
+export function dataKeys(body: unknown): string[] {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+  const data = (body as { data?: unknown }).data;
+  if (data && typeof data === "object" && !Array.isArray(data))
+    return Object.keys(data).map((k) => `data.${k}`);
+  return Object.keys(body);
+}
+
+const kb = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)}kB` : `${n}B`);
+
+/**
+ * Calls grouped by method, URL shape and query name, newest group last:
+ * `12,53,54 POST host/api/graphql PolarisProfileReelsTabContentQuery ×3 200 160.2kB {data.fetch__XDTUserDict}`.
+ * JSON answers and refusals only, unless `all` (pages, scripts' text, empty answers too).
+ */
+export function groupRows(rows: readonly NetRow[], all = false): string[] {
+  const groups = new Map<
+    string,
+    { ids: number[]; status: Set<number>; size: number; keys: Set<string> }
+  >();
+  for (const r of rows) {
+    if (!all && !isJson(r) && (r.status < 400 || r.type === "document")) continue;
+    const name = callName(r);
+    const k = `${r.method} ${urlShape(r.url)}${r.type === "document" ? " (page)" : ""}${name ? ` ${name}` : ""}`;
+    const g = groups.get(k) ?? { ids: [], status: new Set(), size: 0, keys: new Set() };
+    g.ids.push(r.id);
+    g.status.add(r.status);
+    g.size += r.size;
+    for (const key of dataKeys(r.body)) g.keys.add(key);
+    groups.delete(k);
+    groups.set(k, g);
+  }
+  return [...groups].map(([k, g]) => {
+    const ids = g.ids.length > 3 ? `…${g.ids.slice(-3).join(",")}` : g.ids.join(",");
+    const keys = [...g.keys].slice(0, 6);
+    return `${ids} ${k}${g.ids.length > 1 ? ` ×${g.ids.length}` : ""} ${[...g.status].join("/")} ${kb(g.size)}${keys.length ? ` {${keys.join(",")}${g.keys.size > 6 ? ",…" : ""}}` : ""}`;
+  });
+}
+
+export interface Found {
+  id: number;
+  call: string;
+  /** Where the text sits in the body: `data.user.edges[3].node.caption.text`. */
+  paths: string[];
+}
+
+/** The calls whose body holds `text` (any case), each with up to three key paths to it. */
+export function findText(rows: readonly NetRow[], text: string, max = 20): Found[] {
+  const needle = text.toLowerCase();
+  const out: Found[] = [];
+  for (let i = rows.length - 1; i >= 0 && out.length < max; i--) {
+    const r = rows[i] as NetRow;
+    if (!isJson(r)) continue;
+    const paths: string[] = [];
+    const walk = (v: unknown, p: string, depth: number) => {
+      if (paths.length >= 3 || depth > 40) return;
+      if (typeof v === "string" || typeof v === "number") {
+        if (String(v).toLowerCase().includes(needle)) paths.push(p);
+      } else if (Array.isArray(v))
+        v.forEach((x, k) => {
+          walk(x, `${p}[${k}]`, depth + 1);
+        });
+      else if (v && typeof v === "object")
+        for (const [k, x] of Object.entries(v)) walk(x, p ? `${p}.${k}` : k, depth + 1);
+    };
+    walk(r.body, "", 0);
+    if (paths.length) {
+      const name = callName(r);
+      out.push({
+        id: r.id,
+        call: `${r.method} ${urlShape(r.url)}${name ? ` ${name}` : ""}`,
+        paths,
+      });
+    }
+  }
+  return out.reverse();
+}
+
+/** One part of a body by path (`data.user.edges[0].node`); undefined where it ends. */
+export function pickPath(v: unknown, path: string): unknown {
+  let at = v;
+  for (const part of path.match(/[^.[\]]+/g) ?? []) {
+    if (at === null || typeof at !== "object") return undefined;
+    at = (at as Record<string, unknown>)[part];
+  }
+  return at;
 }

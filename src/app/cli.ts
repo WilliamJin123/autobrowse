@@ -997,8 +997,8 @@ program
     if (cmd.parent?.name() !== "share") await sendAfterCommand();
   })
   .parseAsync()
-  .catch((err: unknown) => {
-    // Name the command that failed, so a bare "exit code 1" always says why.
+  .catch(async (err: unknown) => {
+    // Name the command that failed, so a bare exit code always says why.
     const command = process.argv
       .slice(2)
       .filter((a) => !a.startsWith("-"))
@@ -1008,5 +1008,10 @@ program
     console.error(`autobrowse ${command} failed: ${why}`);
     if (process.env.AUTOBROWSE_DEBUG && err instanceof Error) console.error(err.stack);
     else console.error("(rerun with AUTOBROWSE_DEBUG=1 for the stack)");
-    process.exitCode = 1;
+    // Loaded here: the mapper pulls in the browser modules, which a CLI boot skips.
+    const { errorOf, exitCodeOf } = await import("../errors.js");
+    const e = errorOf(err);
+    // stdout: one JSON line an agent branches on (`code`), the same shape the HTTP API answers.
+    console.log(JSON.stringify({ ok: false, error: e }));
+    process.exitCode = exitCodeOf(e);
   });

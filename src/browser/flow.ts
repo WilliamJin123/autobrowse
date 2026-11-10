@@ -49,6 +49,7 @@ import {
 } from "./human/index.js";
 import { inPage } from "./in-page.js";
 import { asQuestion, settleKeeps } from "./keeps.js";
+import type { Strategy } from "./ladder.js";
 import { type Hints, locate, textOf } from "./locate.js";
 import { KeyedMutex } from "./lock.js";
 import { htmlForFile, NetLog, networkOn } from "./network.js";
@@ -244,6 +245,8 @@ export interface BrowserFlow<I, O> {
   site: Site;
   /** Unique per site; names the trace files and the fake in tests. */
   name: string;
+  /** The ways a laddered read tries, in order (`browser/ladder`): shown on the route's row. */
+  strategies?: readonly Strategy[];
   /** The flow puts a secret on screen (a minted token): no screenshot, trace or step watch keeps it. */
   secret?: boolean;
   /**
@@ -333,8 +336,11 @@ export class FlowFailed extends Error {
 
 export interface RunnerOptions {
   repairer?: Repairer;
-  /** The page-call log's caps (`browser/network`); a flow's short log by default. An explore session keeps more. */
-  network?: { maxRows: number; maxBodyBytes: number };
+  /**
+   * The page-call log's caps (`browser/network`); a flow's short log by default. An explore
+   * session keeps more, and sets `on` (capture there by default, WA-1251.4).
+   */
+  network?: { maxRows: number; maxBodyBytes: number; on?: boolean };
   /**
    * How a person's hands would do each act (`browser/human`): a pause to
    * read, a curved reach, typing in runs. On by default; null is instant
@@ -733,15 +739,15 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
         // reloading would lose what the last run left there (a form, a list, an armed reply box).
         let keepPage = parked !== null || armed !== null;
         // A flow keeps a short log: enough to see the call that broke, not a session's worth.
-        // Off by default (`networkOn`).
-        const network = networkOn()
-          ? NetLog.of(session.context, {
-              site: key,
-              maxRows: FLOW_NET_ROWS,
-              maxBodyBytes: FLOW_NET_BYTES,
-              ...runner.network,
-            })
-          : undefined;
+        // Off by default (`networkOn`); explore turns it on.
+        const network =
+          (runner.network?.on ?? networkOn())
+            ? NetLog.of(session.context, {
+                site: key,
+                maxRows: runner.network?.maxRows ?? FLOW_NET_ROWS,
+                maxBodyBytes: runner.network?.maxBodyBytes ?? FLOW_NET_BYTES,
+              })
+            : undefined;
         let broken = false;
         const stamp = `${flow.site}-${flow.name}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
         let lastGoal: string | null = null;

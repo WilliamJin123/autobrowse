@@ -75,8 +75,11 @@ function redditPage(o: {
     const a = o.fetch?.(u) ?? { status: 200, body: {} };
     return {
       status: a.status,
+      url: u,
       ok: a.status >= 200 && a.status < 300,
+      headers: { get: () => "application/json" },
       json: async () => a.body,
+      text: async () => (a.body === undefined ? "" : JSON.stringify(a.body)),
     };
   });
   const page = {

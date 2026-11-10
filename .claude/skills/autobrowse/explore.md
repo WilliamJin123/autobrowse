@@ -81,7 +81,11 @@ Look:
 - `{"cmd":"text"}` — the page's words as laid out: side-by-side reads as a row (`Price | $40`), tables across, a sidebar as `[col 1/2]`. Costs what plain text does. `"coords":true` adds `@x,y` per line (+25%); `"layout":false` = DOM order.
 - `{"cmd":"url"}`, `{"cmd":"screenshot"}` (path back), `{"cmd":"count","hints":…}`.
 - `{"cmd":"marks"}` — a screenshot with a numbered box on each control in view, and the list `{n, tag, role, name}`. For a control the snapshot and `aria` do not name (an icon, a canvas widget). Act with `"hints":{"mark":n}`: the journal keeps the control's own hints, never the point. A load or re-render makes the marks stale: take them again.
-- `network` and `html` (page calls, saved pages) are off by default: they cost tokens. Only when William asks, start explore with `AUTOBROWSE_NETWORK=1`; see `designs/2026-10-06-network-capture.md`.
+- `network` is on in explore (`AUTOBROWSE_NETWORK=0` turns it off). Before you scrape a list from the DOM, look for the JSON behind it:
+  - `{"cmd":"network"}`: JSON calls grouped by URL and GraphQL query name, with ids, count, status and data keys. `all` adds pages and non-JSON.
+  - `{"cmd":"network","find":"<text on the page>"}`: the calls whose body holds that text, with the key path to it.
+  - `{"cmd":"network","id":12,"pick":"data.user.edges[0].node"}`: one part of one body.
+  - A flow reads that JSON with `pageJson`/`pagedJson` (cookie rung) or `captureJson` (intercept rung), in `ladder` rungs (`src/browser/ladder.ts`).
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
 
 Act (journaled):

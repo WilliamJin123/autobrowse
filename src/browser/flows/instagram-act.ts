@@ -20,6 +20,7 @@ import type { Response } from "playwright";
 import { already, markLimited } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
+import { pagedJson } from "../page-json.js";
 import { scrollCollect } from "../scroll-collect.js";
 import { firstShown, RENDER_MS, SETTLE_MS, scrollList } from "./kit.js";
 
@@ -389,12 +390,6 @@ export function followedOfIg(u: unknown): IgFollowed | null {
   return { username: r.username, name };
 }
 
-interface FollowingPage {
-  status: number;
-  users: unknown[];
-  next: string | null;
-}
-
 export const instagramFollowing = defineFlow<
   { max?: number },
   { data: IgFollowed[]; meta: { result_count: number } }
@@ -407,36 +402,25 @@ export const instagramFollowing = defineFlow<
     const me = await fp.page.evaluate(() => /ds_user_id=(\d+)/.exec(document.cookie)?.[1] ?? null);
     if (!me)
       return fp.human("Instagram is signed out on this profile: `autobrowse login instagram`");
+    // A 429, a sign-in answer or a checkpoint stops with its code; a 404 or HTML is flow_broken.
+    type Page = { users?: unknown[]; next_max_id?: unknown };
+    const { items } = await pagedJson<unknown>(fp, {
+      url: (after) =>
+        `/api/v1/friendships/${me}/following/?count=${FOLLOWING_PAGE}${after ? `&max_id=${encodeURIComponent(after)}` : ""}`,
+      items: (j) => ((j as Page).users ?? []) as unknown[],
+      next: (j) => {
+        const n = (j as Page).next_max_id;
+        return typeof n === "string" || typeof n === "number" ? String(n) : null;
+      },
+      max: cap,
+      pause: () => fp.wait(FOLLOWING_PAUSE_MS),
+      fetch: { headers: { "X-IG-App-ID": IG_APP_ID } },
+    });
     const rows = new Map<string, IgFollowed>();
-    let after: string | null = null;
-    do {
-      const got: FollowingPage = await fp.page.evaluate(
-        async ({ me, after, count, app }) => {
-          const q = `count=${count}${after ? `&max_id=${encodeURIComponent(after)}` : ""}`;
-          const r = await fetch(`/api/v1/friendships/${me}/following/?${q}`, {
-            headers: { "X-IG-App-ID": app },
-          });
-          const j = r.ok ? ((await r.json()) as { users?: unknown[]; next_max_id?: unknown }) : {};
-          const next = j.next_max_id;
-          return {
-            status: r.status,
-            users: j.users ?? [],
-            next: typeof next === "string" || typeof next === "number" ? String(next) : null,
-          };
-        },
-        { me, after, count: FOLLOWING_PAGE, app: IG_APP_ID },
-      );
-      if (got.status !== 200)
-        return fp.human(
-          `Instagram answered ${got.status} to the following list (page ${rows.size})`,
-        );
-      for (const u of got.users) {
-        const f = followedOfIg(u);
-        if (f && rows.size < cap) rows.set(f.username.toLowerCase(), f);
-      }
-      after = got.next;
-      if (after && rows.size < cap) await fp.wait(FOLLOWING_PAUSE_MS);
-    } while (after && rows.size < cap);
+    for (const u of items) {
+      const f = followedOfIg(u);
+      if (f) rows.set(f.username.toLowerCase(), f);
+    }
     const data = [...rows.values()];
     return { data, meta: { result_count: data.length } };
   },

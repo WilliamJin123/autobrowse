@@ -25,6 +25,7 @@ import { LINKEDIN_JSON, LINKEDIN_PEOPLE } from "../../sites/facets/sets.js";
 import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
+import { pageFetch } from "../page-json.js";
 
 /** The little of the DOM these page scripts touch; the project compiles without lib dom. */
 interface El {
@@ -665,15 +666,12 @@ export const linkedinCompanyJobs = defineFlow<CompanyJobsInput, { companyId: str
       let jobs: Job[] = [];
       for (let start = 0; jobs.length < max && start < 1000; start += JOBS_PAGE) {
         if (start) await fp.wait(SETTLE_MS);
-        const page = await fp.page.evaluate(
-          async (path) => {
-            // Signed out first (not geo-filtered); signed in when the public list is throttled.
-            let res = await fetch(path, { credentials: "omit" });
-            if (!res.ok) res = await fetch(path, { credentials: "include" });
-            return { status: res.status, html: res.ok ? await res.text() : "" };
-          },
-          jobsPath(id, start, input.location ?? "Worldwide"),
-        );
+        // Signed out first (not geo-filtered); signed in when the public list is throttled.
+        const path = jobsPath(id, start, input.location ?? "Worldwide");
+        let res = await pageFetch(fp, path, { credentials: "omit" });
+        if (res.status < 200 || res.status >= 300) res = await pageFetch(fp, path);
+        const ok = res.status >= 200 && res.status < 300;
+        const page = { status: res.status, html: ok ? res.text : "" };
         if (page.status !== 200 && !jobs.length)
           return fp.human(`LinkedIn's jobs list answered ${page.status} for company ${id}`);
         const cards = jobCardsOf(page.html);

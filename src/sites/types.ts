@@ -21,6 +21,11 @@ import type { UploadSessions } from "./uploads.js";
 import type { NoVerify, RouteVerify } from "./verdict.js";
 
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type Access = "read" | "write";
+
+/** A route's access: its own label, else GET reads and the rest write. */
+export const accessOf = (r: { method: Method; access?: Access }): Access =>
+  r.access ?? (r.method === "GET" ? "read" : "write");
 
 /** What a route's `api` leg is handed: the bearer for this site, the HTTP door, the settings. */
 export interface ApiLeg {
@@ -85,6 +90,11 @@ export interface SiteRoute<I = unknown, O = unknown> {
   api?: (input: I, leg: ApiLeg) => Promise<O>;
   /** The browser leg; absent when the API always answers. */
   browser?: BrowserLeg<I, O>;
+  /**
+   * `read` or `write`, for listings and the read pool: GET is a read, any other method a write
+   * unless set here (a POST search reads). A label, not a gate.
+   */
+  access?: Access;
   /** Publishes something: said in the route listing so an orchestrator gates it. */
   irreversible?: boolean;
   /**

@@ -57,8 +57,12 @@ import { inPage } from "../browser/in-page.js";
 import { layoutText } from "../browser/layout.js";
 import { type Hints, locate, locateAll, textOf } from "../browser/locate.js";
 import {
+  callName,
   diffHtml,
   diffShapes,
+  exploreNetworkOn,
+  findText,
+  groupRows,
   htmlForFile,
   isPersonalProfile,
   MAX_BODY_BYTES,
@@ -66,8 +70,8 @@ import {
   NETWORK_OFF,
   type NetRow,
   parseRows,
+  pickPath,
   redactUrl,
-  rowLine,
   shapes,
 } from "../browser/network.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/records.js";
@@ -89,6 +93,7 @@ import type { Effects } from "../engine/effects.js";
 import { memoryEffects } from "../engine/memory.js";
 import { advance, applyAnswer, type OpenGate, outcomeOf, type RunStatus } from "../engine/run.js";
 import type { AnyWorkflow } from "../engine/workflow.js";
+import { errorOf } from "../errors.js";
 import {
   describeFile,
   type FileLine,
@@ -540,7 +545,7 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
     });
     const runner = flowRunner(opts.browser, {
       pace: opts.pace ?? null,
-      network: { maxRows: MAX_ROWS, maxBodyBytes: MAX_BODY_BYTES },
+      network: { maxRows: MAX_ROWS, maxBodyBytes: MAX_BODY_BYTES, on: exploreNetworkOn() },
       ...(login
         ? {
             // the session's site = no site named (a wall): the leg's; a named one (OAuth) stays
@@ -910,9 +915,11 @@ async function serve(
       const r = log.row(c.id);
       if (!r) throw new Error(`no call ${c.id} (the log keeps the newest ${MAX_ROWS})`);
       if (r.body === undefined) return r;
-      const v = compactValue(r.body, c.limit ?? 20_000);
-      if (v.kind === "json") return { ...r, body: JSON.stringify(r.body, null, 1) };
-      const json = JSON.stringify(r.body);
+      const body = c.pick ? pickPath(r.body, c.pick) : r.body;
+      if (body === undefined) throw new Error(`call ${c.id} has nothing at ${c.pick}`);
+      const v = compactValue(body, c.limit ?? 20_000);
+      if (v.kind === "json") return { ...r, body: JSON.stringify(body, null, 1) };
+      const json = JSON.stringify(body);
       return {
         ...r,
         body: v.text,
@@ -927,11 +934,15 @@ async function serve(
       if (!prev) return { diff: null, reason: "no earlier session of this site" };
       return { diff: diffShapes(shapes(prev), shapes(rows)) };
     }
-    const hits = c.filter ? rows.filter((r) => r.url.includes(c.filter ?? "")) : rows;
-    const shown = hits.slice(-(c.last ?? 40));
+    if (c.find) return { found: findText(rows, c.find), file: netFile };
+    const hits = c.filter
+      ? rows.filter((r) => r.url.includes(c.filter ?? "") || callName(r)?.includes(c.filter ?? ""))
+      : rows;
+    const groups = groupRows(hits, c.all);
+    const shown = groups.slice(-(c.last ?? 40));
     return {
-      calls: shown.map(rowLine),
-      ...(hits.length > shown.length ? { more: hits.length - shown.length } : {}),
+      calls: shown,
+      ...(groups.length > shown.length ? { more: groups.length - shown.length } : {}),
       ...(log.personal ? { personal: true } : {}),
       file: netFile,
     };
@@ -2668,11 +2679,19 @@ async function serve(
           "hints" in parsed && parsed.hints && missed(err)
             ? await run({ cmd: "marks" }).catch(() => null)
             : null;
+        const e = errorOf(err);
         const body = JSON.stringify({
           error,
+          code: e.code,
+          retryable: e.retryable,
+          ...(e.outcome ? { outcome: e.outcome } : {}),
           url: shortUrl(page.url()),
           ...(err instanceof PaymentGate ? { gate: err.gate, reason: err.reason } : {}),
-          ...(shot ? { marks: shot, hint: 'act on a mark: "hints":{"mark":n}' } : {}),
+          ...(shot
+            ? { marks: shot, hint: 'act on a mark: "hints":{"mark":n}' }
+            : e.code !== "failed"
+              ? { hint: e.hint }
+              : {}),
         });
         counted(parsed, t, error ?? "", body, detail, session);
         res.end(body);

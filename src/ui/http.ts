@@ -28,6 +28,18 @@ export type ErrorCode =
   | "not_configured"
   | "upstream_error"
   | "unavailable"
+  /** A page wants a person (a consent, a layout no flow planned for), no wall named. */
+  | "needs_person"
+  /** A payment, send or other gate said no or has no answer yet: the act did not happen. */
+  | "gate_refused"
+  /** Another browser holds the profile: nothing was opened. */
+  | "profile_busy"
+  /** Chrome or its connection died under the flow: retry with a fresh session. */
+  | "browser_down"
+  /** Our flow threw on the page (a selector, a step): the page likely changed. */
+  | "flow_broken"
+  /** A command failed for a reason its message says (no element matched, no such name). */
+  | "failed"
   | AccessCode;
 
 const CODE_OF: Record<number, ErrorCode> = {

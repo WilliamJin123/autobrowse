@@ -229,6 +229,79 @@ Order: U1 first. Its shape is a hard-to-change contract (every caller, wren incl
 gets its own options section before the build. U2, U4, U5 next; U7 and U8 before any new write
 route.
 
+## Build (William's go, 2026-11-09)
+
+Tasks: WA-1251.1 to .6.
+
+### Error contract (WA-1251.1)
+
+Priorities: no change on the wren seam; an agent branches on one field; least churn.
+
+| Option | How | For | Against |
+|---|---|---|---|
+| **A. Extend what exists** | `ErrorCode` (HTTP) and `ACCESS_CODES` (the wren seam) stay. A new `src/errors.ts` maps any thrown error to `{code, message, hint, retryable, outcome?, status}`. The CLI prints it as one JSON line and exits by class | wren and weaver see no change; one mapper | 40 error classes stay as they are |
+| B. One base class | Every error extends `AutobrowseError` | Types carry the code | 40 classes touched; the wire is the same as A |
+| C. OpenCLI's codes | Their code list | Matches their docs | Breaks the wren seam |
+
+**Chosen: A.** B can follow class by class, when a class is touched.
+
+Exit codes (sysexits): 0 ok; 1 other; 2 bad input (`bad_request`, `invalid_*`); 66 not found;
+69 the site failed (`upstream_error`, `upstream_broken`, `unavailable`); 75 try later
+(`rate_limited`, `conflict`); 77 no access (`need_login`, `platform_blocked`, `unauthorized`,
+`forbidden`, a refused gate); 78 not set up (`not_configured`). `outcome: "unknown"` when a write
+may have gone through (`MAY_HAVE_GONE`, a verdict of `unknown`).
+
+### Strategy ladder (WA-1251.2)
+
+Priorities: account safety, keep every field, uptime, upkeep.
+
+| Option | How | For | Against |
+|---|---|---|---|
+| **A. Rungs inside one flow** | `ladder(fp, rungs)` in `src/browser/ladder.ts`. Each rung has a strategy (`cookie`, `intercept`, `ui`) and a run. The flow declares `strategies`; route lists show them | One page, one profile lock, one pace slot: no extra traffic to drop a rung | The facade sees a rung only through the run log |
+| B. One flow per rung, in the facade | `browser: BrowserLeg[]` | The facade logs each leg | Each drop opens the page again and takes another pace slot: more traffic on the account |
+
+**Chosen: A.** A rung falls to the next only on `RungBroke`: a 404, a body that is not JSON, a
+shape check that fails. A 429, a ban or block signal, a cap, a sign-in wall or a captcha throws at
+once and holds the route (William: "early exits on 429 warnings"). Each fall is kept on the flow
+run row (`fell: [{strategy, why}]`) and the answering strategy as `via`.
+
+`public` JSON (no session) is an `api` leg on an open site, not a rung: it needs no browser.
+
+Each route gets `access: "read" | "write"`: GET is read, any other method is write unless the
+route says `access: "read"` (a POST search). A label only: no gate, explore unchanged.
+
+### In-page JSON and intercept (WA-1251.3)
+
+- `pageJson(fp, {url, headers, cursor})` in `src/browser/page-json.ts`: the site's own JSON with
+  the session's cookies. A sign-in wall in the body is `need_login`; 429 is `rate_limited`; 404 or
+  HTML is `RungBroke`. A cursor that repeats stops the loop.
+- `captureJson(fp, {match, open, more})`: open a page, keep every JSON response whose URL matches,
+  scroll for more. Whole bodies, no field dropped.
+- The five hand-written in-page fetches move onto `pageJson`. The reels route gets an intercept
+  rung, so a personal account's reels come back as whole items, not only links.
+
+### Explore sees the JSON (WA-1251.4)
+
+Capture was turned off on 10-09 because failed flows dumped logs and HTML into the agent's
+context. The cost was the dump, not the capture.
+
+- Explore sessions capture by default (`AUTOBROWSE_NETWORK=0` turns it off). Flows outside
+  explore stay off by default.
+- `network` shows JSON calls grouped by URL shape: count, status, size, top keys. Pages, scripts
+  and images are left out unless `all`.
+- `network {find: "<text>"}` names the calls whose body holds the text, with the key path: the
+  text on the page leads to its JSON in one command.
+- `network {id, pick: "<path>"}` gives one part of a body.
+
+### Ports (WA-1251.5) and the upstream watch (WA-1251.6)
+
+Port by hand (B). Each ported route says `ported: "clis/<site>/<file>@<sha>"`. All reads go
+through the autobrowse facade (William: one source of truth). Public JSON sites are open sites
+with `api` legs; signed-in sites get flows with rungs. Each route gets one live test.
+
+`autobrowse sites upstream` lists each ported file whose upstream copy changed since its sha;
+`--task` opens a backlog task for each. It runs weekly.
+
 ## Plan once William picks
 
 1. Wave 1 (U1 with its options first).
@@ -242,7 +315,7 @@ route.
 
 - 2026-11-09: OpenCLI is a read catalog, not a runtime to adopt. Its runtime lacks sign-in,
   caps, pace, gates and per-account profiles (table above).
-- 2026-11-09: Port vs shim: **open, William's call**. First recommended C + B + D-explore-only.
+- 2026-11-09: Port vs shim: first recommended C + B + D-explore-only; settled below.
 - 2026-11-09: William picked T1–T6 plus friendlier agent skills (T8) and step labels (T5); writes
   fine to study; personal Chrome out. Recommendation revised to B + upstream watch: he wants to
   own the code, writes cannot be shimmed, and the watch brings their fixes.
@@ -250,3 +323,14 @@ route.
   our signed-in profile, with or without the page's CSRF, claim and ASBD headers. Their endpoint
   knowledge is a lead, not a working route: every port gets a live test, and a shim (C) would
   have failed the same way. One more point for B.
+- 2026-11-09 (William): B, by hand, my call on the balance of upkeep and breadth. Ladder B with
+  early exits on 429. A read/write label. Explore gets JSON and network calls by default, token-lean.
+  Every listed site wanted, search and AI answer engines too. All reads through the autobrowse
+  facade. Workflows for design-reference and catalog sites later.
+- 2026-11-09: Error contract A (extend the codes in place); ladder A (rungs in one flow).
+- 2026-11-09: Built .1–.4. Reels live: cookie fell (404), intercept answered 20 whole reels from
+  the Reels tab's GraphQL (12 a load, 3 a scroll, `clips_connection`). A RungBroke outside a
+  ladder is `flow_broken`. GraphQL query names and doc ids are kept unredacted: a long name read
+  as a token and a doc id as a card run, which hid the one thing a reader looks for.
+- 2026-11-09: The network view groups by URL shape and query name instead of one line per call:
+  a page fires 30+ calls to one `/api/graphql`, alike by URL. `rowLine` is gone (no user left).

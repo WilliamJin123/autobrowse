@@ -533,7 +533,7 @@ export const instagram: SiteApi = {
           "the Graph API lists another account's posts only for business and creator accounts (`meta GET /instagram/{username}/reels`, try that first)",
       },
       summary:
-        "Every reel of any account, read in the signed-in profile: the page's own feed call paged to the end, each reel's whole item kept; when Instagram refuses that call, the Reels tab scrolled for links. `{ username, found, source: feed|grid, urls, reels, scanned, pages, feedFailed? }` (`max` posts read, default 1000). Reads only",
+        "Every reel of any account, read in the signed-in profile by three rungs: the page's feed call (cookie), the Reels tab's own GraphQL as it scrolls (intercept), the tab's links (ui); each reel kept whole except from ui. `{ username, found, via, fell, urls, reels, scanned, pages }` (`max` posts read, default 1000). Reads only",
       request: reels,
       meter: () => ({ reels: 1 }),
       browser: { flow: "instagram/reels" },
