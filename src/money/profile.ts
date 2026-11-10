@@ -87,6 +87,14 @@ export type BillingKind = keyof BillingContacts;
 /** Which billing contact an input asks for, from its type, name, id, autocomplete, label, placeholder; null: none. */
 export function billingKind(label: string): BillingKind | null {
   const w = label.replace(/[_-]+/g, " ");
+  // card inputs are often type=tel (Oracle's CyberSource, 11-10): never a contact
+  if (
+    /\b(cc ?(number|exp\w*|csc|name|type)|card|cvv|cvc|csc|security ?code|expir\w*|exp ?(month|year|date))\b/i.test(
+      w,
+    ) ||
+    /cardnumber|cardnum|securitycode/i.test(label)
+  )
+    return null;
   if (/\b(tax ?(id|number)|vat|gst|hst)\b/i.test(w)) return "taxId";
   if (/\be ?mail\b/i.test(w)) return "email";
   if (/\b(phone|mobile|tel)\b/i.test(w)) return "phone";

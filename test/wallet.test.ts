@@ -276,6 +276,12 @@ describe("profiles", () => {
     expect(billingKind("text vat_number   VAT")).toBe("taxId");
     expect(billingKind("text name name  Full name")).toBeNull();
     expect(billingKind("text telegram   Telegram")).toBeNull();
+    // card inputs of type tel are never the phone (Oracle's CyberSource form)
+    expect(billingKind("tel card_number card_number   Card Number *")).toBeNull();
+    expect(billingKind("tel card_cvn card_cvn   Security Code *")).toBeNull();
+    expect(billingKind("tel cc-number")).toBeNull();
+    expect(billingKind("tel ccNumber cardnumber")).toBeNull();
+    expect(billingKind("tel  bill_to_phone   Phone Number *")).toBe("phone");
     expect(holdsBilling("email", " Me@Example.com", "me@example.com")).toBe(true);
     expect(holdsBilling("email", "login@site.com", "me@example.com")).toBe(false);
     expect(holdsBilling("phone", "(555) 123-4567", "+15551234567")).toBe(true);
