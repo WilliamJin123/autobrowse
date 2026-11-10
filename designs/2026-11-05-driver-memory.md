@@ -91,6 +91,21 @@ Plan was one Chrome for all signed-out reads, many tabs. The flow ledger says it
 - The build is not small: flows on one context at once need page-level routes, no trace, a host limit and a crash retry.
 - Build it when signed-out reads overlap for more than an hour a day. The shape is ready: a flow as a tab in a shared context is how a person's own browser already works (`openOwn`, `session.shared`).
 
+## A browser's memory cap (2026-11-09)
+
+Incident, 11-10 02:06–02:46 UTC: explore 9302 (another session's) drove Meta Business Suite's composer for 40 minutes (21 opens, 8 uploads). Its headed Chrome grew until macOS ran out of memory. William force-quit it at 02:45:48 and his session crashed. Swap was full (8 GB) with gates and other sessions running. Nothing of ours acted: `autobrowse browsers` warns only when asked.
+
+Ruled out: the desk's renders (headless shell, one at a time per profile, 82 MB at 02:46), the internships `mail.mjs` job (closes its Chrome; pid 73229 was a live run), weaver (launches no browser), the explore network capture (Playwright keeps Chrome's default buffers; our log is capped at 32 MB in Node).
+
+| Option | Verdict |
+|---|---|
+| A. A guard per session in `openSession`: reads its own tree's footprint every 30 s, closes it past the cap | **Chosen**. Every opener gets it (desk, explore, CLI, jobs on `flowRunner`); it knows its pages' URLs |
+| B. One watchdog in the desk over every browser root | No: it cannot see another process's pages, and it stops when the desk does |
+| C. Warn only, as before | No: it failed on 11-09 |
+| D. Chrome flags (`--js-flags=--max-old-space-size`) | No: caps the JS heap of one renderer only; images, DOM and GPU memory pass it |
+
+Cap: a quarter of RAM, 2 to 6 GB (4 GB here); `AUTOBROWSE_BROWSER_CAP_MB` sets it. Half the cap is enough under the OS's critical level. Past 60% it warns once. Each warn and close is a line in `~/.config/autobrowse/browser-memory.jsonl` with the pages' URLs. A close that hangs 10 s is a kill. Explore restarts the browser and resumes its journal; a flow fails retryable; the park drops a dead browser.
+
 ## Decision log
 
 - 2026-11-05: Fix the driver growth first (William: "a low hanging fruit").
@@ -103,3 +118,4 @@ Plan was one Chrome for all signed-out reads, many tabs. The flow ledger says it
 - 2026-11-05: Stray tabs close when the agent moves on, never a watcher's tab and never a tab of a run that waits for a person (my call).
 - 2026-11-05: The shared reader waits (my recommendation; William agreed to the reader on 11-05 before these numbers): two signed-out browsers were open together 0.8% of the week.
 - 2026-11-06: The memory gate warns and opens (William, through the onlyfeet session: an agent's start was refused twice while three desk browsers held about 2 GB, and it had no `--force`). The warning gives the free share and each browser's MB. A stop stays at the OS's critical level only (my call): there the kernel kills processes, and the next one may be the desk's. WA-1132.
+- 2026-11-09: A cap per browser, closed past it (my call, after William's "how did it get to 18gb in the first place is the bug to fix"). This reverses "no heap cap" for the browser only: a lost page beats a crashed Mac. The driver stays uncapped.

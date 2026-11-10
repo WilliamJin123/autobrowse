@@ -18,6 +18,7 @@ import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
 import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import type { Hints } from "./locate.js";
+import { guardMemory } from "./memory-guard.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
 import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { reapOrphans, reapTempDirs } from "./reap.js";
@@ -186,6 +187,8 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
   const profile = (await opts.profileName?.(asked)) ?? asked;
   let context: BrowserContext;
   let browser: Browser | null = null;
+  /** Local launches only: a cap on the browser's memory (`browser/memory-guard`). */
+  let guard: ReturnType<typeof guardMemory> | null = null;
   if (opts.tier === "browserbase") {
     if (!opts.browserbase)
       throw new Error("BROWSER=browserbase needs BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID");
@@ -209,6 +212,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     );
     void reapTempDirs(); // files a crashed upload left, in the background
     context = await launchLocal(profileDir, opts, opts.egress?.exitFor(profile) ?? null);
+    guard = guardMemory(context, profileDir);
     if (opts.headless === false) await keepOutOfTheWay();
     // `navigator.webdriver` is already false (LOCAL_ARGS). No init-script shim: an own
     // `webdriver` property on navigator, reading undefined, is itself a tell.
@@ -225,6 +229,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     ...(film ? { filmed: true } : {}),
     ...(local && opts.egress ? { newIp: () => (opts.egress as Egress).newIp(profile) } : {}),
     async close() {
+      guard?.stop();
       // Before the pages go: each pane's last frame holds until now.
       await film?.stop();
       // An attached app keeps its windows; only what we launched or rented closes.
