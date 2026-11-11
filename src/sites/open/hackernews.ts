@@ -42,6 +42,14 @@ export async function threadOf(
   };
 }
 
+/** What the site sends that callers read: checked on each answer (U2); the rest passes as sent. */
+const ITEM = z.looseObject({ id: z.number(), type: z.string().optional() });
+const HITS = z.looseObject({
+  hits: z.array(z.looseObject({ objectID: z.string() })),
+  nbHits: z.number(),
+  page: z.number(),
+});
+
 const LISTS = { top: "top", new: "new", best: "best", ask: "ask", show: "show", job: "job" };
 
 export const hackernews: SiteApi = {
@@ -62,6 +70,7 @@ export const hackernews: SiteApi = {
         n: z.coerce.number().int().min(1).max(100).default(30),
         start: z.coerce.number().int().min(0).default(0),
       }),
+      response: z.looseObject({ total: z.number(), stories: z.array(ITEM) }),
       api: async ({ list, n, start }, leg) => {
         const ids =
           (await getJson<number[]>(leg.http, `${FB}/${LISTS[list]}stories.json`, {
@@ -95,6 +104,10 @@ export const hackernews: SiteApi = {
         "One user whole (karma, about, created, `submitted` ids); found false when no such user",
       ported: ported("hackernews/user.js"),
       request: z.object({ id: z.string().min(1) }),
+      response: z.looseObject({
+        found: z.boolean(),
+        user: z.looseObject({ id: z.string(), karma: z.number() }).nullable(),
+      }),
       api: async ({ id }, leg) => {
         const user = await getJson(leg.http, `${FB}/user/${encodeURIComponent(id)}.json`, {
           label: "hackernews /user",
@@ -116,6 +129,7 @@ export const hackernews: SiteApi = {
         n: z.coerce.number().int().min(1).max(1000).default(20),
         page: z.coerce.number().int().min(0).default(0),
       }),
+      response: HITS,
       api: ({ q, sort, tags, since, n, page }, leg) =>
         getJson(
           leg.http,

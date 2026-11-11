@@ -86,6 +86,12 @@ export interface SiteRoute<I = unknown, O = unknown> {
   path: string;
   /** Validates the request the way the official API takes it: body for writes, query + path params for reads. */
   request: z.ZodType<I>;
+  /**
+   * The answer's shape, checked in the facade on both legs (U2). Loose objects: the answer goes
+   * back as sent, never stripped. A read that fails it is `upstream_broken`; a write keeps its
+   * answer with `shapeDrift`, since it went through.
+   */
+  response?: z.ZodType<O>;
   /** The official API's leg; absent when the API has no such call. */
   api?: (input: I, leg: ApiLeg) => Promise<O>;
   /** The browser leg; absent when the API always answers. */
@@ -353,6 +359,10 @@ export class SiteError extends Error {
 }
 
 /** Define a route with its input type inferred from the schema. */
+/**
+ * Typed where it is written (`request`, `api`, `response` agree on I and O), erased for the
+ * site's mixed list: `api` takes I, so a list of routes of many I has no common type but this.
+ */
 export function route<I, O>(r: SiteRoute<I, O>): SiteRoute<never, unknown> {
   return r as unknown as SiteRoute<never, unknown>;
 }

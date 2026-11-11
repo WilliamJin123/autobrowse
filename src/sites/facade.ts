@@ -93,6 +93,32 @@ const CODE_STATUS: Record<AccessCode, number> = {
 };
 
 /**
+ * The answer against the route's `response` (U2), returned as sent. A read whose shape broke
+ * fails, so a changed site shows as `upstream_broken`, not as empty rows; a write went through,
+ * so it keeps its answer and says what drifted.
+ */
+export function checkResponse(
+  r: Pick<SiteRoute, "response" | "method" | "path" | "access">,
+  out: unknown,
+): unknown {
+  if (!r.response) return out;
+  const got = r.response.safeParse(out);
+  if (got.success) return out;
+  const why = got.error.issues
+    .slice(0, 3)
+    .map((i) => `${i.path.join(".") || "answer"}: ${i.message}`)
+    .join("; ");
+  if (accessOf(r) === "read")
+    throw new SiteError(
+      502,
+      `${r.method} ${r.path}: the answer changed shape (${why})`,
+      undefined,
+      "upstream_broken",
+    );
+  return out && typeof out === "object" && !Array.isArray(out) ? { ...out, shapeDrift: why } : out;
+}
+
+/**
  * A browser leg's failure on a read, as a coded SiteError: a flow's `AccessRefused`, or a wall
  * the runner met (login → `need_login`, a captcha left → `platform_blocked`). Lasting, so terminal:
  * Restate would retry it for hours. Anything else stays as it was.
@@ -1003,7 +1029,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
             throw e;
           }
           if (kept) deps.worked?.(kept);
-          return out;
+          return checkResponse(r, out);
         }
         if (r.browser) {
           // The same account the API leg would have used: its profile, so a browser
@@ -1040,7 +1066,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           if (armed)
             try {
               const out = await run(input, { page: armed.page });
-              return r.browser.output ? r.browser.output(out) : out;
+              return checkResponse(r, r.browser.output ? r.browser.output(out) : out);
             } finally {
               await armed.release();
             }
@@ -1050,7 +1076,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           ).catch((e: unknown) => {
             throw (method === "GET" && accessError(e)) || e;
           });
-          return r.browser.output ? r.browser.output(out) : out;
+          return checkResponse(r, r.browser.output ? r.browser.output(out) : out);
         }
         if (lacks.length)
           throw new SiteError(
