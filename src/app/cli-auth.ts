@@ -37,6 +37,7 @@ import { expandHome } from "../google/auth.js";
 const LINK_TTL_S = 15 * 60;
 
 import { runLeg } from "../engine/leg.js";
+import { accent, bad, columns, dim, good } from "../style.js";
 import { CLIPBOARD_MS, macClipboard } from "./cli-env.js";
 import { type KeysCliDeps, registerKeyCommands } from "./cli-keys.js";
 import { credLinkUrl, type Settings } from "./config.js";
@@ -955,6 +956,42 @@ export function registerAuthCommands(
     });
     return runLeg(runner, check, undefined);
   };
+
+  program
+    .command("auth")
+    .description("Sign-in state, read from disk")
+    .command("status [site]")
+    .description(
+      "Each Chrome profile's sign-in from its cookie DB, no browser opened: signed_in, signed_out, maybe, unknown",
+    )
+    .option("--json", "the rows as JSON")
+    .action(async (site: string | undefined, o: { json?: boolean }) => {
+      const { sessionStatuses } = await import("../auth/session-status.js");
+      const rows = sessionStatuses(
+        expandHome(settings.profilesDir),
+        (s) => SITE_LOGINS.find((l) => l.site === s)?.home,
+        site ? { site } : {},
+      );
+      if (o.json) return console.log(JSON.stringify(rows, null, 2));
+      const paint = (st: string) =>
+        st === "signed_in" ? good(st) : st === "signed_out" ? bad(st) : dim(st);
+      for (const line of columns(
+        rows.map((r) => [
+          accent(r.profile),
+          paint(r.state),
+          dim(
+            r.expires === undefined
+              ? ""
+              : r.expires === null
+                ? "until the browser closes"
+                : `until ${r.expires.slice(0, 10)}`,
+          ),
+          dim(r.touched ? `used ${r.touched.slice(0, 10)}` : ""),
+        ]),
+      ))
+        console.log(line);
+      if (site && rows.every((r) => r.state === "signed_out")) process.exitCode = 1;
+    });
 
   program
     .command("login [site]")

@@ -22,6 +22,7 @@ import { writeLeads } from "../reach/linkedin-leads.js";
 import { csvRows, ensureMapsServer, mapsReady, mapsScrape, stopMapsServer } from "../reach/maps.js";
 import { READ_ORDER, readPage, SEARCH_ORDER, search } from "../reach/web.js";
 import { checkSite } from "../sites/index.js";
+import { refusedLine } from "../sites/refused.js";
 import { bold, columns, dim, good, warn } from "../style.js";
 import type { LocalBackend } from "./backend.js";
 import { checkRow } from "./cli-site.js";
@@ -52,9 +53,11 @@ export function registerReachCommands(
   program
     .command("doctor")
     .description(
-      "What answers now: search keys, the Maps scraper, browser exits, one live call per site, this machine's browsers, and what filming needs",
+      "What answers now: search keys, the Maps scraper, browser exits, one live call per site, sign-ins, this machine's browsers, and what filming needs; exits 1 on any issue",
     )
-    .action(async () => {
+    .option("--json", "{ checks, sessions, browsers, issues[] }")
+    .action(async (o: { json?: boolean }) => {
+      const issues: Array<{ kind: string; name: string; why: string }> = [];
       const has = async (n: string) => ((await env(n)) ? good("ready") : dim(`no ${n}`));
       // Live keys of those held: `exa 2/3` has one out of credit until the 1st.
       const exaRing = async () => {
@@ -73,16 +76,44 @@ export function registerReachCommands(
         [bold("egress"), egressLine()],
       ];
       const sites = local().backend.sites;
-      if (sites)
-        for (const c of await Promise.all((await sites.list()).map((r) => checkSite(sites, r))))
-          rows.push([bold("site"), ...checkRow(c)]);
+      const checks = sites
+        ? await Promise.all((await sites.list()).map((r) => checkSite(sites, r)))
+        : [];
+      for (const c of checks) {
+        rows.push([bold("site"), ...checkRow(c)]);
+        if (!c.ok && c.why !== "no probe")
+          issues.push({ kind: "site", name: c.site, why: c.why ?? "check failed" });
+      }
+      for (const r of (await sites?.refused?.()) ?? [])
+        issues.push({ kind: "token", name: r.site, why: refusedLine(r) });
+      // A profile used in the last two weeks that lost its sign-in (U18).
+      const { sessionStatuses } = await import("../auth/session-status.js");
+      const sessions = sessionStatuses(
+        profilesDir,
+        (s) => SITE_LOGINS.find((l) => l.site === s)?.home,
+      );
+      const recent = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const lost = sessions.filter((x) => x.state === "signed_out" && (x.touched ?? "") >= recent);
+      rows.push([
+        bold("sign-ins"),
+        `${sessions.filter((x) => x.state === "signed_in").length} signed in · ${sessions.filter((x) => x.state === "signed_out").length} signed out${lost.length ? ` · ${warn(`lost: ${lost.map((x) => x.profile).join(" ")}`)}` : ""}`,
+      ]);
+      for (const x of lost)
+        issues.push({
+          kind: "sign-in",
+          name: x.profile,
+          why: "signed out (`autobrowse auth status`)",
+        });
       const { browsersNow, warnings } = await import("../browser/browsers.js");
       const v = await browsersNow(profilesDir);
       rows.push([
         bold("browsers"),
         `${v.browsers.length} open, ${v.totalMb} MB · ${v.explorers.length} explore (${v.explorers.filter((e) => e.held).length} held)`,
       ]);
-      for (const w of warnings(v)) rows.push([bold("browsers"), warn(w)]);
+      for (const w of warnings(v)) {
+        rows.push([bold("browsers"), warn(w)]);
+        issues.push({ kind: "browsers", name: "browsers", why: w });
+      }
       // What `film` and AUTOBROWSE_FILM run: each tool, or how to get it.
       const missing = missingNeeds(FILM_NEEDS.map((n) => n.bin));
       rows.push([
@@ -92,7 +123,22 @@ export function registerReachCommands(
             `${n.bin} ${missing.some((m) => m.startsWith(`${n.bin} `)) ? warn(n.install) : good("ready")}`,
         ).join(" · "),
       ]);
+      if (issues.length) process.exitCode = 1;
+      if (o.json)
+        return console.log(
+          JSON.stringify(
+            {
+              checks,
+              sessions,
+              browsers: { open: v.browsers.length, mb: v.totalMb, explorers: v.explorers.length },
+              issues,
+            },
+            null,
+            2,
+          ),
+        );
       for (const line of columns(rows)) console.log(line);
+      if (issues.length) console.log(warn(`${issues.length} issue(s)`));
     });
   program
     .command("read <url>")

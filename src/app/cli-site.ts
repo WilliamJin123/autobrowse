@@ -237,7 +237,9 @@ export function registerSiteCommands(
     });
   site
     .command("status <site>")
-    .description("Every route and how it answers now; every setup step and what blocks it")
+    .description(
+      "Every route, how it answers now and its state (ready, needs_login, cooldown, needs_person, broken, unchecked); every setup step and what blocks it",
+    )
     .action(async (name: string) => {
       const sites = local().backend.sites;
       if (!sites) throw new Error("no site apis here");
@@ -246,13 +248,32 @@ export function registerSiteCommands(
         `${bold(s.site)} ${dim(s.origin)}  ${s.refused?.length ? bad("token refused") : s.authed ? good("token ok") : warn("no token")}`,
       );
       for (const r of s.refused ?? []) console.log(bad(`  refused: ${refusedLine(r)}`));
+      // State per route (U18): the leg, the token, a hold, the newest call; no call is made.
+      const { lastCalls, routeState, siteHeldS } = await import("../sites/route-state.js");
+      const last = callsDir
+        ? lastCalls(
+            readSiteCalls(callsDir, new Date(Date.now() - 30 * 86_400_000).toISOString()),
+            s.site,
+          )
+        : new Map();
+      const heldS = siteHeldS(sites.caps(undefined, s.site).held, s.site);
+      const paint = (st: string) =>
+        st === "ready" ? good(st) : st === "unchecked" ? dim(st) : warn(st);
       // `!` = irreversible; a route that cannot answer yet says what it lacks instead of what it does.
-      const routes = s.routes.map((r) => [
-        `  ${r.irreversible ? warn("!") : " "} ${r.method}`,
-        r.path,
-        dim(r.standing && "waits" in r.standing ? `${r.via}, waits ${r.standing.waits}` : r.via),
-        r.missing ? warn(r.missing) : r.summary,
-      ]);
+      const routes = s.routes.map((r) => {
+        const st = routeState(r, {
+          refused: Boolean(s.refused?.length),
+          heldS,
+          last: last.get(`${r.method} ${r.path}`),
+        });
+        return [
+          `  ${r.irreversible ? warn("!") : " "} ${r.method}`,
+          r.path,
+          paint(st.state),
+          dim(r.standing && "waits" in r.standing ? `${r.via}, waits ${r.standing.waits}` : r.via),
+          r.missing ? warn(r.missing) : st.why && st.state !== "ready" ? warn(st.why) : r.summary,
+        ];
+      });
       for (const line of columns(routes)) console.log(line);
       if (!s.setup.length) return;
       console.log(`\n${bold("setup")}`);
