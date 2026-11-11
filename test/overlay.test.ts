@@ -97,6 +97,11 @@ const btnAt = (view: Page, a: string) =>
   view.evaluate<{ x: number; y: number }>(
     `(() => { const r = [...ui.tuiEl.querySelectorAll('[data-a]')].find((b) => b.getAttribute('data-a') === '${a}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
   );
+/** Running animations done: a button's spot holds still. */
+const settled = (view: Page) =>
+  view.evaluate(
+    "Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => 0)))",
+  );
 const panelBox = (view: Page) =>
   view.evaluate("ui.tuiEl.getBoundingClientRect().toJSON()") as Promise<DOMRect>;
 
@@ -281,6 +286,43 @@ describe("headed overlay, out of the page", () => {
       await h.view.mouse.click(4, 350);
       expect(await h.view.evaluate("ui.min")).toBe(false);
       await expect.poll(() => h.rects.at(-1)?.[2]).toBe(460);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("asks a yes or no: Keep answers true, Not now false; a folded panel opens for it; off answers null", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      await o.set(page, { goal: "sign in" });
+      await h.idle();
+      const yes = o.ask(page, "Keep this sign-in for x@ada?", { ms: 20_000 });
+      await expect.poll(() => h.view.evaluate("!!ui.tuiEl?.querySelector('.ask')")).toBe(true);
+      expect(await h.view.evaluate("ui.tuiEl.querySelector('.ask .q').textContent")).toBe(
+        "Keep this sign-in for x@ada?",
+      );
+      await settled(h.view);
+      const k = await btnAt(h.view, "yes");
+      await h.view.mouse.click(k.x, k.y);
+      expect(await yes).toBe(true);
+      await h.idle();
+      expect(await h.view.evaluate("!!ui.tuiEl.querySelector('.ask')")).toBe(false);
+      // folded: the question opens the panel
+      const min = await btnAt(h.view, "min");
+      await h.view.mouse.click(min.x, min.y);
+      const no = o.ask(page, "Keep this one?", { ms: 20_000 });
+      await expect.poll(() => h.view.evaluate("ui.min")).toBe(false);
+      await expect.poll(() => h.view.evaluate("!!ui.tuiEl?.querySelector('.ask')")).toBe(true);
+      await settled(h.view);
+      const n = await btnAt(h.view, "no");
+      await h.view.mouse.click(n.x, n.y);
+      expect(await no).toBe(false);
+      // unanswered in time: null
+      expect(await o.ask(page, "late?", { ms: 50 })).toBeNull();
+      expect(await overlayFor(false, { host: h.factory }).ask(page, "x")).toBeNull();
     } finally {
       await browser.close();
     }

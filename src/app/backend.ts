@@ -61,6 +61,7 @@ import { type SiteFacade, sitesFor } from "../sites/index.js";
 import { fileLimits } from "../sites/limits.js";
 import { type EventBus, eventBus } from "../ui/bus.js";
 import type { Jobs } from "../ui/jobs.js";
+import { buildDraft } from "../walks/drafts.js";
 import { type CompiledCatalog, compiledCatalog } from "../workflows/compiled.js";
 import { checkExpect, readExpect, seedExpect, writeExpect } from "../workflows/expect.js";
 import { withLegs, workflowCatalog } from "../workflows/legs.js";
@@ -108,6 +109,7 @@ import {
   stepLedgerFor,
   WORKFLOWS,
   walkFor,
+  walksDirFor,
 } from "./services.js";
 import type { Status } from "./status.js";
 
@@ -373,6 +375,23 @@ export function explorerOpener(
       sink,
       credentials: credentialsFor(settings),
       runs: runsDirFor(settings),
+      // teach on by default: a run a person acted in becomes a draft walk, no questions
+      onHandRun: (r) =>
+        void (async () => {
+          const profile = await profiles?.(null).catch(() => null);
+          const d = buildDraft(runsDirFor(settings), walksDirFor(settings), {
+            ...r,
+            profile: profile ?? null,
+          });
+          if (d)
+            console.error(
+              `draft walk ${d.spec.site}/${d.spec.name} (${d.spec.screens.length} screens): autobrowse walks keep ${d.spec.site}/${d.spec.name} <name>`,
+            );
+        })().catch((err) =>
+          console.error(
+            `draft walk for ${r.run}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        ),
       // `flow`: any compiled workflow on the open page, its saved plan under the command's.
       workflows: {
         get: workflowCatalog(catalog).get,

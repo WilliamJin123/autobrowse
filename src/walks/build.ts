@@ -766,7 +766,12 @@ export const USABLE = new Set(["achieved", "saved"]);
  */
 export function buildWalk(
   runsDir: string,
-  o: BuildOptions & { runs?: readonly string[]; goalLike?: string },
+  o: BuildOptions & {
+    runs?: readonly string[];
+    goalLike?: string;
+    /** Run ends a walk may come from; default `USABLE`. A draft also takes `closed`. */
+    outcomes?: ReadonlySet<string>;
+  },
 ): BuiltWalk {
   if (!o.runs?.length && !o.goalLike)
     throw new Error("name the runs (--run) or a goal they share (--goal-like)");
@@ -781,7 +786,7 @@ export function buildWalk(
     const named = o.runs?.includes(r.run) ?? false;
     const like = words.length > 0 && words.every((w) => (r.goal ?? "").toLowerCase().includes(w));
     if (!named && !like) return false;
-    if (!USABLE.has(r.outcome)) {
+    if (!(o.outcomes ?? USABLE).has(r.outcome)) {
       if (named) skipped.push({ run: r.run, reason: `ended ${r.outcome}` });
       return false;
     }

@@ -198,6 +198,16 @@ import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
 import { type Box, marksFor, missed } from "./marks.js";
 import { overlayFor, traceRow } from "./overlay.js";
 import { COLLECT_SCRIPTS, type ScriptText, scanScripts } from "./script-scan.js";
+import {
+  applyKeep,
+  askLine,
+  type HeldSignIn,
+  type KeepPlan,
+  planKeep,
+  signInHolder,
+  siteFor,
+  USERNAME_READ,
+} from "./sign-in-keep.js";
 
 export { type Command, commandSchema, placeHint } from "./commands.js";
 export { journalFileFor, readJournal, tokenFileFor } from "./journal.js";
@@ -388,7 +398,7 @@ export interface ExploreOptions {
   /** Where `keep` puts a secret read off the page (.env locally, SSM in prod). */
   sink?: SecretSink;
   /** The login store `seed` seals an authenticator seed into. Absent: refused. */
-  credentials?: Pick<CredentialStore, "get" | "put">;
+  credentials?: Pick<CredentialStore, "get" | "put"> & Partial<Pick<CredentialStore, "list">>;
   /** What `place` may fill by name; without it `place` is refused. */
   secrets?: SecretValues;
   /** Hosts a placed secret (by name) may land on; any other host refuses the `place`. Absent: any. */
@@ -483,8 +493,16 @@ export interface ExploreOptions {
   driver?: string;
   /** The first run's goal, when the caller knows it at the start. */
   goal?: string;
+  /**
+   * A run a person acted in by hand ended (not a `teach` session, not failed, not resumable):
+   * teach on by default builds a draft walk from it (designs/2026-10-05-teach-mode.md).
+   */
+  onHandRun?: (r: { site: string; run: string; outcome: RunOutcome; acts: number }) => void;
   now?: () => number;
 }
+
+/** After a sign-in's submit and load: time for the site to show the next page or its error. */
+const SIGN_IN_SETTLE_MS = 2500;
 
 export { DEFAULT_IDLE_MINUTES };
 
@@ -522,6 +540,10 @@ export interface Explorer {
   runId(): string | null;
   /** The files the session started with (`fileSets`). */
   files: FileLine[];
+  /** Sign-ins typed by hand nobody answered for yet (no overlay): where each would go. Never the value. */
+  heldSignIns(): Promise<KeepPlan[]>;
+  /** Store one of those, by its planned name (a person said yes at a terminal). */
+  keepSignIn(name: string): Promise<boolean>;
 }
 export type ExploreCommand = Command;
 
@@ -736,6 +758,10 @@ async function serve(
    * until the next command, whose answer says so (`helped`).
    */
   let helpedActs = 0;
+  /** Hand acts in the run being written: one or more, and its end builds a draft walk. */
+  let runHandActs = 0;
+  /** Sign-ins typed by hand, in memory only (WA-1307). */
+  const signIns = signInHolder();
   /** Commands in flight, and when the last one's own late DOM events stop counting as a person's. */
   let busy = 0;
   let quietAt = 0;
@@ -868,6 +894,7 @@ async function serve(
     );
     firstGoal = null;
     saved = false;
+    runHandActs = 0;
   };
   /** Observation packs still at work. */
   const packs: Promise<void>[] = [];
@@ -883,6 +910,23 @@ async function serve(
     if (capture) packs.push(capture.close().catch(() => undefined));
     capture = null;
     if (runSide && !resumable) rmSync(runSide, { force: true });
+    const acts = runHandActs;
+    runHandActs = 0;
+    if (
+      opts.onHandRun &&
+      acts > 0 &&
+      !resumable &&
+      opts.driver !== "person" &&
+      outcome !== "failed" &&
+      outcome !== "idle"
+    )
+      try {
+        opts.onHandRun({ site: opts.site, run: h.id, outcome, acts });
+      } catch (err) {
+        console.error(
+          `draft walk for ${h.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
   };
   /** The whole accessibility tree: what a full answer would have cost; null when it takes too long. */
   const wholePage = async (): Promise<string | null> => {
@@ -1132,6 +1176,52 @@ async function serve(
     lookBefore = null;
     if (hand) lookWhenQuiet();
   };
+  /** A sign-in typed by hand: asked once on the panel; a yes stores it sealed (WA-1307). */
+  const offerSignIn = async (p: Page, h: HeldSignIn & { username: string }) => {
+    const store = opts.credentials;
+    if (!store) return;
+    const plan = await planKeep(store, siteFor(h.host), h, new Date().toISOString().slice(0, 10));
+    if (plan.outcome === "same") return;
+    const yes = await overlay.ask(p, askLine(plan));
+    if (yes === null) {
+      signIns.park(h);
+      return;
+    }
+    if (!yes) return signIns.decline(h.host);
+    await applyKeep(store, plan, h);
+    console.error(`kept the sign-in typed by hand as ${plan.name}`);
+  };
+  /** After the submit settles: the password field gone means it signed in. */
+  const checkSignIn = async (p: Page) => {
+    await p.waitForLoadState("load", { timeout: 10_000 }).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, SIGN_IN_SETTLE_MS));
+    if (p.isClosed()) return;
+    const form = await p
+      .locator('input[type="password"]:visible')
+      .count()
+      .catch(() => 1);
+    if (form > 0) return signIns.disarm();
+    const h = signIns.take();
+    if (h?.username) await offerSignIn(p, { ...h, username: h.username }).catch(() => undefined);
+  };
+  const heldFrom = (raw: Exclude<RawAction, { kind: "pageerror" }>, p: Page) => {
+    if (!opts.credentials) return;
+    if (raw.kind === "input") {
+      // the site filled the name itself: read its field once, in code
+      if (signIns.typed(raw.target, raw.value, p.url()))
+        void p
+          .evaluate(USERNAME_READ)
+          .then((v) => signIns.named(p.url(), typeof v === "string" ? v : null))
+          .catch(() => undefined);
+      return;
+    }
+    if (
+      raw.kind === "submit" ||
+      raw.kind === "click" ||
+      (raw.kind === "press" && raw.key === "Enter")
+    )
+      if (signIns.acted()) void checkSignIn(p);
+  };
   // While paused, the page reports what a person does (the recorder's
   // observer), so hand-done steps sit in the same journal as the
   // commands. Un-paused, commands journal themselves and the DOM is quiet.
@@ -1142,6 +1232,9 @@ async function serve(
       if (!byHand()) return;
       if (paused) handActs++;
       else helpedActs++;
+      runHandActs++;
+      // before the redaction: the held value goes nowhere but the store
+      heldFrom(raw, src.page);
       journal(redactRaw(raw));
     })
     .catch(() => undefined);
@@ -1156,6 +1249,7 @@ async function serve(
     if (frame !== page.mainFrame()) return;
     if (paused || ((helpedActs || opts.driver === "person") && byHand()))
       journal({ kind: "navigate" });
+    if (opts.credentials && signIns.acted()) void checkSignIn(page);
     lookWhenQuiet();
   });
 
@@ -3080,6 +3174,31 @@ async function serve(
     done: ended,
     resumedFrom,
     runId: () => (history && !history.ended() ? history.id : null),
+    heldSignIns: async () => {
+      const store = opts.credentials;
+      if (!store) return [];
+      const today = new Date().toISOString().slice(0, 10);
+      const out: KeepPlan[] = [];
+      for (const h of signIns.parked())
+        if (h.username)
+          out.push(await planKeep(store, siteFor(h.host), { ...h, username: h.username }, today));
+      return out;
+    },
+    keepSignIn: async (name) => {
+      const store = opts.credentials;
+      if (!store) return false;
+      const today = new Date().toISOString().slice(0, 10);
+      for (const h of signIns.parked()) {
+        if (!h.username) continue;
+        const held = { ...h, username: h.username };
+        const plan = await planKeep(store, siteFor(h.host), held, today);
+        if (plan.name !== name) continue;
+        await applyKeep(store, plan, held);
+        signIns.unpark(h.host);
+        return true;
+      }
+      return false;
+    },
     files: sessionFiles.map(fileLine),
   };
 }

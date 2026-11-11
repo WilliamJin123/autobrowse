@@ -58,6 +58,7 @@ import {
   walkFile,
 } from "../walks/spec.js";
 import type { LocalBackend } from "./backend.js";
+import { registerDraftCommands } from "./cli-teach.js";
 import type { Settings } from "./config.js";
 import {
   flowRunsDirFor,
@@ -227,6 +228,7 @@ export function registerRunsCommands(
     .description(
       "Deterministic flows built from runs that reached a goal; run as <site>/walk-<name>",
     );
+  registerDraftCommands(walks, settings);
 
   walks
     .command("build <site> <name>")

@@ -10,6 +10,7 @@ import { expandHome } from "../google/auth.js";
 import { autobrowseVersion } from "../mods/install.js";
 import type { Profile } from "../money/profile.js";
 import { buildWalk } from "../walks/build.js";
+import { DRAFT_OUTCOMES, dropDraft, findDraft, listDrafts } from "../walks/drafts.js";
 import { walkFlowName } from "../walks/flow.js";
 import { loadWalk, saveWalk, walkFile } from "../walks/spec.js";
 import { guessLine, packInto, review } from "../walks/teach.js";
@@ -73,6 +74,16 @@ export function registerTeachCommand(program: Command, settings: Settings): void
         await Promise.race([ex.done, typedDone]);
         await ex.exec({ cmd: "close" }).catch(() => undefined);
         await ex.done;
+        // A sign-in typed by hand that the panel could not ask about: the terminal asks (WA-1307).
+        if (tty)
+          for (const plan of await ex.heldSignIns()) {
+            if (plan.outcome === "same") continue;
+            const yes = (
+              await rl.question(`keep the sign-in you typed as ${plan.name}? [y/N] `)
+            ).trim();
+            if (/^y/i.test(yes) && (await ex.keepSignIn(plan.name)))
+              console.log(`  kept ${plan.name}`);
+          }
         if (!run) throw new Error("explore kept no run; nothing to build");
 
         const goal =
@@ -124,4 +135,77 @@ export function registerTeachCommand(program: Command, settings: Settings): void
         );
       },
     );
+}
+
+/**
+ * Teach on by default: each run a person acted in became a draft (src/walks/drafts.ts).
+ * `walks drafts` lists them, `walks keep` makes one a walk with the review, `walks drop` deletes one.
+ */
+export function registerDraftCommands(walks: Command, settings: Settings): void {
+  const walksDir = walksDirFor(settings);
+  walks
+    .command("drafts")
+    .description("Draft walks built from runs a person did by hand, newest first")
+    .option("--json", "one JSON array")
+    .action((o: { json?: boolean }) => {
+      const all = listDrafts(walksDir);
+      if (o.json) return void console.log(JSON.stringify(all, null, 2));
+      if (!all.length)
+        return void console.log("no drafts: a headed run a person acts in makes one");
+      for (const d of all)
+        console.log(
+          `${d.site}/${d.name}  ${d.screens} screens, ${d.fields} fields  ${d.built.slice(0, 16)}  ${d.goal}`,
+        );
+    });
+  walks
+    .command("keep <draft> <name>")
+    .description("Make a draft a walk under a real name, after the review (the draft goes)")
+    .option("--goal <words>", "what the walk does (default: the run's goal)")
+    .option("--profile <id>", "whose details were typed (default: the only profile)")
+    .option("--yes", "take every guess, no review")
+    .action(
+      async (ref: string, name: string, o: { goal?: string; profile?: string; yes?: boolean }) => {
+        if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`name ${name}: a-z, 0-9, dashes`);
+        const d = findDraft(walksDir, ref);
+        if (!d) throw new Error(`no draft ${ref}: autobrowse walks drafts`);
+        const profile = await profilesForPlace(settings)?.(o.profile ?? null).catch(
+          (): Profile | null => null,
+        );
+        // the same name kept again: this run joins the ones before it
+        const before = loadWalk(walksDir, d.site, name)?.from.map((f) => f.run) ?? [];
+        const built = buildWalk(runsDirFor(settings), {
+          site: d.site,
+          name,
+          runs: [...before, d.run],
+          ...(o.goal ? { goal: o.goal } : {}),
+          profile: profile ?? null,
+          outcomes: DRAFT_OUTCOMES,
+        });
+        for (const x of built.skipped) console.log(`  skipped ${x.run}: ${x.reason}`);
+        let spec = built.spec;
+        const tty = process.stdin.isTTY === true;
+        if (o.yes || !tty) for (const g of built.guesses) console.log(`  ${guessLine(spec, g)}`);
+        else {
+          const rl = createInterface({ input: process.stdin, output: process.stdout });
+          ({ spec } = await review(spec, built.guesses, {
+            say: (l) => console.log(l),
+            ask: (p) => rl.question(p),
+          }));
+          rl.close();
+        }
+        saveWalk(walksDir, spec);
+        dropDraft(walksDir, d);
+        console.log(`${spec.site}/${walkFlowName(spec)}: ${spec.screens.length} screens`);
+        console.log(`  ${walkFile(walksDir, spec.site, spec.name)}`);
+      },
+    );
+  walks
+    .command("drop <draft>")
+    .description("Delete a draft walk")
+    .action((ref: string) => {
+      const d = findDraft(walksDir, ref);
+      if (!d) throw new Error(`no draft ${ref}: autobrowse walks drafts`);
+      dropDraft(walksDir, d);
+      console.log(`dropped ${d.site}/${d.name}`);
+    });
 }

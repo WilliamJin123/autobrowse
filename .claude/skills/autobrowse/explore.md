@@ -156,6 +156,7 @@ Session:
 - Headed, no pause needed: when William does a step by hand between two of your
   commands, your next answer carries `helped: {acts, url, changed, note}`. Read
   the page he left; never redo his step.
+- A run William acts in by hand becomes a draft walk at its end (`autobrowse walks drafts`; `walks keep <draft> <name>` makes it a walk). A sign-in he types by hand is asked about on the panel ("Keep this sign-in for …?") and stored sealed on his yes; you never see it.
 - `{"cmd":"journal","last":5}` — what is recorded (`total` and the newest `last`).
 - `{"cmd":"save","name":"site-what-it-does"}` — writes `recordings/<name>/`.
 - `{"cmd":"close"}` — browser and socket, no verdict. Use `autobrowse stop`.

@@ -47,6 +47,8 @@ export interface OverlayState {
   /** The bar's right side: seed, pace. */
   meta: string | null;
   trace: TraceRow[];
+  /** A yes-or-no for the person at the window (keep a sign-in): two buttons, answered once. */
+  ask: { id: number; text: string; yes: string; no: string } | null;
 }
 
 const EMPTY: OverlayState = {
@@ -60,6 +62,7 @@ const EMPTY: OverlayState = {
   cmd: null,
   meta: null,
   trace: [],
+  ask: null,
 };
 
 /** The narrowest a person can size the panel, px. */
@@ -225,6 +228,11 @@ const PANEL_CSS = [
   ".in{animation:rise .24s var(--ease)}",
   "@keyframes rise{from{opacity:0;transform:translateY(3px)}}",
   ".live{color:var(--ink-3);font-size:.92em}",
+  // A question: tinted, outlined; the yes filled in the accent.
+  ".ask{margin:4px 0 2px;padding:6px 8px;border-radius:9px;background:var(--tint);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent);display:flex;flex-wrap:wrap;align-items:center;gap:6px;overflow-wrap:anywhere}",
+  ".ask .q{flex:1 1 160px;font-weight:600}",
+  ".ask .go{flex:none;padding:2px 10px;border-radius:999px;cursor:pointer;font-weight:600;color:var(--ink-2);background:var(--fill)}",
+  ".ask .go.yes{color:var(--on-accent);background:var(--accent)}",
   // The busy words: a light passing through them, on one clock across redraws.
   ".shim{background:linear-gradient(90deg,var(--ink-3) 35%,var(--accent) 50%,var(--ink-3) 65%) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 1.8s linear infinite}",
   "@keyframes shim{from{background-position:100% 0}to{background-position:0 0}}",
@@ -283,6 +291,9 @@ const TERM_CSS = [
   `.goal{color:${T.ink};font-weight:700}`,
   `.thought{color:${T.ink2}}`,
   `.doing{color:${T.accent}}`,
+  `.ask{margin:2px 0;border:1px solid ${T.accent};padding:2px 4px;display:flex;flex-wrap:wrap;gap:6px}`,
+  ".ask .q{flex:1 1 160px}",
+  `.ask .go{cursor:pointer;color:${T.accent}}`,
   `.cursor{display:inline-block;width:.6em;height:1.05em;margin-left:2px;vertical-align:-2px;background:${T.accent};animation:tblink 1s steps(2) infinite}`,
   "@keyframes tblink{50%{opacity:0}}",
   `.rule{display:flex;gap:var(--g);color:${T.ink3};padding:0 var(--g);border-top:1px solid ${T.paper}}`,
@@ -379,6 +390,7 @@ export const panelHtml = (
   const post = () => {
     const r = (ui.min ? tab : tui).getBoundingClientRect();
     const m = { rect: [r.x, r.y, r.width, r.height], prefs: ui.prefs() };
+    if (ui.answer) { m.answer = ui.answer; ui.answer = null; }
     try { window.webkit.messageHandlers.host.postMessage(m); } catch {}
   };
   // a rect read mid-animation (peek, spring) is not where it lands
@@ -431,6 +443,7 @@ export const panelHtml = (
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
     else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
+    else if ((act === 'yes' || act === 'no') && ui.s.ask) { ui.answer = { id: ui.s.ask.id, yes: act === 'yes' }; ui.s.ask = null; }
     ui.paint();
   });
   // The viewport (the window) changed size: the panel stays in it.
@@ -621,6 +634,13 @@ export const panelHtml = (
         rule.appendChild(el('span', 'fill', null, 'flex:1'));
         rule.appendChild(btn('trace', ICONS.chevron, ui.trace ? 'Fold the activity' : 'Show the activity', ui.trace ? '' : 'folded'));
       }
+      if (s.ask) {
+        const q = el('div', 'ask');
+        q.appendChild(el('span', 'q', s.ask.text));
+        const go = (a, t) => { const b = el('span', 'go ' + a, term ? '[' + t + ']' : t); b.setAttribute('data-a', a); return b; };
+        q.append(go('yes', s.ask.yes), go('no', s.ask.no));
+        body.appendChild(q);
+      }
       rows.style.display = ui.trace && s.count ? '' : 'none';
     }
     post();
@@ -628,6 +648,7 @@ export const panelHtml = (
   };
   /** \`reset\`: the rows are all of them, not the new ones. */
   ui.draw = (s, list, reset) => {
+    if (s.ask && s.ask.id !== ui.askId) { ui.askId = s.ask.id; if (ui.min) { ui.min = false; ui.enter = 'tui'; } }
     ui.s = s;
     add(list, reset);
     return ui.paint();
@@ -768,8 +789,20 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   let targets = 0;
   let found = 0;
   const geometry = deps.geometry ?? geometryOf;
+  /** Questions out, by id: the panel's button answers one. */
+  const asking = new Map<number, (yes: boolean | null) => void>();
+  let askN = 0;
+  const answered = (id: number, yes: boolean | null) => {
+    const done = asking.get(id);
+    if (!done) return;
+    asking.delete(id);
+    if (state.ask?.id === id) state.ask = null;
+    done(yes);
+  };
 
   const onEvent = (e: HostEvent) => {
+    const a = e.t === "js" ? (e.answer as { id?: unknown; yes?: unknown } | undefined) : undefined;
+    if (a && typeof a.id === "number") answered(a.id, a.yes === true);
     if (e.t === "js" && e.prefs && typeof e.prefs === "object") prefs = e.prefs as Prefs;
     // Chrome's window changed size (full screen, an infobar) or went: measure again.
     else if (e.t === "lost") windowKey = null;
@@ -913,6 +946,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
           busy: state.busy,
           cmd: state.cmd,
           meta: state.meta,
+          ask: state.ask,
         };
       for (const [k, v] of Object.entries(fields))
         if (v !== undefined) (state as unknown as Record<string, unknown>)[k] = clipLine(v, 240);
@@ -980,8 +1014,41 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       if (!drawn) return;
       return this.after(page);
     },
+    /**
+     * A yes-or-no on the panel; true on the yes button, false on the no. null at once when
+     * nothing draws (off, no host), or when `ms` pass unanswered.
+     */
+    async ask(
+      page: Page,
+      text: string,
+      o: { yes?: string; no?: string; ms?: number } = {},
+    ): Promise<boolean | null> {
+      if (!enabled) return null;
+      const id = ++askN;
+      const answer = new Promise<boolean | null>((resolve) => asking.set(id, resolve));
+      state.ask = {
+        id,
+        text: clipLine(text, 240) ?? "",
+        yes: o.yes ?? "Keep",
+        no: o.no ?? "Not now",
+      };
+      if (!(await draw(page))) {
+        answered(id, null);
+        return null;
+      }
+      const late = setTimeout(() => {
+        answered(id, null);
+        if (followed) void draw(followed);
+      }, o.ms ?? 180_000);
+      late.unref();
+      const yes = await answer;
+      clearTimeout(late);
+      if (followed && drawn) await draw(followed);
+      return yes;
+    },
     /** The session ends: the window goes and its process exits. */
     async remove(_page: Page): Promise<void> {
+      for (const id of [...asking.keys()]) answered(id, null);
       drawn = false;
       state = { ...EMPTY };
       running = 0;

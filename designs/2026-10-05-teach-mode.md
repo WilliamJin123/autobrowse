@@ -92,6 +92,48 @@ A walk with fixed values that look personal won't pack until the review says so.
 - A real chore taught on William's Mac replays from a fresh terminal with a different field value. Pick one with no spend and no posting, such as a newsletter signup to his own inbox.
 - The scratch mod republishes with a taught walk in it.
 
+## Teach on by default (2026-11-11)
+
+William: "teach mode should be like implicitly on". Every headed session a person acts in can become a walk, with no `teach` command first.
+
+- A run with at least one hand act ends: explore builds a draft walk from it at once. No questions, every guess taken.
+- Drafts live in `<state>/walk-drafts/<site>/draft-<run>.json`, beside the walks, never among them: they never run by name and never pack.
+- The commands sit under `walks`: `teach drafts` would read `drafts` as a site.
+- `autobrowse walks drafts` lists them, newest first: site, run, screens, fields, goal.
+- `autobrowse walks keep <site>/<draft> <name>` builds the walk again from that run under its real name, with the review. `--yes` takes every guess. The draft goes.
+- `autobrowse walks drop <site>/<draft>` deletes one.
+- Skipped: a `teach` session (it builds its own), a run that ended `failed` or `unknown`, an idle close that resumes later.
+- A draft also takes a run that ended `closed` (a person closed the browser). A real walk still needs `achieved` or `saved`; `keep` is the person's word that the run did its job.
+
+| Option | Verdict |
+|---|---|
+| A. Build a draft at the end of each hand run; keep or drop later | **Chosen**. No question during work; nothing lost; the review waits for a person who wants the walk |
+| B. Ask at the end of each hand run ("make this a walk?") | No: a question after every chore; an agent's session has nobody at a terminal |
+| C. Build nothing; `walks keep` builds from any old run on demand | No: a person must find the run id; nothing tells them a walk is possible |
+| D. Save each hand run straight as a walk | No: walks fill with half chores and guesses nobody checked |
+
+## Keep a sign-in a person types (WA-1307, 2026-11-11)
+
+William: a person signs in by hand in a headed session. autobrowse keeps that username and password, sealed, so nobody pastes a password into `creds set`.
+
+- The observer already sends each typed value to explore, and `redactRaw` already masks a secret before the journal. The password stays out of the journal, the trace, the answer and the log, as today.
+- New: in the same step, explore holds the value in memory, with the site and the field. It also holds the last name typed into a username, email or phone field on that site. A sign-in that spans two pages (name, then password) still pairs.
+- No name was typed (the site filled it): explore reads the page's username or email field once, in code. The agent never sees it.
+- Trigger: a submit, Enter or click after the password, then the page settles. A password field still visible means a wrong password: nothing is asked, and a new try replaces the held one.
+- Then the overlay asks once: "Keep this sign-in for instagram@w.jin1?" with Keep and Not now. Not now drops it; the site is not asked again this session.
+- No overlay (off, or it cannot draw): the held sign-in waits for the session end. A `teach` terminal asks there. Elsewhere it is dropped, with a trace note.
+- Keep stores it under `<site>@<username>` through the credential store (`creds` history keeps every write).
+  - The same password already stored: nothing changes.
+  - A different password under that name: the new one goes under `<site>@<username>-<YYYY-MM-DD>`. Never an overwrite (no-silent-overwrite). `creds merge` or `creds rename` picks later.
+- The answer to the next command says `kept: "<name>"` and never the value. A teach walk's `{from:"secret"}` value now has a credential to fill it.
+
+| Option | Verdict |
+|---|---|
+| A. Hold the observer's typed values in memory; pair the name and the password; ask after the submit settles | **Chosen**. Uses what the page already sends; nothing new reads the DOM; holds across a two-page sign-in |
+| B. A page script reads the form's fields at submit | No: a second path that sends the password through the page's world; misses a sign-in split over two pages |
+| C. Read Chrome's own saved passwords (Login Data, Keychain) | No: Chrome asks the person first, the profile may never save, and decrypting the Keychain needs his password |
+| D. Read the sign-in POST body from the network | No: each site's body differs (JSON, form, encrypted at Instagram) |
+
 ## Decision log
 
 - 2026-10-05: Written. Build on walks, not `record` plus `compile`: walks are data, so they pack, diff and run with no model, and compile writes code a buyer has to trust. One run is enough. Ask-each-run with a default is the safe guess, so nothing personal gets frozen in by accident. Profile is the "other users" seam: the same walk runs as whoever's profile is loaded.
@@ -104,3 +146,4 @@ A walk with fixed values that look personal won't pack until the review says so.
 - 2026-10-05: Found while teaching. An unlabeled radio had nothing to find it by: the observer now records `nth` among its kind. explore's own "a person did N act(s)" note named screens: build skips it. A placeholder like "you@example.com" named the field: an email, tel or url input whose only name is its placeholder is named by its type.
 - 2026-10-05: A mod packed with a v2 walk needs autobrowse that reads v2, so `packInto` sets `autobrowse` to `>=` the packing version, and autobrowse goes to 0.4.0. Scratch mod 0.2.0 holds the walk taught by hand (name with a default, start date `today+7d`).
 - 2026-10-05: Select options now recorded. The observer sends a select's option values (first 100) with the choice, the review's `a` makes them the field's `options`, and `walks run` lists them when it asks.
+- 2026-11-11: Teach on by default: a draft walk from every hand run, kept or dropped later (option A). WA-1307: a sign-in typed by hand is held in memory, asked once in the overlay, stored under a new dated name when its password differs (option A).
