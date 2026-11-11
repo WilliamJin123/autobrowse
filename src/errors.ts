@@ -9,6 +9,7 @@ import { z } from "zod";
 import { profileBusyOf } from "./browser/browsers.js";
 import { FlowFailed, FlowInterrupted, isTransientBrowserError } from "./browser/flow.js";
 import { RungBroke } from "./browser/ladder.js";
+import { BrowserNotReady, OwnTabsFull } from "./browser/launch-hygiene.js";
 import { PoolFull } from "./browser/profile-pool.js";
 import { MAY_HAVE_GONE_THROUGH } from "./browser/profile-wait.js";
 import { AccessRefused, NeedsHuman } from "./browser/session.js";
@@ -124,8 +125,13 @@ function codeOf(err: unknown): { code: ErrorCode; status?: number; retryAfter?: 
     };
   if (err instanceof PaymentGate || err instanceof GateOpen) return { code: "gate_refused" };
   if (err instanceof NetRefused) return { code: "url_refused" };
-  if (profileBusyOf(err) || err instanceof PoolFull) return { code: "profile_busy" };
-  if (err instanceof FlowInterrupted || isTransientBrowserError(err))
+  if (profileBusyOf(err) || err instanceof PoolFull || err instanceof OwnTabsFull)
+    return { code: "profile_busy" };
+  if (
+    err instanceof FlowInterrupted ||
+    err instanceof BrowserNotReady ||
+    isTransientBrowserError(err)
+  )
     return { code: "browser_down" };
   if (err instanceof FlowFailed || err instanceof RungBroke) return { code: "flow_broken" };
   if (err instanceof HttpError) {

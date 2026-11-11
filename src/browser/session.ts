@@ -18,6 +18,14 @@ import type { Egress, Exit } from "./egress.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
 import { keepSessionCookies, keptDomains } from "./keep-session.js";
+import {
+  assertOwnTabRoom,
+  cleanUncleanExit,
+  LAUNCH_TIMEOUT_MS,
+  launchFailed,
+  readyOrThrow,
+  recordCrash,
+} from "./launch-hygiene.js";
 import type { Hints } from "./locate.js";
 import { guardMemory, treeOf } from "./memory-guard.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
@@ -225,19 +233,45 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
       profile,
       reaped.map((o) => o.pid),
     );
+    if (cleanUncleanExit(profileDir))
+      recordCrash({ profile, reason: "unclean-exit", detail: "found at launch; restore cleared" });
     void reapTempDirs(); // files a crashed upload left, in the background
-    context = await launchLocal(profileDir, opts, opts.egress?.exitFor(profile) ?? null);
+    context = await launchLocal(profileDir, opts, opts.egress?.exitFor(profile) ?? null).catch(
+      (err: unknown) => {
+        throw launchFailed(err, profile);
+      },
+    );
     guard = guardMemory(context, profileDir);
     if (opts.headless === false) await keepOutOfTheWay();
     // `navigator.webdriver` is already false (LOCAL_ARGS). No init-script shim: an own
     // `webdriver` property on navigator, reading undefined, is itself a tell.
   }
+  const local = opts.tier !== "browserbase" && opts.tier !== "cdp";
+  const page = context.pages()[0] ?? (await context.newPage());
+  if (local) {
+    const launched = context;
+    await readyOrThrow(page, profile).catch(async (err: unknown) => {
+      recordCrash({ profile, reason: "not-ready", detail: (err as Error).message });
+      guard?.stop();
+      await launched.close().catch(() => undefined);
+      throw err;
+    });
+  }
+  /** Set by our own close: any other close of a local browser is a death (P10). */
+  let closing = false;
+  if (local)
+    context.on("close", () => {
+      if (!closing && !guard?.fired())
+        recordCrash({
+          profile,
+          reason: "closed",
+          detail: "the browser closed with no close() call",
+        });
+    });
   boundRequests(context);
   const dialogs = watchDialogs(context);
-  const page = context.pages()[0] ?? (await context.newPage());
   const film = opts.film ? await filmContext(context, opts.film) : null;
   const passkeys = virtualAuthenticator(context, await opts.passkeys?.(site).catch(() => []));
-  const local = opts.tier !== "browserbase" && opts.tier !== "cdp";
   const hide =
     local && opts.headless === false && !opts.film && process.platform === "darwin"
       ? appHider(join(expandHome(opts.profilesDir), profile))
@@ -251,6 +285,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     ...(hide ? { offscreen: hide } : {}),
     ...(local && opts.egress ? { newIp: () => (opts.egress as Egress).newIp(profile) } : {}),
     async close() {
+      closing = true;
       guard?.stop();
       // Before the pages go: each pane's last frame holds until now.
       await film?.stop();
@@ -286,6 +321,12 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
   const ledger = ownTabsFile();
   const cdp = await browser.newBrowserCDPSession();
   await reapTabs(cdp, ledger, own.dataDir).catch(() => []);
+  try {
+    assertOwnTabRoom(ledger, own.dataDir);
+  } catch (err) {
+    await browser.close().catch(() => undefined);
+    throw err;
+  }
   const { page, targetId } = await backgroundTab(context, cdp);
   addTab(ledger, {
     pid: process.pid,
@@ -419,6 +460,7 @@ async function launchLocal(
       ...(headless ? [] : X11_ARGS),
     ],
     ignoreDefaultArgs: ["--enable-automation"],
+    timeout: LAUNCH_TIMEOUT_MS,
     ...(proxy ? { proxy } : {}),
     ...(tz ? { env: { ...process.env, TZ: tz } } : {}),
   });

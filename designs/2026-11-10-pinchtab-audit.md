@@ -46,7 +46,7 @@ fewer turns, not a smaller page. The "800 tokens a page" line is not measured an
 | P8 | Readiness probe at launch: fail fast as not sent | `openSession` | S |
 | P9 | Unclean-exit marker: clear Chrome's session-restore files only, never cookies | `session.ts` | S |
 | P10 | Crash ring: last 20 browser deaths with profile, opener, reason, in `browsers` and `doctor` | `browsers.ts` | S |
-| P11 | Tab budget at open: close page targets the session does not own, past a cap (own and cdp tiers) | `session.ts` | S |
+| P11 | Tab budget at open: past a cap on our own ledger tabs, refuse the open (`profile_busy`); never close a tab we do not own (own tier) | `session.ts` | S |
 | P12 | Skill size budget test over `.claude/skills/autobrowse/*.md` | `test/` | S |
 | P13 | `proof` at widths with overflow, page errors, broken assets; compare rules (identity diff, masked host, drop statusless failures) | explore + `shots/` | M |
 
@@ -70,3 +70,5 @@ fewer turns, not a smaller page. The "800 tokens a page" line is not measured an
 - 2026-11-10: No per-run domain allowlist yet: explore crosses sites by design (sign-in providers, OAuth). The scheme and private-IP guard ships first (my call).
 - 2026-11-10: William: "Pinchtab we should discuss first get the opencli stuff done prior". Nothing here is built until that talk.
 - 2026-11-11: P3 reads errors through the recorder's observer (a main-world `error` and `unhandledrejection` listener over the binding), not Playwright's `pageerror`: Patchright keeps CDP Runtime off, so `pageerror`, `console` and `Log.entryAdded` never fire. Turning Runtime on is a known bot signal. Built: `src/browser/page-errors.ts`, `pageErrors` on act answers, `{"cmd":"errors"}`.
+- 2026-11-11: P11 changed from the plan (my call): it refuses a new tab of ours past 6 in one person's browser, as `profile_busy`. It never closes a page the session does not own: in the own and cdp tiers those are the person's or an app's tabs, and closing them loses their work. The cdp tier gets no cap: the app owns its tabs.
+- 2026-11-11: P8–P10 built in `src/browser/launch-hygiene.ts` (map card `browser/launch-hygiene`). P9 clears only the exit flags and `Default/Sessions`; no quarantine (Leave table). P12: `test/skill-budget.test.ts`.

@@ -9,6 +9,7 @@ import { readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { hostname, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { ExploreInfo } from "../explore/server.js";
+import { type Crash, recentCrashes } from "./launch-hygiene.js";
 import { browserRoots, footprintKb, listProcs, type Proc } from "./reap.js";
 
 /** An explore server idle this long, not held, is forgotten. */
@@ -63,6 +64,8 @@ export interface BrowsersView {
   strangers: Stranger[];
   totalMb: number;
   ramMb: number;
+  /** Browser deaths in the last 24 h, newest first (`browser/launch-hygiene`). */
+  crashes?: Crash[];
 }
 
 const explorerOpener = (e: ExploreInfo): Opener =>
@@ -149,7 +152,10 @@ export function lockHolder(profileDir: string, alive = isAlive): number | null {
 /** Everything `browsers` and `doctor` show; never throws. */
 export async function browsersNow(profilesDir: string, procs?: Proc[]): Promise<BrowsersView> {
   const ps = procs ?? (await withFootprint(await listProcs().catch(() => []), profilesDir));
-  return viewOf(ps, profilesDir, readExplorers(ps), totalmem() / 2 ** 20);
+  return {
+    ...viewOf(ps, profilesDir, readExplorers(ps), totalmem() / 2 ** 20),
+    crashes: recentCrashes(),
+  };
 }
 
 /** The same rows, our browsers' trees and explore drivers at their footprint (macOS; resident elsewhere). */
@@ -239,6 +245,13 @@ export function warnings(v: BrowsersView): string[] {
     out.push(
       `browsers use ${v.totalMb} MB, ${Math.round((100 * v.totalMb) / v.ramMb)}% of RAM: autobrowse browsers`,
     );
+  const deaths = v.crashes ?? [];
+  if (deaths.length) {
+    const last = deaths[0] as Crash;
+    out.push(
+      `${deaths.length} browser death${deaths.length > 1 ? "s" : ""} in 24 h; last ${last.profile} (${last.reason}, ${last.opener}, ${last.at.slice(11, 16)} UTC): autobrowse browsers --json`,
+    );
+  }
   if (v.explorers.length > EXPLORERS_WARN)
     out.push(
       `${v.explorers.length} explore servers open: stop the idle ones (autobrowse browsers stop <port>)`,

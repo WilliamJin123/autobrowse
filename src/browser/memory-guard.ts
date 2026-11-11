@@ -11,6 +11,7 @@ import { homedir, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import type { BrowserContext } from "playwright";
 import { memoryNow } from "./browsers.js";
+import { recordCrash } from "./launch-hygiene.js";
 import { footprintKb, listProcs, type Proc } from "./reap.js";
 
 export const GUARD_EVERY_MS = 30_000;
@@ -74,6 +75,8 @@ export interface GuardDeps {
   pressure?: () => "ok" | "tight" | "critical";
   record?: (e: GuardEvent) => Promise<void>;
   kill?: (pid: number) => void;
+  /** The crash ring (`browser/launch-hygiene`). */
+  crash?: typeof recordCrash;
   everyMs?: number;
 }
 
@@ -88,12 +91,14 @@ export function guardMemory(
   profileDir: string,
   capMb = capMbOf(),
   deps: GuardDeps = {},
-): { stop(): void; check(): Promise<GuardVerdict> } {
+): { stop(): void; check(): Promise<GuardVerdict>; fired(): boolean } {
   const procs = deps.procs ?? (() => listProcs());
   const footprint = deps.footprint ?? ((pids: number[]) => footprintKb(pids));
   const pressure = deps.pressure ?? (() => memoryNow().level);
   const record = deps.record ?? recordLine;
   const kill = deps.kill ?? ((pid: number) => process.kill(pid, "SIGKILL"));
+  const crash = deps.crash ?? recordCrash;
+  let fired = false;
   let warned = false;
   let busy = false;
   let done = false;
@@ -130,6 +135,8 @@ export function guardMemory(
         warned = true;
         return verdict;
       }
+      fired = true;
+      crash({ profile: e.profile, reason: "memory", detail: `${mb} MB over its ${capMb} MB cap` });
       stop();
       // a browser this heavy may not answer a polite close: kill after 10 s
       const forced = setTimeout(() => {
@@ -155,5 +162,6 @@ export function guardMemory(
     clearInterval(timer);
   };
   context.on("close", stop);
-  return { stop, check };
+  /** True once the guard closed the browser: that close is no surprise death. */
+  return { stop, check, fired: () => fired };
 }
