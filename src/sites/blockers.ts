@@ -28,7 +28,7 @@ export const TIKTOK_BUSINESS: Blocker = {
 };
 
 export const LINKEDIN_PAGES: Blocker = {
-  what: "LinkedIn Community Management API: the Development tier is granted on the Wren Pages app, and its token is site `linkedin-pages` (2026-11-11). Never apply for it again. `linkedin`'s Page routes still run on the member token until they move to that site (WA-1311). The Standard tier review is William's to file",
+  what: "LinkedIn Community Management API: the Development tier is granted on the Wren Pages app, and its token is site `linkedin-pages` (2026-11-11). Never apply for it again. `linkedin`'s Page routes (posts, comments, counts, uploads as a Page) take that token through `borrows` (WA-1311). Routes that act as the member still wait: their grants are partner-only. The Standard tier review is William's to file",
   task: "WA-1032",
   since: "2026-10-09",
   grants: [

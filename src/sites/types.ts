@@ -308,6 +308,12 @@ export interface SiteApi {
    */
   signedOut?: true;
   /**
+   * A site whose token serves a route when this site's token lacks the grants it needs and that
+   * site's covers them: LinkedIn lets Community Management be the only product on its app, so
+   * Page calls take `linkedin-pages`'s token. Neither covers: the browser leg.
+   */
+  borrows?: string;
+  /**
    * The account was made through this provider's button and lives in its
    * profile (where explore and `login` sign it in): the policy's account at
    * that provider, and the browser leg runs in that account's profile.

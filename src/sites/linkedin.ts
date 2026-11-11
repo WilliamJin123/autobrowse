@@ -365,6 +365,8 @@ export const linkedin: SiteApi = {
   origin: LINKEDIN_ORIGIN,
   probe: { path: "/v2/userinfo" },
   auth: { oauth: linkedinOAuth },
+  // Page posts, comments and counts: the Community Management app's token (WA-1311)
+  borrows: "linkedin-pages",
   // Reads a person could do in a day without LinkedIn restricting the account, per account.
   // Invites and messages at a person's pace: LinkedIn's own weekly invite limit is ~100, and an
   // account that sends more than a few dozen a day is the one it restricts. Outreach ramps

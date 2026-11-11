@@ -42,12 +42,11 @@ const orgUrn = z.object({
 
 export const linkedinPages: SiteApi = {
   site: "linkedin-pages",
-  purpose: "Company lookups and Page reads through LinkedIn's Community Management app",
   origin: ORIGIN,
   probe: { path: "/rest/organizations", input: { vanity: "linkedin" } },
   auth: { oauth: linkedinPagesOAuth },
   // Development tier: LinkedIn meters the app per day; stay well under
-  caps: { lookup: 400 },
+  caps: { lookup: 1000 },
   routes: [
     route({
       method: "GET",

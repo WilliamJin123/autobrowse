@@ -220,6 +220,13 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
     const have = granted(s, account);
     return need.filter((g) => !have.has(g));
   };
+  /** The site whose token a call's API leg holds: its own, or the one it `borrows` when that covers what its own lacks. */
+  const tokenSiteOf = <I>(s: SiteApi, r: SiteRoute<I>, account: string | null, input?: I) => {
+    const lacks = lacking(s, r, account, input);
+    const lender = lacks.length && s.borrows ? byName.get(s.borrows) : undefined;
+    if (lender && !lacking(lender, r, account, input).length) return { by: lender, lacks: [] };
+    return { by: s, lacks };
+  };
   const arms = new Map<
     string,
     { route: string; profile: string; held: HeldTab; timer: ReturnType<typeof setTimeout> }
@@ -324,8 +331,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
     r: SiteRoute<never, unknown>,
     account: string | null,
   ): Promise<RouteRow> => {
-    const lacks = lacking(s, r, account);
-    const standing = standingOf(s, r, hasToken(s, account), lacks);
+    const { by, lacks } = tokenSiteOf(s, r, account);
+    const standing = standingOf(s, r, hasToken(by, account), lacks);
     const base = {
       method: r.method,
       path: r.path,
@@ -341,7 +348,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       r.browser && "flow" in r.browser ? deps.flow(r.browser.flow)?.strategies : undefined;
     if (ways?.length) Object.assign(base, { strategies: ways });
     const recorded = r.browser ? Boolean(await legOf(r.browser)) : false;
-    if (r.api && !prefersBrowser(r) && hasToken(s, account) && !lacks.length)
+    if (r.api && !prefersBrowser(r) && hasToken(by, account) && !lacks.length)
       return { ...base, via: "api" };
     if (r.browser) {
       if (!recorded) return { ...base, via: "none", missing: `${legName(r.browser)} not recorded` };
@@ -494,14 +501,14 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       const fallback = !account && chosen && (deps.providerOf?.(s) || oneKey);
       // A route that prefers the browser never reaches the API, so never pays for a read; one
       // whose token lacks a grant (a review still pending) runs as if no token were held.
-      const lacks = lacking(s, r, chosen, parsed.data as never);
+      const { by, lacks } = tokenSiteOf(s, r, chosen, parsed.data as never);
       // Whose token the API leg holds: the chosen account's, else the site's own (`fallback`).
       let tokenAs = chosen;
       const tokenOf = (as: string | null) =>
-        tokenFor(s, as).catch((e) => {
+        tokenFor(by, as).catch((e) => {
           // Which site and account asked, so the refusal is kept where `renew` finds it.
           if (e instanceof TokenRefused)
-            throw new TokenRefused(e.token, e.why, { site: s.site, account: as });
+            throw new TokenRefused(e.token, e.why, { site: by.site, account: as });
           throw e;
         });
       let token: string | null = null;
@@ -648,10 +655,10 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           if (!ok) throw new SiteError(403, `${what}: refused`);
         }
         if (r.api && token !== null) {
-          const kept = keptName(s, tokenAs);
+          const kept = keptName(by, tokenAs);
           // A refused value: no call till a re-make (or a person) changes it.
           const held = kept ? deps.held?.(kept) : null;
-          if (kept && held) throw new TokenRefused(kept, held, { site: s.site, account: tokenAs });
+          if (kept && held) throw new TokenRefused(kept, held, { site: by.site, account: tokenAs });
           // A rerun of a durable call (Restate after a crash or a redeploy mid-call) must not
           // publish twice: the first try may have gone through before its answer was saved.
           const call = currentCall();
@@ -688,8 +695,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           try {
             out = await r.api(parsed.data as never, leg(token));
           } catch (e) {
-            if (kept && tokenRefusal(e) && (await deadBearer(s, r.path, leg(token), kept)))
-              throw new TokenRefused(kept, e.message, { site: s.site, account: tokenAs });
+            if (kept && tokenRefusal(e) && (await deadBearer(by, r.path, leg(token), kept)))
+              throw new TokenRefused(kept, e.message, { site: by.site, account: tokenAs });
             throw e;
           }
           if (kept) deps.worked?.(kept);
