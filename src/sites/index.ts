@@ -34,6 +34,7 @@ export { createRegistryUser, NPM_TOKEN, npm } from "./npm.js";
 export { accessTokens, accountEnv, runConsent } from "./oauth.js";
 export { outlook } from "./outlook.js";
 export { PERPLEXITY_API, perplexity } from "./perplexity.js";
+export { pinterest } from "./pinterest.js";
 export { REDDIT_ORIGIN, reddit, redditPublic } from "./reddit.js";
 export {
   fileSendJournal,
@@ -93,6 +94,7 @@ import { wikidata, wikipedia } from "./open/wiki.js";
 import { yahooFinance } from "./open/yahoo-finance.js";
 import { outlook } from "./outlook.js";
 import { perplexity } from "./perplexity.js";
+import { pinterest } from "./pinterest.js";
 import { reddit, redditPublic } from "./reddit.js";
 import { threads } from "./threads.js";
 import { tiktok } from "./tiktok.js";
@@ -150,6 +152,7 @@ export const SITES: readonly SiteApi[] = [
   perplexity,
   discord,
   fbPublic,
+  pinterest,
   connectors,
 ];
 export * from "./verdict.js";

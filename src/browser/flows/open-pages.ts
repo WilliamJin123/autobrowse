@@ -123,6 +123,7 @@ export const scholarSearch = defineFlow<
 >({
   site: "google-scholar",
   name: "search",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, { q, start = 0, n = 10, from, to, sort = "relevance" }) {
     const p = new URLSearchParams({ q, hl: "en", num: String(Math.min(n, 20)) });
@@ -202,6 +203,7 @@ export const scholarAuthor = defineFlow<
 >({
   site: "google-scholar",
   name: "author",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, { user, n = 100, sort = "cited" }) {
     const p = new URLSearchParams({ user, hl: "en", pagesize: String(Math.min(n, 100)) });
@@ -249,6 +251,7 @@ export const indeedSearch = defineFlow<
 >({
   site: "indeed",
   name: "search",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, { q, l, fromage, sort, start }) {
     const p = new URLSearchParams({ q });
@@ -283,6 +286,7 @@ const INDEED_JOB = `(() => {
 export const indeedJob = defineFlow<{ jk: string }, { found: boolean; job: unknown }>({
   site: "indeed",
   name: "job",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, { jk }) {
     await fp.open(`${INDEED}/viewjob?jk=${encodeURIComponent(jk)}`);
@@ -325,6 +329,7 @@ export const upworkSearch = defineFlow<
 >({
   site: "upwork",
   name: "search",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, { q, page = 1, perPage = 50, sort = "relevance" }) {
     const p = new URLSearchParams({ q, per_page: String(perPage) });
@@ -359,6 +364,7 @@ const UPWORK_JOB = `(() => {
 export const upworkJob = defineFlow<{ id: string }, { found: boolean; job: unknown }>({
   site: "upwork",
   name: "job",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, { id }) {
     await fp.open(`${UPWORK}/jobs/${id.startsWith("~") ? id : `~${id}`}`);

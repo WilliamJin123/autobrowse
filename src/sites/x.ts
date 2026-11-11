@@ -298,9 +298,109 @@ export const x: SiteApi = {
     // Our own posts (not replies); X's free tier allows 17 a day.
     post: 15,
     following: 4,
+    // Reads off the page's own GraphQL (OpenCLI port, 11-10).
+    thread: 60,
+    people: 10,
+    likes: 10,
+    bookmarks: 10,
+    lists: 20,
+    trending: 12,
   },
   pace: { gapMs: 5_000, jitterMs: 10_000 },
   routes: [
+    route({
+      method: "GET",
+      path: "/web/status/{id}/thread",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "A post and its replies as the conversation page shows them, each tweet whole as X's own GraphQL sends it (`tweet_results.result`): `{ items, calls }` (`max`, default 50). Reads only",
+      request: z.object({
+        id: z.string().regex(/^\d{1,25}$/, "a post id"),
+        max: z.coerce.number().int().min(1).max(300).optional(),
+      }),
+      meter: () => ({ thread: 1 }),
+      browser: { flow: "x/thread" },
+      ported: "clis/twitter/thread.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}/people",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "An account's followers (`list=following`: its follows), each user whole (`user_results.result`): `{ items, calls }` (`max`, default 100). Reads only",
+      request: z.object({
+        username: z.string().regex(/^@?\w{1,15}$/, "an X handle"),
+        list: z.enum(["followers", "following"]).default("followers"),
+        max: z.coerce.number().int().min(1).max(1000).optional(),
+      }),
+      meter: () => ({ people: 1 }),
+      browser: { flow: "x/people" },
+      ported: "clis/twitter/followers.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}/likes",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "Posts an account liked (X shows likes to their owner only), each tweet whole as X's own GraphQL sends it (`tweet_results.result`): `{ items, calls }` (`max`, default 50). Reads only",
+      request: z.object({
+        username: z.string().regex(/^@?\w{1,15}$/, "an X handle"),
+        max: z.coerce.number().int().min(1).max(500).optional(),
+      }),
+      meter: () => ({ likes: 1 }),
+      browser: { flow: "x/likes" },
+      ported: "clis/twitter/likes.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/bookmarks",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "Our bookmarks, each tweet whole as X's own GraphQL sends it (`tweet_results.result`): `{ items, calls }` (`max`, default 50). Reads only",
+      request: z.object({ max: z.coerce.number().int().min(1).max(500).optional() }),
+      meter: () => ({ bookmarks: 1 }),
+      browser: { flow: "x/bookmarks" },
+      ported: "clis/twitter/bookmarks.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}/lists",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "An account's lists, its own and those it is on, each list whole: `{ items, calls }` (`max`, default 50). Reads only",
+      request: z.object({
+        username: z.string().regex(/^@?\w{1,15}$/, "an X handle"),
+        max: z.coerce.number().int().min(1).max(300).optional(),
+      }),
+      meter: () => ({ lists: 1 }),
+      browser: { flow: "x/lists" },
+      ported: "clis/twitter/lists.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/lists/{id}/posts",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "A list's latest posts, each tweet whole as X's own GraphQL sends it (`tweet_results.result`): `{ items, calls }` (`max`, default 50). Reads only",
+      request: z.object({
+        id: z.string().regex(/^\d{1,25}$/, "a list id"),
+        max: z.coerce.number().int().min(1).max(500).optional(),
+      }),
+      meter: () => ({ posts: 1 }),
+      browser: { flow: "x/list-posts" },
+      ported: "clis/twitter/list-tweets.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/trending",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "What X shows as trending to the signed-in account, each trend whole: `{ items, calls }` (`max`, default 30). Reads only",
+      request: z.object({ max: z.coerce.number().int().min(1).max(100).optional() }),
+      meter: () => ({ trending: 1 }),
+      browser: { flow: "x/trending" },
+      ported: "clis/twitter/trending.js@9bc5f5c",
+    }),
     route({
       method: "GET",
       path: "/2/users/me",

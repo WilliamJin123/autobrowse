@@ -223,6 +223,7 @@ export const linkedinSearchPeople = defineFlow<
 >({
   site: "linkedin",
   name: "search-people",
+  strategies: ["ui"],
   async run(fp, input) {
     const first = input.page ?? 1;
     const people: Person[] = [];
@@ -467,6 +468,7 @@ async function readCompany(fp: FlowPage, handle: string): Promise<Company | null
 export const linkedinProfile = defineFlow<ProfileInput, Profile>({
   site: "linkedin",
   name: "profile",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/in/${encodeURIComponent(input.vanity)}/`);
     if (!(await fp.has({ css: "main section" }, RENDER_MS)))
@@ -510,6 +512,7 @@ export const linkedinProfile = defineFlow<ProfileInput, Profile>({
 export const linkedinCompany = defineFlow<{ company: string }, Company>({
   site: "linkedin",
   name: "company",
+  strategies: ["ui"],
   async run(fp, input) {
     const company = await readCompany(fp, input.company);
     return company ?? fp.human(`no company page for ${input.company} (${fp.url()})`);
@@ -529,6 +532,7 @@ const showMore: Hints = { role: "button", name: "/show more results/i" };
 export const linkedinCompanyPeople = defineFlow<CompanyPeopleInput, { people: Person[] }>({
   site: "linkedin",
   name: "company-people",
+  strategies: ["ui"],
   async run(fp, input) {
     const u = new URL(`${WEB}/company/${encodeURIComponent(input.company)}/people/`);
     if (input.keywords) u.searchParams.set("keywords", input.keywords);
@@ -649,6 +653,7 @@ export const linkedinCompanyJobs = defineFlow<CompanyJobsInput, { companyId: str
   {
     site: "linkedin",
     name: "company-jobs",
+    strategies: ["cookie"],
     async run(fp, input) {
       const max = input.max ?? 50;
       const handle = /\/company\/([^/?#]+)/.exec(input.company)?.[1] ?? input.company;
@@ -718,6 +723,7 @@ export const linkedinConnect = defineFlow<
 >({
   site: "linkedin",
   name: "connect",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/preload/custom-invite/?vanityName=${encodeURIComponent(input.vanity)}`);
     if (!(await fp.has(sendBare, RENDER_MS)) && !(await fp.has(addNote, 1_000))) {
@@ -787,6 +793,7 @@ const sendMessage: Hints = { role: "button", name: "/^send$/i" };
 export const linkedinMessage = defineFlow<MessageInput, { sent: true }>({
   site: "linkedin",
   name: "message",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/in/${encodeURIComponent(input.vanity)}/`);
     if (!(await fp.has({ css: "main section" }, RENDER_MS)))
@@ -837,6 +844,7 @@ export const linkedinRelationship = defineFlow<
 >({
   site: "linkedin",
   name: "relationship",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/in/${encodeURIComponent(input.vanity)}/`);
     if (!(await fp.has({ css: "main section" }, RENDER_MS)))
@@ -893,6 +901,7 @@ export const linkedinWithdraw = defineFlow<
 >({
   site: "linkedin",
   name: "withdraw",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/in/${encodeURIComponent(input.vanity)}/`);
     if (!(await fp.has({ css: "main section" }, RENDER_MS)))
@@ -979,6 +988,7 @@ const MORE_TRIES = 12;
 export const linkedinConnections = defineFlow<ConnectionsInput, { connections: Connection[] }>({
   site: "linkedin",
   name: "connections",
+  strategies: ["ui"],
   async run(fp, input) {
     const max = input.max ?? 40;
     await go(fp, `${WEB}/mynetwork/invite-connect/connections/`);
@@ -1037,6 +1047,7 @@ export const linkedinInbox = defineFlow<
 >({
   site: "linkedin",
   name: "inbox",
+  strategies: ["ui"],
   async run(fp, input) {
     const max = input.max ?? 20;
     await go(fp, `${WEB}/messaging/${input.unread ? "?filter=unread" : ""}`);

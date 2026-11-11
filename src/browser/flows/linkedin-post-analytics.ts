@@ -213,6 +213,7 @@ export interface PostAnalyticsInput {
 export const linkedinPostAnalytics = defineFlow<PostAnalyticsInput, PostAnalytics>({
   site: "linkedin",
   name: "post-analytics",
+  strategies: ["ui"],
   async run(fp, { urn }) {
     if (!POST_URN.test(urn)) return fp.human(`${urn} is not a post urn`);
     const done = (r: { stats: PostStats; text: string }): PostAnalytics => ({

@@ -218,6 +218,7 @@ const isEnabled = (fp: FlowPage) =>
 export const tiktokCreatePost = defineFlow<TikTokPostInput, TikTokPost>({
   site: "tiktok",
   name: "create-post",
+  strategies: ["ui"],
   async run(fp, input) {
     const audience = TIKTOK_AUDIENCE[input.privacy ?? "everyone"];
     const before = await grid(fp);

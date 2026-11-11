@@ -52,6 +52,7 @@ const ALLOW = { role: "checkbox", name: "Allow npm publish" } as const;
 export const npmTrustedPublisher = defineFlow<TrustedPublisherInput, TrustedPublisherResult>({
   site: "npm",
   name: "trusted-publisher",
+  strategies: ["ui"],
   async run(fp, input) {
     const trusted = `${input.owner}/${input.repo}:${input.workflow}`;
     // A scoped name keeps its `@` and `/`: npm's site does not route them encoded.

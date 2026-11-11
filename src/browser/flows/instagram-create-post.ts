@@ -33,6 +33,7 @@ const caption: Hints = { role: "textbox", name: "/add a caption/i" };
 export const instagramCreatePost = defineFlow<CreatePostInput, { url: string | null }>({
   site: "instagram",
   name: "create-post",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(HOME);
     if (input.account) {

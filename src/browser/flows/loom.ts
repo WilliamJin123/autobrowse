@@ -54,6 +54,7 @@ export interface Video {
 export const loomUpload = defineFlow<UploadInput, Video>({
   site: "loom",
   name: "upload",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(`${LOOM}/home`);
     const upload: Hints = { role: "button", name: "Upload a video" };
@@ -94,6 +95,7 @@ export interface RenameInput {
 export const loomRename = defineFlow<RenameInput, Video>({
   site: "loom",
   name: "rename",
+  strategies: ["ui"],
   async run(fp, input) {
     return {
       id: input.id,
@@ -106,6 +108,7 @@ export const loomRename = defineFlow<RenameInput, Video>({
 export const loomDelete = defineFlow<{ id: string }, { id: string; deleted: true }>({
   site: "loom",
   name: "delete",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(shareUrl(input.id));
     const more: Hints = { css: "[data-testid=toggleActions]" };

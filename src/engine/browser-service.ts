@@ -20,6 +20,7 @@ import {
 } from "../browser/flows/connector-keys.js";
 import { discordBotToken, discordInvite } from "../browser/flows/discord.js";
 import { facebookOauthConsent } from "../browser/flows/facebook-oauth-consent.js";
+import { fbMarketplace } from "../browser/flows/fb-marketplace.js";
 import { fingerprint } from "../browser/flows/fingerprint.js";
 import { googleDkimGenerate, googleDkimStart } from "../browser/flows/google-dkim.js";
 import { googlePlace } from "../browser/flows/google-place.js";
@@ -39,6 +40,12 @@ import {
 import { instagramPostComments } from "../browser/flows/instagram-comments.js";
 import { instagramCreatePost } from "../browser/flows/instagram-create-post.js";
 import { instagramOauthConsent } from "../browser/flows/instagram-oauth-consent.js";
+import {
+  instagramExplore,
+  instagramPeople,
+  instagramProfile,
+  instagramSaved,
+} from "../browser/flows/instagram-people.js";
 import { instagramReels } from "../browser/flows/instagram-reels.js";
 import { learnQuizAttempt, learnQuizReview, learnQuizzes } from "../browser/flows/learn.js";
 import { linkedinFollow, linkedinLike } from "../browser/flows/linkedin-act.js";
@@ -91,6 +98,7 @@ import {
 import { outlookOauthConsent } from "../browser/flows/outlook-oauth-consent.js";
 import { dblpApi, openreviewApi } from "../browser/flows/page-api.js";
 import { perplexityAsk } from "../browser/flows/perplexity-ask.js";
+import { pinterestBoard, pinterestSearch, pinterestUser } from "../browser/flows/pinterest.js";
 import {
   instagramProfileName,
   redditProfileName,
@@ -124,13 +132,29 @@ import { tiktokPostComments } from "../browser/flows/tiktok-comments.js";
 import { tiktokCreatePost } from "../browser/flows/tiktok-create-post.js";
 import { tiktokFollowing } from "../browser/flows/tiktok-following.js";
 import { tiktokOauthConsent } from "../browser/flows/tiktok-oauth-consent.js";
+import {
+  tiktokExplore,
+  tiktokNotifications,
+  tiktokUser,
+  tiktokVideos,
+} from "../browser/flows/tiktok-reads.js";
 import { tiktokVideoAnalytics } from "../browser/flows/tiktok-video-analytics.js";
 import { xFollow, xLike, xReply } from "../browser/flows/x-act.js";
+import {
+  xBookmarks,
+  xLikes,
+  xListPosts,
+  xLists,
+  xPeople,
+  xThread,
+  xTrending,
+} from "../browser/flows/x-graph.js";
 import { xOauthConsent } from "../browser/flows/x-oauth-consent.js";
 import { xFollowing, xHome, xPost, xPosts, xProfile, xSearch } from "../browser/flows/x-read.js";
 import { youtubeCommunityPost } from "../browser/flows/youtube-community-post.js";
 import { youtubeStudioAnalytics } from "../browser/flows/youtube-studio-analytics.js";
 import { youtubeThumbnail } from "../browser/flows/youtube-thumbnail.js";
+import { youtubeTranscript } from "../browser/flows/youtube-transcript.js";
 import { NeedsHuman } from "../browser/session.js";
 import { runLeg } from "./leg.js";
 
@@ -190,6 +214,10 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     instagramFeed,
     instagramFollowing,
     instagramReels,
+    instagramProfile,
+    instagramPeople,
+    instagramExplore,
+    instagramSaved,
     instagramLike,
     instagramComment,
     instagramPost,
@@ -238,6 +266,10 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     tiktokPostComments,
     tiktokVideoAnalytics,
     tiktokFollowing,
+    tiktokUser,
+    tiktokVideos,
+    tiktokExplore,
+    tiktokNotifications,
     tiktokSearch,
     tiktokComment,
     tiktokLike,
@@ -251,6 +283,13 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     xOauthConsent,
     xPost,
     xFollowing,
+    xThread,
+    xPeople,
+    xLikes,
+    xBookmarks,
+    xLists,
+    xListPosts,
+    xTrending,
     xHome,
     xPosts,
     xProfile,
@@ -273,6 +312,11 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     youtubeCommunityPost,
     youtubeThumbnail,
     youtubeStudioAnalytics,
+    youtubeTranscript,
+    pinterestSearch,
+    pinterestUser,
+    pinterestBoard,
+    fbMarketplace,
     instagramProfileName,
     xProfileName,
     tiktokProfileName,

@@ -42,7 +42,9 @@ Open sites: a host's own public API, no key, whole records. Each is a site:
 - News and markets: `bbc`, `bloomberg` (headlines), `reuters` (headlines by Google News), `yahoo-finance` (prices, tickers).
 - Launches and jobs: `producthunt` (newest launches), `indeed`, `upwork` (search, one job).
 - Papers by citation: `google-scholar` (search, author pages).
-- `indeed`, `upwork` and `google-scholar` read in a browser: paced, capped, slower.
+- Images and buying: `pinterest` (pin search, a user, a board's pins), `fb-public GET /marketplace` (first 15 listings near a city).
+- Video words: `youtube GET /web/videos/<id>/transcript` (any public video).
+- `indeed`, `upwork`, `google-scholar`, `pinterest` and the Marketplace read in a browser: paced, capped, slower.
 
 ```sh
 autobrowse site call hackernews GET "/search?q=playwright&sort=date"

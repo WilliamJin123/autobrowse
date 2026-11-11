@@ -105,6 +105,7 @@ export const threadsSearch = defineFlow<
 >({
   site: "instagram",
   name: "threads-search",
+  strategies: ["ui"],
   async run(fp, { q, max, ...facets }) {
     const cap = Math.min(Math.max(1, max ?? 30), MAX_THREADS_SEARCH);
     await openThreads(fp, threadsSearchUrl(q, facets));
@@ -157,6 +158,7 @@ export const threadsLike = defineFlow<
 >({
   site: "instagram",
   name: "threads-like",
+  strategies: ["ui"],
   async run(fp, { username, code }) {
     await openThreads(fp, postUrl(username, code));
     const state = await shown(fp, [liked, like]);
@@ -181,6 +183,7 @@ export const threadsReply = defineFlow<
 >({
   site: "instagram",
   name: "threads-reply",
+  strategies: ["ui"],
   async run(fp, { username, code, text }) {
     await openThreads(fp, postUrl(username, code));
     const state = await shown(fp, [replyButton]);
@@ -214,6 +217,7 @@ export const threadsFollow = defineFlow<
 >({
   site: "instagram",
   name: "threads-follow",
+  strategies: ["ui"],
   async run(fp, { username }) {
     const handle = username.replace(/^@/, "");
     await openThreads(fp, `${WEB}/@${encodeURIComponent(handle)}`);

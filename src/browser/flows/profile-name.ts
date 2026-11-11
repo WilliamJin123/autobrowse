@@ -53,6 +53,7 @@ function lockLine(text: string): string | null {
 export const instagramProfileName = defineFlow<ProfileNameInput, ProfileNameResult>({
   site: "instagram",
   name: "profile-name",
+  strategies: ["ui"],
   async run(fp, { name }) {
     await fp.open("https://accountscenter.instagram.com/profiles/");
     await fp.act(
@@ -88,6 +89,7 @@ export const instagramProfileName = defineFlow<ProfileNameInput, ProfileNameResu
 export const xProfileName = defineFlow<ProfileNameInput, ProfileNameResult>({
   site: "x",
   name: "profile-name",
+  strategies: ["ui"],
   async run(fp, { name }) {
     await fp.open("https://x.com/settings/profile");
     const field = "input[name=displayName]";
@@ -112,6 +114,7 @@ export const xProfileName = defineFlow<ProfileNameInput, ProfileNameResult>({
 export const tiktokProfileName = defineFlow<ProfileNameInput, ProfileNameResult>({
   site: "tiktok",
   name: "profile-name",
+  strategies: ["ui"],
   async run(fp, { name }) {
     await fp.open("https://www.tiktok.com/profile");
     await fp.act(
@@ -153,6 +156,7 @@ export const tiktokProfileName = defineFlow<ProfileNameInput, ProfileNameResult>
 export const redditProfileName = defineFlow<ProfileNameInput, ProfileNameResult>({
   site: "reddit",
   name: "profile-name",
+  strategies: ["ui"],
   async run(fp, { name }) {
     await fp.open("https://www.reddit.com/settings/profile");
     const open: Hints = { role: "button", name: "Open modal to change setting: Display name" };

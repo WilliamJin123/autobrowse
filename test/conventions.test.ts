@@ -14,6 +14,15 @@ describe("conventions (U4)", () => {
     expect(flowIssues(BROWSER_FLOWS)).toEqual([]);
   });
 
+  it("a flow with no strategies, or listed off its name, is named", () => {
+    const f = { site: "t", name: "Bad_Name", run: async () => null } as never;
+    expect(flowIssues({ "t/other": f })).toEqual([
+      "t/other: listed under a name not its site/name",
+      "t/other: name is not kebab-case",
+      "t/other: no strategies",
+    ]);
+  });
+
   it("names each broken rule", () => {
     const bad: SiteApi = {
       site: "t",

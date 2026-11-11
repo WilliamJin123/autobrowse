@@ -11,6 +11,7 @@ const PAGE = "https://admin.google.com/ac/companyprofile/personalization";
 export const googleWorkspaceLogo = defineFlow<{ file: string }, string>({
   site: "google-admin",
   name: "workspace-logo",
+  strategies: ["ui"],
   async run(fp, { file }) {
     await fp.open(PAGE);
     await fp.act(

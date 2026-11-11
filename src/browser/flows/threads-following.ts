@@ -29,6 +29,7 @@ export const threadsFollowing = defineFlow<
 >({
   site: "instagram",
   name: "threads-following",
+  strategies: ["ui"],
   async run(fp, { max }) {
     await fp.open(`${WEB}/`);
     let me: string | null = null;

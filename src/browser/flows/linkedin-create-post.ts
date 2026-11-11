@@ -47,6 +47,7 @@ const AUDIENCE: Record<string, RegExp> = {
 export const linkedinCreatePost = defineFlow<CreatePostInput, { url: string | null }>({
   site: "linkedin",
   name: "create-post",
+  strategies: ["ui"],
   async run(fp, input) {
     const author = input.page ? await pageName(fp, input.page) : null;
     await fp.open(COMPOSE);

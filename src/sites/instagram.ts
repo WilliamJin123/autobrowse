@@ -86,6 +86,18 @@ const webSearch = z.object({
 const feed = z.object({ max: z.coerce.number().int().min(1).max(50).default(20) });
 
 const following = z.object({ max: z.coerce.number().int().min(1).max(1000).optional() });
+const people = z.object({
+  username,
+  list: z.enum(["followers", "following"]).default("followers"),
+  /** Most users read, default 200. */
+  max: z.coerce.number().int().min(1).max(1000).optional(),
+});
+const grid = z.object({ max: z.coerce.number().int().min(1).max(500).optional() });
+const saved = z.object({
+  max: z.coerce.number().int().min(1).max(1000).optional(),
+  /** A collection's name; omitted: every saved post. */
+  collection: z.string().trim().min(1).max(100).optional(),
+});
 const reels = z.object({
   username,
   /** Most posts read, newest first (reels and others). */
@@ -168,6 +180,11 @@ export const instagram: SiteApi = {
     // One account's whole reel list: a feed page every 2–5 s.
     reels: 20,
     feed: 12,
+    // Reads of other accounts and our own lists (OpenCLI port, 11-10).
+    profile: 40,
+    people: 15,
+    explore: 10,
+    saved: 10,
     // Threads through the same profile: its own buckets, under wren's daily caps.
     threads_search: 10,
     threads_like: 30,
@@ -518,6 +535,53 @@ export const instagram: SiteApi = {
       meter: () => ({ reels: 1 }),
       browser: { flow: "instagram/reels" },
       ported: "clis/instagram/user.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}",
+      standing: {
+        final:
+          "the Graph API reads another account only when it is business or creator (`meta GET /instagram/{username}`, try that first)",
+      },
+      summary:
+        "Any account's profile, read in the signed-in profile: the profile page's own GraphQL user whole (counts, bio, links, `pk`) by intercept, or the header counts (ui). `{ username, found, via, fell, user, pk }`. Reads only",
+      request: z.object({ username }),
+      meter: () => ({ profile: 1 }),
+      browser: { flow: "instagram/profile" },
+      ported: "clis/instagram/profile.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}/people",
+      standing: { final: "the Graph API lists no followers or follows of any account" },
+      summary:
+        "Any account's followers (`list=following`: its follows), each user whole as the page's friendships call sends it: `{ username, list, found, pk, users, pages, more }` (`max`, default 200). Instagram shows a big account's followers only in part. Reads only",
+      request: people,
+      meter: () => ({ people: 1 }),
+      browser: { flow: "instagram/people" },
+      ported: "clis/instagram/followers.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/explore",
+      standing: { final: "the Graph API has no Explore" },
+      summary:
+        "The signed-in Explore grid, each media whole (`discover/web/explore_grid`): `{ media, pages }` (`max`, default 50). Reads only",
+      request: grid,
+      meter: () => ({ explore: 1 }),
+      browser: { flow: "instagram/explore" },
+      ported: "clis/instagram/explore.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/saved",
+      standing: { final: "the Graph API has no saved posts" },
+      summary:
+        "Our saved posts, all or one `collection` by name, each media whole: `{ collection, found, media, pages }` (`max`, default 100). Reads only",
+      request: saved,
+      meter: () => ({ saved: 1 }),
+      browser: { flow: "instagram/saved" },
+      ported: "clis/instagram/saved.js@9bc5f5c",
     }),
     route({
       method: "GET",

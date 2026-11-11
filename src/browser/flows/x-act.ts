@@ -49,6 +49,7 @@ export interface FollowInput {
 export const xFollow = defineFlow<FollowInput, unknown>({
   site: "x",
   name: "follow",
+  strategies: ["ui"],
   async run(fp, { username, undo }) {
     await openX(fp, `${WEB}/${username}`);
     const on = followingButton(username);
@@ -83,6 +84,7 @@ export interface LikeInput {
 export const xLike = defineFlow<LikeInput, unknown>({
   site: "x",
   name: "like",
+  strategies: ["ui"],
   async run(fp, { id, undo }) {
     await openX(fp, `${WEB}/i/status/${id}`);
     const on = unlikeButton(id);
@@ -172,6 +174,7 @@ async function replyReady(fp: FlowPage, id: string): Promise<ReturnType<typeof n
 export const xReply = defineFlow<ReplyInput, unknown>({
   site: "x",
   name: "reply",
+  strategies: ["ui"],
   async prepare(fp, { id }) {
     await replyReady(fp, id);
   },

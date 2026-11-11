@@ -37,6 +37,7 @@ export const linkedinLike = defineFlow<
 >({
   site: "linkedin",
   name: "like",
+  strategies: ["ui"],
   async run(fp, { urn, undo }) {
     await go(fp, `${WEB}/feed/update/${urn}/`);
     const state = await firstShown(fp, [reacted, unreacted], MISSING);
@@ -79,6 +80,7 @@ export const linkedinFollow = defineFlow<
 >({
   site: "linkedin",
   name: "follow",
+  strategies: ["ui"],
   async run(fp, { vanity, company, undo }) {
     const who = vanity
       ? `/in/${encodeURIComponent(vanity)}/`

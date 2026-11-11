@@ -193,6 +193,7 @@ export function ipOf(raw: unknown): IpLook | null {
 export const fingerprint = defineFlow<{ url?: string }, Fingerprint>({
   site: "fingerprint",
   name: "check",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(input.url ?? IP_URL);
     const ip = ipOf(

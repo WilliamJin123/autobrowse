@@ -46,6 +46,7 @@ export interface AudienceInput {
 export const linkedinAudience = defineFlow<AudienceInput, Audience>({
   site: "linkedin",
   name: "audience",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/in/me/`);
     if (!(await fp.has({ css: "main section" }, RENDER_MS)))

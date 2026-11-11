@@ -79,6 +79,7 @@ export const tiktokSearch = defineFlow<
 >({
   site: "tiktok",
   name: "search",
+  strategies: ["intercept"],
   async run(fp, { q, max }) {
     const cap = Math.min(Math.max(1, max ?? 30), MAX_SEARCH);
     const bodies: unknown[] = [];
@@ -152,6 +153,7 @@ export const tiktokLike = defineFlow<
 >({
   site: "tiktok",
   name: "like",
+  strategies: ["ui"],
   async run(fp, { videoId, username }) {
     const opened = await openVideo(fp, videoId, username);
     if (!opened.opened) return { found: false, status: 404, reason: opened.reason };
@@ -177,6 +179,7 @@ export const tiktokComment = defineFlow<
 >({
   site: "tiktok",
   name: "comment",
+  strategies: ["ui"],
   async run(fp, { videoId, username, text }) {
     let answer: { code: number | null; id: string | null } | null = null;
     const onResponse = (r: Response) => {
@@ -233,6 +236,7 @@ export const tiktokFollow = defineFlow<
 >({
   site: "tiktok",
   name: "follow",
+  strategies: ["ui"],
   async run(fp, { username }) {
     const handle = username.replace(/^@/, "");
     const profile = `${WEB}/@${encodeURIComponent(handle)}`;

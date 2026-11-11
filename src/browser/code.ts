@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import vm from "node:vm";
 import type { FlowPage, Op, ReadTab } from "./flow.js";
 import type { Hints } from "./locate.js";
+import { type PageFetch, pageJson } from "./page-json.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "./records.js";
 import type { Scrollable } from "./scroll-collect.js";
 import { NeedsHuman } from "./session.js";
@@ -36,7 +37,7 @@ export const memoryStore = (): CodeStore => {
 export interface CodeCall {
   /** Its place in this run's calls, from 0. */
   i: number;
-  call: "open" | "act" | "read" | "has" | "records" | "wait" | "each";
+  call: "open" | "act" | "read" | "has" | "records" | "json" | "wait" | "each";
   /** Short: a URL, hints, an op kind. */
   args: unknown;
   /** Earlier calls with the same key in this run. */
@@ -273,7 +274,7 @@ export async function runCode(
     };
     /** A call whose answer is saved: back from the store, else live. */
     const keyed = async <T>(
-      call: "read" | "has" | "records",
+      call: "read" | "has" | "records" | "json",
       args: unknown,
       run: (page: Surface) => Promise<T>,
       shown: (v: T) => unknown,
@@ -408,6 +409,27 @@ export async function runCode(
         const row = begin("wait", ms);
         finish(row, Date.now());
       },
+      // The site's own JSON from inside the page (session cookies), classed as a flow's
+      // `cookie` rung: 429, sign-in and block answers stop the run. Saved like a read.
+      json: (url: string, opts?: Pick<PageFetch, "method" | "headers" | "body">) => {
+        if (typeof url !== "string" || !url) throw new Error("fp.json: url must be a string");
+        const req: PageFetch = {
+          ...(opts?.method ? { method: opts.method } : {}),
+          ...(opts?.headers ? { headers: { ...opts.headers } } : {}),
+          ...(typeof opts?.body === "string" ? { body: opts.body } : {}),
+        };
+        return keyed(
+          "json",
+          { url, ...req },
+          (p) => pageJson(p, url, req),
+          (j) =>
+            Array.isArray(j)
+              ? { items: j.length }
+              : j && typeof j === "object"
+                ? { keys: Object.keys(j).slice(0, 12) }
+                : j,
+        );
+      },
       records: (spec: RecordsSpec): Promise<Row[]> => {
         const op = recordsOp(spec);
         return keyed(
@@ -499,6 +521,7 @@ export async function runCode(
     act: main.api.act,
     read: main.api.read,
     has: main.api.has,
+    json: main.api.json,
     wait: main.api.wait,
     each,
     human: (reason: string) => fp.human(reason),

@@ -135,6 +135,23 @@ export const fbPublic: SiteApi = {
         output: (o) => ({ post: rowsOf(o, "post")[0] ?? null, comments: rowsOf(o, "comments") }),
       },
     }),
+    route({
+      method: "GET",
+      path: "/marketplace",
+      standing: { final: "Meta has no Marketplace API for buyers" },
+      summary:
+        "Marketplace listings for `q` near `city` (a Marketplace city slug such as `nyc`, `la`, or a place id; default nyc): the first 15, each whole (title, price, location, photo, seller, delivery types). Signed out Facebook shows no more. A browser leg: call it on the desk",
+      request: z.object({
+        q: z.string().trim().min(2).max(100),
+        city: z
+          .string()
+          .regex(/^[\w-]{2,60}$/)
+          .default("nyc"),
+      }),
+      meter: () => ({ reads: 1 }),
+      browser: { flow: "fb-public/marketplace" },
+      ported: "clis/facebook/marketplace-listings.js@9bc5f5c",
+    }),
   ],
   setup: [],
 };

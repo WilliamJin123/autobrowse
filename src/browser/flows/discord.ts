@@ -40,6 +40,7 @@ export const discordBotToken = defineFlow<DiscordBotInput, { appId: string; kept
   secret: true,
   site: "discord",
   name: "bot-token",
+  strategies: ["ui"],
   keeps: () => [DISCORD_APP_ID, DISCORD_BOT_TOKEN],
   async run(fp, input) {
     await fp.open(PORTAL);
@@ -116,6 +117,7 @@ export interface DiscordInviteInput {
 export const discordInvite = defineFlow<DiscordInviteInput, { added: true }>({
   site: "discord",
   name: "invite",
+  strategies: ["ui"],
   async run(fp, input) {
     const byId = input.guild && /^\d+$/.test(input.guild) ? input.guild : undefined;
     await fp.open(inviteUrl(input.appId, byId));

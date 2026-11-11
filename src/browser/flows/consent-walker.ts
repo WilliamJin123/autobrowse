@@ -43,6 +43,7 @@ export function consentFlow(w: ConsentWalk): BrowserFlow<OauthConsentInput, { la
   return defineFlow<OauthConsentInput, { landed: string }>({
     site: w.site,
     name: w.name ?? "oauth-consent",
+    strategies: ["ui"],
     async run(fp, input) {
       const redirect = redirectOf(input.url);
       const landed = (u: string) => u.startsWith(redirect);

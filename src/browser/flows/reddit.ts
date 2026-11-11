@@ -450,6 +450,7 @@ export interface ReadInput {
 export const redditRead = defineFlow<ReadInput, unknown>({
   site: "reddit",
   name: "read",
+  strategies: ["cookie"],
   async run(fp, { path, query = {}, signedOut = false }) {
     const read = READS.find((r) => r.path.test(path));
     if (!read) throw new Error(`reddit read: ${path} is not a read this flow serves`);
@@ -635,6 +636,7 @@ export const redditSubmit = defineFlow<
 >({
   site: "reddit",
   name: "submit",
+  strategies: ["ui"],
   async run(fp, i) {
     if (i.flair_id && !i.flair_text)
       return refused("FLAIR_UNSUPPORTED", "the browser leg picks a flair by its text", "flair");
@@ -724,6 +726,7 @@ export interface CommentInput {
 export const redditComment = defineFlow<CommentInput, JsonAnswer<{ things: unknown[] }>>({
   site: "reddit",
   name: "comment",
+  strategies: ["ui"],
   async run(fp, { thing_id, text }) {
     if (!/^t[13]_[a-z0-9]+$/.test(thing_id))
       return refused("BAD_ID", `${thing_id} is not a t1_ or t3_ id`, "thing_id");
@@ -817,6 +820,7 @@ export interface MessageInput {
 export const redditMessage = defineFlow<MessageInput, JsonAnswer<{ delivered: true }>>({
   site: "reddit",
   name: "message",
+  strategies: ["ui"],
   async run(fp, { to, subject, text }) {
     const name = to.replace(/^\/?u\//i, "");
     if (!/^[A-Za-z0-9_-]{3,20}$/.test(name))
@@ -895,6 +899,7 @@ export const redditSubscribe = defineFlow<
 >({
   site: "reddit",
   name: "subscribe",
+  strategies: ["ui"],
   async run(fp, { sr_name, action, dry = false }) {
     const sr = sr_name.replace(/^\/?r\//i, "");
     if (!/^[A-Za-z0-9_]{2,21}$/.test(sr))

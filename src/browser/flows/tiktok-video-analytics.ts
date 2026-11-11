@@ -178,6 +178,7 @@ export function tiktokAnalyticsOf(
 export const tiktokVideoAnalytics = defineFlow<{ videoId: string }, TikTokVideoAnalytics>({
   site: "tiktok",
   name: "video-analytics",
+  strategies: ["intercept"],
   async run(fp, { videoId }) {
     if (!/^\d+$/.test(videoId)) return fp.human(`${videoId} is not a TikTok video id`);
     const bodies: unknown[] = [];

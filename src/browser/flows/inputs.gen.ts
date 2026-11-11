@@ -12,6 +12,7 @@ import {
 } from "./connector-keys.js";
 import { discordBotToken, discordInvite } from "./discord.js";
 import { facebookOauthConsent } from "./facebook-oauth-consent.js";
+import { fbMarketplace } from "./fb-marketplace.js";
 import { fingerprint } from "./fingerprint.js";
 import { googleDkimGenerate, googleDkimStart } from "./google-dkim.js";
 import { googlePlace } from "./google-place.js";
@@ -31,6 +32,12 @@ import {
 import { instagramPostComments } from "./instagram-comments.js";
 import { instagramCreatePost } from "./instagram-create-post.js";
 import { instagramOauthConsent } from "./instagram-oauth-consent.js";
+import {
+  instagramExplore,
+  instagramPeople,
+  instagramProfile,
+  instagramSaved,
+} from "./instagram-people.js";
 import { instagramReels } from "./instagram-reels.js";
 import { learnQuizAttempt, learnQuizReview, learnQuizzes } from "./learn.js";
 import { linkedinFollow, linkedinLike } from "./linkedin-act.js";
@@ -79,6 +86,7 @@ import {
 import { outlookOauthConsent } from "./outlook-oauth-consent.js";
 import { dblpApi, openreviewApi } from "./page-api.js";
 import { perplexityAsk } from "./perplexity-ask.js";
+import { pinterestBoard, pinterestSearch, pinterestUser } from "./pinterest.js";
 import {
   instagramProfileName,
   redditProfileName,
@@ -102,14 +110,17 @@ import { tiktokPostComments } from "./tiktok-comments.js";
 import { tiktokCreatePost } from "./tiktok-create-post.js";
 import { tiktokFollowing } from "./tiktok-following.js";
 import { tiktokOauthConsent } from "./tiktok-oauth-consent.js";
+import { tiktokExplore, tiktokNotifications, tiktokUser, tiktokVideos } from "./tiktok-reads.js";
 import { tiktokVideoAnalytics } from "./tiktok-video-analytics.js";
 import { wranglerLogin } from "./wrangler-login.js";
 import { xFollow, xLike, xReply } from "./x-act.js";
+import { xBookmarks, xLikes, xListPosts, xLists, xPeople, xThread, xTrending } from "./x-graph.js";
 import { xOauthConsent } from "./x-oauth-consent.js";
 import { xFollowing, xHome, xPost, xPosts, xProfile, xSearch } from "./x-read.js";
 import { youtubeCommunityPost } from "./youtube-community-post.js";
 import { youtubeStudioAnalytics } from "./youtube-studio-analytics.js";
 import { youtubeThumbnail } from "./youtube-thumbnail.js";
+import { youtubeTranscript } from "./youtube-transcript.js";
 
 /** `data`: the input is plain JSON, so an agent can send it; false = code passes it (a sink, a function). */
 export interface FlowInput {
@@ -162,6 +173,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(fbMarketplace, z.object({ q: z.string(), city: z.string().optional() }), true),
   entry(fingerprint, z.object({ url: z.string().optional() }), true),
   entry(geminiAsk, z.object({ q: z.string() }), true),
   entry(googleDkimGenerate, z.object({ domain: z.string() }), true),
@@ -227,6 +239,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(
+    instagramExplore,
+    z.object({ max: z.number().optional() }),
+    true,
+    "Explore's grid: the page's own `discover/web/explore_grid` call, paged by `max_id`.",
+  ),
+  entry(
     instagramFeed,
     z.object({ max: z.number().optional() }),
     true,
@@ -244,14 +262,30 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(
+    instagramPeople,
+    z.object({
+      username: z.string(),
+      list: z.union([z.literal("following"), z.literal("followers")]).optional(),
+      max: z.number().optional(),
+    }),
+    true,
+  ),
   entry(instagramPost, z.object({ shortcode: z.string() }), true),
   entry(
     instagramPostComments,
     z.object({ max: z.number().optional(), shortcode: z.string() }),
     true,
   ),
+  entry(instagramProfile, z.object({ username: z.string() }), true),
   entry(instagramProfileName, z.object({ name: z.string() }), true),
   entry(instagramReels, z.object({ username: z.string(), max: z.number().optional() }), true),
+  entry(
+    instagramSaved,
+    z.object({ max: z.number().optional(), collection: z.string().optional() }),
+    true,
+    "Our own saved posts (all, or one collection by name): `feed/saved/posts` or `feed/collection/<id>/posts`.",
+  ),
   entry(
     instagramSearch,
     z.object({ q: z.string(), max: z.number().optional() }),
@@ -496,6 +530,24 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(perplexityAsk, z.object({ q: z.string() }), true),
   entry(
+    pinterestBoard,
+    z.object({ username: z.string(), board: z.string(), max: z.number().optional() }),
+    true,
+    "A board's pins (`/<user>/<board>/`): the page's first feed, then our own feed calls.",
+  ),
+  entry(
+    pinterestSearch,
+    z.object({ q: z.string(), max: z.number().optional() }),
+    true,
+    "Pins for a query (`BaseSearchResource`), paged by bookmark.",
+  ),
+  entry(
+    pinterestUser,
+    z.object({ username: z.string() }),
+    true,
+    "A profile: the user, its boards and first pins, off the profile page's own data.",
+  ),
+  entry(
     proofShot,
     z.object({ url: z.string(), ref: z.string().optional(), text: z.string().optional() }),
     true,
@@ -670,9 +722,16 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(tiktokExplore, z.object({ max: z.number().optional() }), true),
   entry(tiktokFollow, z.object({ username: z.string() }), true),
   entry(tiktokFollowing, z.object({ max: z.number().optional() }), true),
   entry(tiktokLike, z.object({ videoId: z.string(), username: z.string().optional() }), true),
+  entry(
+    tiktokNotifications,
+    z.object({ max: z.number().optional() }),
+    true,
+    "Our notifications as the inbox's own `notice/multi` calls send them, whole, newest first.",
+  ),
   entry(
     tiktokOauthConsent,
     z.object({
@@ -689,7 +748,9 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(tiktokProfileName, z.object({ name: z.string() }), true),
   entry(tiktokSearch, z.object({ q: z.string(), max: z.number().optional() }), true),
+  entry(tiktokUser, z.object({ username: z.string() }), true),
   entry(tiktokVideoAnalytics, z.object({ videoId: z.string() }), true),
+  entry(tiktokVideos, z.object({ username: z.string(), max: z.number().optional() }), true),
   entry(upworkJob, z.object({ id: z.string() }), true),
   entry(
     upworkSearch,
@@ -702,6 +763,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(wranglerLogin, z.object({ url: z.string() }), true),
+  entry(xBookmarks, z.object({ max: z.number().optional() }), true, "Our bookmarks (`Bookmarks`)."),
   entry(xFollow, z.object({ username: z.string(), undo: z.boolean().optional() }), true),
   entry(
     xFollowing,
@@ -722,6 +784,24 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(xLike, z.object({ id: z.string(), undo: z.boolean().optional() }), true),
   entry(
+    xLikes,
+    z.object({ username: z.string(), max: z.number().optional() }),
+    true,
+    "Posts an account liked; X shows likes to their owner only (`Likes`).",
+  ),
+  entry(
+    xListPosts,
+    z.object({ id: z.string(), max: z.number().optional() }),
+    true,
+    "A list's latest posts (`ListLatestTweetsTimeline`).",
+  ),
+  entry(
+    xLists,
+    z.object({ username: z.string(), max: z.number().optional() }),
+    true,
+    "An account's lists: its own and those it is on (`CombinedLists`).",
+  ),
+  entry(
     xOauthConsent,
     z.object({
       url: z.string(),
@@ -729,6 +809,16 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       passThrough: z.boolean().optional(),
     }),
     true,
+  ),
+  entry(
+    xPeople,
+    z.object({
+      username: z.string(),
+      list: z.union([z.literal("following"), z.literal("followers")]).optional(),
+      max: z.number().optional(),
+    }),
+    true,
+    "An account's followers or follows (`Followers`, `Following`).",
   ),
   entry(xPost, z.object({ id: z.string() }), true),
   entry(
@@ -776,6 +866,18 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(
+    xThread,
+    z.object({ id: z.string(), max: z.number().optional() }),
+    true,
+    "A post with its replies as the conversation page shows them (`TweetDetail`).",
+  ),
+  entry(
+    xTrending,
+    z.object({ max: z.number().optional() }),
+    true,
+    "What is trending for the signed-in account (`ExplorePage`, `GenericTimelineById`).",
+  ),
+  entry(
     youtubeCommunityPost,
     z.object({ text: z.string(), image: z.string().optional(), channel: z.string().optional() }),
     true,
@@ -791,4 +893,5 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(youtubeTranscript, z.object({ videoId: z.string() }), true),
 ];

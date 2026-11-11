@@ -21,6 +21,7 @@ const RENDER_MS = 15_000;
 export const resetMailProbe = defineFlow<ResetProbeInput, { asked: boolean }>({
   site: "account",
   name: "reset-mail-probe",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(input.form.url, { allowWall: true });
     if (!(await fp.has(input.form.field, RENDER_MS)))

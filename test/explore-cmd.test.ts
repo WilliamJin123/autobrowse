@@ -17,7 +17,11 @@ describe("command ids (U6)", () => {
     expect(commandId(raw)).toBe("a-1");
     expect(raw).toEqual({ cmd: "click" });
     expect(commandId({ cmd: "url" })).toBeNull();
-    expect(() => commandId({ id: 5 })).toThrow(/id:/);
+    // A number is the network row id: left on the command.
+    const net: Record<string, unknown> = { cmd: "network", id: 5 };
+    expect(commandId(net)).toBeNull();
+    expect(net).toEqual({ cmd: "network", id: 5 });
+    expect(() => commandId({ id: "bad id!" })).toThrow(/id:/);
     expect(JSON.parse(withRepeat('{"ok":true}'))).toEqual({ ok: true, repeat: true });
     expect(withRepeat("[1]")).toBe("[1]");
     expect(browserGone(new Error("Target page, context or browser has been closed"))).toBe(true);

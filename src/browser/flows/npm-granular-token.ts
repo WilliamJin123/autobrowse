@@ -82,6 +82,7 @@ export const npmGranularToken = defineFlow<GranularTokenInput, GranularTokenResu
   secret: true,
   site: "npm",
   name: "granular-token",
+  strategies: ["ui"],
   keeps: () => [NPM_TOKEN],
   async run(fp, input) {
     await fp.open("https://www.npmjs.com/settings");

@@ -283,6 +283,7 @@ async function feed(
 export const xProfile = defineFlow<{ username: string }, { data: User } | NotFound>({
   site: "x",
   name: "profile",
+  strategies: ["ui"],
   async run(fp, { username }) {
     await fp.open(`${WEB}/${username}`);
     for (let i = 0; i < RENDER_MS / SETTLE_MS; i++) {
@@ -521,6 +522,7 @@ async function withReplies(fp: FlowPage, id: string, i: Feed) {
 export const xPosts = defineFlow<PostsInput, unknown>({
   site: "x",
   name: "posts",
+  strategies: ["ui"],
   run: (fp, i) =>
     /replies/.test(i.exclude ?? "")
       ? feed(fp, /^\d+$/.test(i.id) ? `${WEB}/i/user/${i.id}` : `${WEB}/${i.id}`, i)
@@ -541,6 +543,7 @@ export const searchUrl = (i: { query: string } & FacetInput<typeof X_SEARCH>): s
 export const xSearch = defineFlow<SearchInput, unknown>({
   site: "x",
   name: "search",
+  strategies: ["ui"],
   run: (fp, i) => feed(fp, searchUrl(i), i),
 });
 
@@ -573,12 +576,14 @@ async function following(fp: FlowPage): Promise<void> {
 export const xHome = defineFlow<Feed, unknown>({
   site: "x",
   name: "home",
+  strategies: ["ui"],
   run: (fp, i) => feed(fp, `${WEB}/home`, i, following),
 });
 
 export const xPost = defineFlow<{ id: string }, { data: Tweet } | NotFound>({
   site: "x",
   name: "post",
+  strategies: ["ui"],
   async run(fp, { id }) {
     const state = await landed(fp, `${WEB}/i/status/${id}`);
     if (state !== "posts") return notFound(`no X post ${id}`);
@@ -627,6 +632,7 @@ const NOT_FOLLOWING = /isn.t following anyone|aren.t following anyone|be in the 
 export const xFollowing = defineFlow<{ max_results?: number }, unknown>({
   site: "x",
   name: "following",
+  strategies: ["ui"],
   async run(fp, i) {
     await fp.open(`${WEB}/home`);
     let me: string | null = null;

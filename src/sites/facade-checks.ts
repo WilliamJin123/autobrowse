@@ -82,6 +82,22 @@ export async function checkSite(
 }
 
 /** `/rest/socialActions/{urn}/comments` against `/rest/socialActions/urn:li:share:1/comments`. */
+/** The route for `method path`: the most literal match wins (`/web/explore` before `/web/{username}`, whatever the order). */
+export function bestRoute<R extends Pick<SiteRoute<never, unknown>, "method" | "path">>(
+  routes: readonly R[],
+  method: string,
+  path: string,
+): { r: R; params: Record<string, string> } | null {
+  let best: { r: R; params: Record<string, string>; fixed: number } | null = null;
+  for (const r of routes) {
+    const params = r.method === method ? matchPath(r.path, path) : null;
+    if (!params) continue;
+    const fixed = r.path.split("/").filter((p) => p && !p.includes("{")).length;
+    if (!best || fixed > best.fixed) best = { r, params, fixed };
+  }
+  return best && { r: best.r, params: best.params };
+}
+
 export function matchPath(pattern: string, path: string): Record<string, string> | null {
   const p = pattern.split("/");
   const a = path.split("?")[0]?.split("/") ?? [];

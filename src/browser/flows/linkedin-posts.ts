@@ -430,12 +430,14 @@ export async function readPosts(
 export const linkedinSearchPosts = defineFlow<SearchPostsInput, Posts>({
   site: "linkedin",
   name: "search-posts",
+  strategies: ["ui"],
   run: (fp, input) => readPosts(fp, postsSearchUrl(input), input.max ?? 20),
 });
 
 export const linkedinCompanyPosts = defineFlow<CompanyPostsInput, Posts>({
   site: "linkedin",
   name: "company-posts",
+  strategies: ["ui"],
   run: (fp, input) => readPosts(fp, companyPostsUrl(input.company), input.max ?? 20, sortRecent),
 });
 
@@ -449,6 +451,7 @@ const NOT_CHOSEN = /^(promoted|suggested)$/im;
 export const linkedinFeed = defineFlow<{ max?: number }, Posts>({
   site: "linkedin",
   name: "feed",
+  strategies: ["ui"],
   run: (fp, input) =>
     readPosts(fp, `${WEB}/feed/`, input.max ?? 20, sortRecent, (p) => !NOT_CHOSEN.test(p.raw.text)),
 });
@@ -501,6 +504,7 @@ export const linkedinPost = defineFlow<
 >({
   site: "linkedin",
   name: "post",
+  strategies: ["ui"],
   async run(fp, { urn }) {
     await go(fp, `${WEB}/feed/update/${urn}/`);
     if (!(await fp.has({ css: CARD }, RENDER_MS))) {
@@ -567,6 +571,7 @@ const headed = (p: FeedPost) =>
 export const linkedinListPosts = defineFlow<ListPostsInput, PostList>({
   site: "linkedin",
   name: "list-posts",
+  strategies: ["ui"],
   async run(fp, { author, count = 10, start = 0 }) {
     const org = /^urn:li:organization:(\d+)$/.exec(author)?.[1];
     const max = start + count;

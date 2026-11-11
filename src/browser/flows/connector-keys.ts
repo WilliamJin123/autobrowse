@@ -79,6 +79,7 @@ export const hubspotConnectorKeys = defineFlow<ConnectorKeysInput, { kept: strin
   secret: true,
   site: "hubspot",
   name: "connector-keys",
+  strategies: ["ui"],
   // Made with Google: the session lives in the Google account's profile.
   profile: "provider",
   async run(fp, input) {
@@ -98,6 +99,7 @@ export const quickbooksConnectorKeys = defineFlow<
   secret: true,
   site: "intuit",
   name: "connector-keys",
+  strategies: ["ui"],
   async run(fp, input) {
     // The key set is a query param; the tab click lost the race with sign-in (2026-10-09).
     await fp.open(`${input.url}&envTab=${input.dev ? "development" : "production"}`);
@@ -125,6 +127,7 @@ export const jobberConnectorKeys = defineFlow<ConnectorKeysInput, { kept: string
   secret: true,
   site: "jobber",
   name: "connector-keys",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(input.url);
     // The value inputs carry floating labels and generated ids: read the one after each label.

@@ -177,6 +177,7 @@ export const instagramPostComments = defineFlow<
 >({
   site: "instagram",
   name: "post-comments",
+  strategies: ["intercept"],
   async run(fp, { shortcode, max }) {
     if (!/^[\w-]{5,40}$/.test(shortcode)) return fp.human(`${shortcode} is not a post code`);
     const cap = Math.min(Math.max(1, max ?? 100), MAX_IG_COMMENTS);

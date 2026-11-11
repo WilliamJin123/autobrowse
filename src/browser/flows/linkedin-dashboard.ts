@@ -113,6 +113,7 @@ const shows = (s: DashboardStats) => s.profileViewers !== null || s.searchAppear
 export const linkedinDashboard = defineFlow<Record<string, never>, Dashboard>({
   site: "linkedin",
   name: "dashboard",
+  strategies: ["ui"],
   async run(fp: FlowPage) {
     await go(fp, DASHBOARD_URL);
     if (!(await fp.has({ css: "main" }, RENDER_MS))) return fp.human(`no page at ${fp.url()}`);

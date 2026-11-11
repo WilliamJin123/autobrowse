@@ -357,11 +357,31 @@ legs. ChatGPT's `/?q=&hints=search` sends with web search and gives sources; Gem
 is Flash-Lite with no sources. Grok shows "Sign up to continue" after the question; DeepSeek and
 Claude open on a sign-in. Those three need accounts: not built.
 
+Social reads (built 11-10): ports of their commands, each mapped live first; routes on the signed-in
+profiles, whole items.
+- X (`x-graph.ts`): thread, followers/following, likes, bookmarks, lists, list posts, trending, off
+  the page's own GraphQL answers (`TweetDetail`, `Followers`, `Bookmarks`, `CombinedLists`, …).
+- Instagram (`instagram-people.ts`): profile by the page's `PolarisProfilePageContentQuery`, then
+  followers/following by `friendships/<pk>`, explore grid, saved. The username calls answer 404.
+- TikTok (`tiktok-reads.ts`): user from the rehydration data, videos, explore, notifications.
+- YouTube (`youtube-transcript.ts`): any video's transcript from the player's own json3 timedtext;
+  the transcript panel as the fallback.
+- Pinterest (`pinterest.ts`, signed out): pin search, user, board pins.
+- Facebook signed out (`fb-marketplace.ts`): Marketplace search, first 15 listings. Search and a
+  listing page show nothing signed out; events lists only categories.
+
+Not built, and why:
+- LinkedIn profile-read/-experience: a profile reader waits on William's yes (10-28 design).
+- Sales Navigator: needs a subscription (money).
+- TikTok friends: it is TikTok's who-to-follow list for our own account, not a read of others.
+- Facebook feed, friends, notifications, inbox: signed in only, and Facebook stays signed out.
+
 ## Built: the upgrade list (11-10, WA-1294)
 
 | # | Commit | What shipped |
 |---|---|---|
-| U1, U5, U11, U12 | a0bfe31 | Error contract, ladder, in-page JSON (WA-1251.1–.3) |
+| U1 | a0bfe31 | One error contract in `src/errors.ts` (WA-1251.1) |
+| U5, U11, U12 | a0bfe31, (this commit) | Ladder and in-page JSON (WA-1251.2–.3); now a `strategies` word on all 132 flows (`flowIssues` says "no strategies"), `fp.json` in the `code` runtime, and explore's `network` with `scripts:true` (`script-scan.ts`: paths and GraphQL operations in the page's scripts) |
 | U2 | 21fa728 | `SiteRoute.response`, checked in the facade (`checkResponse`) |
 | U3 | ef9c6f7 | `autobrowse list`, `--help --json`, `catalog.json` with a drift test |
 | U4 | dc2192f | Route and flow conventions in the gates; `site scaffold` |
@@ -379,7 +399,7 @@ Claude open on a sign-in. Those three need accounts: not built.
 | U21 | 52c9b67 | Skill in the package, `skills` command, `llms.txt` |
 | U22 | f3e1fd3, d0ebd42 | `evals/` suite; baseline base1: train 8/8, test 3/4 |
 | U23 | 51778ec | Before/after call hooks; a trusted mod adds sites and hooks |
-| U15 | (this commit) | A pool per profile: reads share one browser in their own tabs, writes alone, bounded queue |
+| U15 | 4a961e6, e41080f | A pool per profile: reads share one browser in their own tabs, writes alone, bounded queue |
 | Small fixes | 59e26ea, d69bdb6, 354cdd0 | Explore code version and skew warning; `ProfileBusy` op and age; `flow.ts` and `facade.ts` split |
 
 Not built, and why:
@@ -457,3 +477,9 @@ Rules: a route is a read when its access is `read` and it is not irreversible; a
   (my call).
 - 2026-11-10: Explore's code version is the checkout's HEAD sha. Each reply carries `skew` once
   HEAD moves, checked once a minute at most (my call).
+- 2026-11-10: Social reads keep the page's own calls (intercept) where the site signs each call
+  (X, TikTok), and call the site's JSON ourselves where it answers (Instagram friendships,
+  Pinterest search). Their username endpoints answered 404 here, so each port was mapped live
+  first (my call).
+- 2026-11-10: Pinterest and Marketplace read signed out, not on new accounts (my call): the reads
+  render without one, and an account is William's call.

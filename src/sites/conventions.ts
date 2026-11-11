@@ -47,6 +47,8 @@ export function flowIssues(flows: Record<string, BrowserFlow<never, unknown>>): 
   for (const [key, f] of Object.entries(flows)) {
     if (key !== `${f.site}/${f.name}`) out.push(`${key}: listed under a name not its site/name`);
     if (!KEBAB.test(f.name)) out.push(`${key}: name is not kebab-case`);
+    // U5: each browser leg says how it reaches its data (cookie, intercept, ui).
+    if (!f.strategies?.length) out.push(`${key}: no strategies`);
   }
   return out;
 }

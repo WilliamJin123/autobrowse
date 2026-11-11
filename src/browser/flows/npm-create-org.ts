@@ -32,6 +32,7 @@ const onOrg = (name: string) => (url: string) =>
 export const npmCreateOrg = defineFlow<CreateOrgInput, CreateOrgResult>({
   site: "npm",
   name: "create-org",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(members(input.name));
     if (fp.url().startsWith(members(input.name)) && !/not found/i.test(await fp.text()))

@@ -101,6 +101,7 @@ export interface Quiz {
 export const learnQuizzes = defineFlow<{ ou: number }, Quiz[]>({
   site: "learn",
   name: "quizzes",
+  strategies: ["cookie"],
   async run(fp, { ou }) {
     const quizzes = await valence<{ Objects: { QuizId: number; Name: string }[] }>(
       fp,
@@ -132,6 +133,7 @@ export interface Attempt {
 export const learnQuizReview = defineFlow<{ ou: number; qi: number }, Attempt[]>({
   site: "learn",
   name: "quiz-review",
+  strategies: ["ui"],
   async run(fp, { ou, qi }) {
     await fp.open(`${LEARN}/d2l/lms/quizzing/user/quiz_submissions.d2l?qi=${qi}&ou=${ou}`);
     await fp.has({ css: "a[href*=quiz_submissions_attempt]" }, PAGE_MS);
@@ -204,6 +206,7 @@ export const learnQuizAttempt = defineFlow<
 >({
   site: "learn",
   name: "quiz-attempt",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(`${LEARN}/d2l/lms/quizzing/user/quiz_summary.d2l?ou=${input.ou}&qi=${input.qi}`);
     const start: Hints = { role: "button", name: "/^(start quiz!|continue quiz)/i" };

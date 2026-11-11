@@ -43,6 +43,7 @@ export function redirectOf(authorizeUrl: string): string {
 export const googleOauthConsent = defineFlow<OauthConsentInput, { landed: string }>({
   site: "google",
   name: "oauth-consent",
+  strategies: ["ui"],
   async run(fp, input) {
     const redirect = redirectOf(input.url);
     const landed = (u: string) =>

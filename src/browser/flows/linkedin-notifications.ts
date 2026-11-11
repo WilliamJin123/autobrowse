@@ -169,6 +169,7 @@ export const linkedinNotifications = defineFlow<
 >({
   site: "linkedin",
   name: "notifications",
+  strategies: ["ui"],
   async run(fp, input) {
     await go(fp, `${WEB}/notifications/`);
     if (!(await fp.has({ css: LIST }, RENDER_MS)))

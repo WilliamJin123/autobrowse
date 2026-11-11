@@ -144,6 +144,7 @@ export const instagramFollow = defineFlow<
 >({
   site: "instagram",
   name: "follow",
+  strategies: ["ui"],
   async run(fp, { username, undo }) {
     const profile = `${WEB}/${encodeURIComponent(username)}/`;
     await openIg(fp, profile);
@@ -187,6 +188,7 @@ export const instagramLike = defineFlow<
 >({
   site: "instagram",
   name: "like",
+  strategies: ["ui"],
   async run(fp, { shortcode, undo }) {
     await openIg(fp, postUrl(shortcode));
     const state = await firstShown(fp, [hearted, heart], MISSING);
@@ -222,6 +224,7 @@ export const instagramComment = defineFlow<
 >({
   site: "instagram",
   name: "comment",
+  strategies: ["ui"],
   async run(fp, { shortcode, text }) {
     await openIg(fp, postUrl(shortcode));
     const state = await firstShown(fp, [commentBox], MISSING);
@@ -315,6 +318,7 @@ export function igPostOf(html: string, shortcode: string): IgPost | null {
 export const instagramPost = defineFlow<PostInput, IgPost | { found: false; reason: string }>({
   site: "instagram",
   name: "post",
+  strategies: ["ui"],
   async run(fp, { shortcode }) {
     await openIg(fp, postUrl(shortcode));
     for (let i = 0; i < RENDER_MS / SETTLE_MS; i++) {
@@ -355,6 +359,7 @@ export interface SearchInput {
 export const instagramSearch = defineFlow<SearchInput, { q: string; shortcodes: string[] }>({
   site: "instagram",
   name: "search",
+  strategies: ["ui"],
   async run(fp, { q, max }) {
     await openIg(fp, `${WEB}/explore/search/keyword/?${new URLSearchParams({ q })}`);
     for (let i = 0; i < RENDER_MS / SETTLE_MS; i++) {
@@ -396,6 +401,7 @@ export const instagramFollowing = defineFlow<
 >({
   site: "instagram",
   name: "following",
+  strategies: ["cookie"],
   async run(fp, { max }) {
     const cap = Math.min(Math.max(1, max ?? 1000), 1000);
     await openIg(fp, `${WEB}/`);
@@ -526,6 +532,7 @@ export const instagramFeed = defineFlow<
 >({
   site: "instagram",
   name: "feed",
+  strategies: ["intercept"],
   async run(fp, { max }) {
     const cap = Math.min(Math.max(1, max ?? 20), 50);
     const bodies: unknown[] = [];

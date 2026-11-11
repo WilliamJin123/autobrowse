@@ -28,6 +28,7 @@ const SETTLE_MS = 1_500;
 export const youtubeCommunityPost = defineFlow<CommunityPostInput, { url: string | null }>({
   site: "google",
   name: "youtube-community-post",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(COMPOSER);
     if (!(await fp.waitForUrl(/youtube\.com\/channel\/[^/]+\/posts/, 15_000)))

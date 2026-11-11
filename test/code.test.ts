@@ -234,3 +234,63 @@ if (!plan.fixed) throw new Error("fix me");`;
     }
   });
 });
+
+describe("fp.json", () => {
+  /** A page whose fetch answers by URL: `/n/<k>` → `{k}`, `/gone` → 429. */
+  const jsonPage = () => {
+    const fetched: string[] = [];
+    let url = "https://x.test/";
+    const fp = {
+      url: () => url,
+      open: async (u: string) => {
+        url = u;
+      },
+      wait: async () => undefined,
+      human: (r: string) => {
+        throw new NeedsHuman(r);
+      },
+      page: {
+        evaluate: async (_fn: unknown, a: { url: string }) => {
+          fetched.push(a.url);
+          if (a.url === "/gone")
+            return { status: 429, url: "https://x.test/gone", contentType: "", text: "" };
+          const k = a.url.split("/").pop();
+          return {
+            status: 200,
+            url: `https://x.test${a.url}`,
+            contentType: "application/json",
+            text: JSON.stringify({ k }),
+          };
+        },
+      },
+    } as unknown as FlowPage;
+    return { fp, fetched };
+  };
+
+  it("fetches in the page, saves each answer, replays from the store", async () => {
+    const { fp, fetched } = jsonPage();
+    const store = memoryStore();
+    const code = `for (const k of ["a", "b"]) rows.push(await fp.json("/n/" + k, { headers: { "X-App": "1" } }));`;
+    const r1 = await runCode(fp, { code }, { store });
+    expect(r1.rows).toEqual([{ k: "a" }, { k: "b" }]);
+    expect(fetched).toEqual(["/n/a", "/n/b"]);
+    const r2 = await runCode(fp, { code }, { store });
+    expect(r2.rows).toEqual([{ k: "a" }, { k: "b" }]);
+    expect(r2.stored).toBe(2);
+    expect(fetched).toHaveLength(2);
+  });
+
+  it("a 429 stops the run with rate_limited", async () => {
+    const { fp } = jsonPage();
+    const err = await runCode(
+      fp,
+      { code: `rows.push(await fp.json("/gone"))` },
+      { store: memoryStore() },
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(CodeFailed);
+    expect((err as CodeFailed).result.failed).toMatchObject({
+      call: "json",
+      error: expect.stringMatching(/429/),
+    });
+  });
+});

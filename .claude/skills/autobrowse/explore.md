@@ -85,6 +85,7 @@ Look:
   - `{"cmd":"network"}`: JSON calls grouped by URL and GraphQL query name, with ids, count, status and data keys. `all` adds pages and non-JSON.
   - `{"cmd":"network","find":"<text on the page>"}`: the calls whose body holds that text, with the key path to it.
   - `{"cmd":"network","id":12,"pick":"data.user.edges[0].node"}`: one part of one body.
+  - `{"cmd":"network","scripts":true}`: API paths and GraphQL operations the page's scripts name, before any fires.
   - `{"cmd":"memory","find":"followers"}`: this site's calls and fields from all earlier sessions. Look here first: the call you need may be known.
   - A flow reads that JSON with `pageJson`/`pagedJson` (cookie rung) or `captureJson` (intercept rung), in `ladder` rungs (`src/browser/ladder.ts`).
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
@@ -122,7 +123,7 @@ Act (journaled):
   - `failed`: the same command goes on from the failed step. `"fresh":true` starts over.
   - The journal keeps its acts flat, so `save` makes one recording. A secret flow keeps only its start and end notes.
 - `{"cmd":"code","as":"titles","code":"…","plan":{"pages":"40"}}` — a loop, a while, a branch: your code over the primitives, in one command. Use it for any job of more than a few same acts (100 pages, a feed to its end).
-  - In scope: `fp.open(url)`, `fp.act(op, hints, {goal})`, `fp.read(hints)`, `fp.has(hints, ms?)`, `fp.wait(ms)`, `fp.human(reason)`, `records({fields, code, key?, max?})` (as the command, no model), `log(values)`, `plan` (strings), `rows` (push your output).
+  - In scope: `fp.open(url)`, `fp.act(op, hints, {goal})`, `fp.read(hints)`, `fp.has(hints, ms?)`, `fp.json(url, {method?, headers?, body?})` (the site's own JSON from inside the page, with its cookies; saved like a read; 429 or sign-in stops the run), `fp.wait(ms)`, `fp.human(reason)`, `records({fields, code, key?, max?})` (as the command, no model), `log(values)`, `plan` (strings), `rows` (push your output).
   - Example: `for (let p = 1; p <= Number(plan.pages); p++) { log({p}); await fp.open(plan.base + "?page=" + p); rows.push(...await records({fields:[{key:"title",says:"…"}], code:"return [...root.querySelectorAll('h2')].map(h => ({title: h.textContent}))"})); }`
   - Answer: `{rows, first, calls, stored, log?, url}`. `failed: {call, i, url, log, error}`: fix the code, send it again. Saved reads come back at once (`stored`), the loop goes on from the failed call. `"fresh":true` starts over.
   - Rules: every input in `plan`, never a literal (compile makes each a plan field). No `Date.now()`, no `Math.random()`: they break the saved reads. No secrets in code or plan (refused). A changed `records` code reads every page again.

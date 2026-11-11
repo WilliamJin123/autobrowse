@@ -453,6 +453,8 @@ export const youtube: SiteApi = {
     upload: 6,
     community: 3,
     thumbnail: 12,
+    // Watch-page transcript reads (OpenCLI port, 11-10): a viewer's pace.
+    transcript: 60,
   },
   // Studio legs only: API legs are never paced.
   pace: { gapMs: 10_000, jitterMs: 20_000 },
@@ -997,6 +999,17 @@ export const youtube: SiteApi = {
       request: z.object({ videoId: z.string().regex(/^[\w-]{6,20}$/, "a video id") }),
       meter: () => ({ studio: 1 }),
       browser: { flow: "google/youtube-studio-analytics" },
+    }),
+    route({
+      method: "GET",
+      path: "/web/videos/{videoId}/transcript",
+      standing: { final: "captions.download serves only our own videos' tracks" },
+      summary:
+        "Any public video's transcript off its watch page (browser; the player's own json3 timedtext): `{ lines: [{startMs,durMs,text}], track, timedtext, panel }`, both answers whole; `found:false` for an unavailable video. Reads only",
+      request: z.object({ videoId: z.string().regex(/^[\w-]{6,20}$/, "a video id") }),
+      meter: () => ({ transcript: 1 }),
+      browser: { flow: "youtube/transcript" },
+      ported: "clis/youtube/transcript.js@9bc5f5c",
     }),
     route({
       method: "POST",

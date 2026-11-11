@@ -30,6 +30,7 @@ export const tiktokFollowing = defineFlow<
 >({
   site: "tiktok",
   name: "following",
+  strategies: ["ui"],
   async run(fp, { max }) {
     await fp.open(`${WEB}/profile`);
     if (!(await fp.has({ css: COUNT }, RENDER_MS))) {

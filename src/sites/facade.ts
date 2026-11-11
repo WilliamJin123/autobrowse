@@ -75,9 +75,9 @@ import type {
   SiteFacadeDeps,
   SiteRow,
 } from "./facade-api.js";
-import { accessError, checkResponse, matchPath, resolveInput } from "./facade-checks.js";
+import { accessError, bestRoute, checkResponse, matchPath, resolveInput } from "./facade-checks.js";
 
-export { accessError, checkResponse, checkSite, matchPath } from "./facade-checks.js";
+export { accessError, bestRoute, checkResponse, checkSite, matchPath } from "./facade-checks.js";
 
 /** An armed tab lives this long; a profile holds at most `ARMS_PER_PROFILE` (the oldest goes). */
 export const ARM_MS = 20 * 60_000;
@@ -133,10 +133,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
   };
   /** The route that answers `method path` on a site, with the path's params. */
   const routeOf = (s: SiteApi, method: Method, path: string) => {
-    for (const r of s.routes) {
-      const params = r.method === method ? matchPath(r.path, path) : null;
-      if (params) return { r, params };
-    }
+    const best = bestRoute(s.routes, method, path);
+    if (best) return { r: best.r, params: best.params };
     throw new SiteError(404, `${method} ${path} is not a ${s.site} route`);
   };
   /** The path's own query is part of the request, as the official API reads it. */

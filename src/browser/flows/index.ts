@@ -17,6 +17,7 @@ export {
   discordInvite,
 } from "./discord.js";
 export { facebookOauthConsent } from "./facebook-oauth-consent.js";
+export { fbMarketplace } from "./fb-marketplace.js";
 export { type Fingerprint, fingerprint, tellsOf } from "./fingerprint.js";
 export { googleDkimGenerate, googleDkimStart } from "./google-dkim.js";
 export {
@@ -49,6 +50,16 @@ export {
 } from "./instagram-act.js";
 export { type CreatePostInput, instagramCreatePost } from "./instagram-create-post.js";
 export { instagramOauthConsent } from "./instagram-oauth-consent.js";
+export {
+  type IgGrid,
+  type IgPeople,
+  type IgProfile,
+  type IgSaved,
+  instagramExplore,
+  instagramPeople,
+  instagramProfile,
+  instagramSaved,
+} from "./instagram-people.js";
 export {
   instagramReels,
   type Reels,
@@ -115,6 +126,7 @@ export {
   type AskSource as PerplexitySource,
   perplexityAsk,
 } from "./perplexity-ask.js";
+export { pinterestBoard, pinterestSearch, pinterestUser } from "./pinterest.js";
 export {
   instagramProfileName,
   type ProfileNameInput,
@@ -162,7 +174,26 @@ export {
 } from "./tiktok-create-post.js";
 export { followedOfTiktok, tiktokFollowing } from "./tiktok-following.js";
 export { tiktokOauthConsent } from "./tiktok-oauth-consent.js";
+export {
+  type TiktokUser,
+  type TiktokVideos,
+  tiktokExplore,
+  tiktokNotifications,
+  tiktokUser,
+  tiktokVideos,
+} from "./tiktok-reads.js";
 export { xFollow, xLike, xReply } from "./x-act.js";
+export {
+  type Captured as XCaptured,
+  entitiesOf as xEntitiesOf,
+  xBookmarks,
+  xLikes,
+  xListPosts,
+  xLists,
+  xPeople,
+  xThread,
+  xTrending,
+} from "./x-graph.js";
 export { xOauthConsent } from "./x-oauth-consent.js";
 export {
   type Followed as XFollowed,
@@ -177,3 +208,4 @@ export {
 } from "./x-read.js";
 export { youtubeCommunityPost } from "./youtube-community-post.js";
 export { youtubeThumbnail } from "./youtube-thumbnail.js";
+export { youtubeTranscript } from "./youtube-transcript.js";

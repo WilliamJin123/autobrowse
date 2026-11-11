@@ -31,6 +31,7 @@ async function openDomain(fp: FlowPage, domain: string): Promise<void> {
 export const googleDkimGenerate = defineFlow<{ domain: string }, DkimRecord>({
   site: "google-admin",
   name: "dkim-generate",
+  strategies: ["ui"],
   async run(fp, { domain }) {
     await openDomain(fp, domain);
     const shown = { text: "/^v=DKIM1;/" };
@@ -56,6 +57,7 @@ export const googleDkimGenerate = defineFlow<{ domain: string }, DkimRecord>({
 export const googleDkimStart = defineFlow<{ domain: string }, "started" | "already">({
   site: "google-admin",
   name: "dkim-start",
+  strategies: ["ui"],
   async run(fp, { domain }) {
     const { page } = fp;
     await openDomain(fp, domain);

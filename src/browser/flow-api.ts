@@ -171,7 +171,7 @@ export interface BrowserFlow<I, O> {
   site: Site;
   /** Unique per site; names the trace files and the fake in tests. */
   name: string;
-  /** The ways a laddered read tries, in order (`browser/ladder`): shown on the route's row. */
+  /** How it reaches its data; a laddered read's rungs in order (`browser/ladder`). On the route's row; the gates require it (U5). */
   strategies?: readonly Strategy[];
   /** The flow puts a secret on screen (a minted token): no screenshot, trace or step watch keeps it. */
   secret?: boolean;

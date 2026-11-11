@@ -187,6 +187,7 @@ export function commentCountOf(label: string | null): number | null {
 export const tiktokPostComments = defineFlow<PostCommentsInput, PostComments>({
   site: "tiktok",
   name: "post-comments",
+  strategies: ["intercept"],
   async run(fp, { videoId, username, max }) {
     if (!/^\d+$/.test(videoId)) return fp.human(`${videoId} is not a TikTok video id`);
     const cap = Math.min(Math.max(1, max ?? 50), MAX_COMMENTS);

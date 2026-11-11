@@ -28,6 +28,7 @@ export const calcomApiKey = defineFlow<CalcomKeyInput, { kept: string }>({
   secret: true,
   site: "calcom",
   name: "api-key",
+  strategies: ["ui"],
   keeps: () => [CALCOM_API_KEY],
   async run(fp, input) {
     await fp.open("https://app.cal.com/settings/developer/api-keys");

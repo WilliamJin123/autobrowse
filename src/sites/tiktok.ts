@@ -165,6 +165,8 @@ const webPost = z.object({
   aiGenerated: z.boolean().default(false),
 });
 const following = z.object({ max: z.coerce.number().int().min(1).max(1000).optional() });
+const handle = z.string().regex(/^@?[\w.]{1,40}$/, "a TikTok handle");
+const listMax = z.object({ max: z.coerce.number().int().min(1).max(500).optional() });
 
 const postComments = z.object({
   videoId: z.string().regex(/^\d+$/, "a video id"),
@@ -240,6 +242,11 @@ export const tiktok: SiteApi = {
     comments: 24,
     // Who we follow, read off the profile's Following dialog: once a day is the need.
     following: 4,
+    // Reads of any account and our own lists (OpenCLI port, 11-10).
+    user: 40,
+    videos: 20,
+    explore: 10,
+    notifications: 24,
     // A video's Studio analytics page: a look per video per day.
     analytics: 60,
     // Engagement on others' videos (no API does it): wren's caps sit below these.
@@ -397,6 +404,53 @@ export const tiktok: SiteApi = {
       request: following,
       meter: () => ({ following: 1 }),
       browser: { flow: "tiktok/following" },
+    }),
+    route({
+      method: "GET",
+      path: "/web/@{username}",
+      standing: { final: "the Display API reads only the signed-in account" },
+      summary:
+        "Any account's profile: the page's own `userInfo` whole (user, stats, statsV2): `{ username, found, info }`. Reads only",
+      request: z.object({ username: handle }),
+      meter: () => ({ user: 1 }),
+      browser: { flow: "tiktok/user" },
+      ported: "clis/tiktok/profile.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/@{username}/videos",
+      standing: { final: "the Display API lists only the signed-in account's videos" },
+      summary:
+        "Any account's videos, newest first: the profile grid scrolled, each item whole from the page's own item lists (intercept) or urls only (ui): `{ username, found, via, fell, urls, items }` (`max`, default 60). Reads only",
+      request: z.object({
+        username: handle,
+        max: z.coerce.number().int().min(1).max(1000).optional(),
+      }),
+      meter: () => ({ videos: 1 }),
+      browser: { flow: "tiktok/videos" },
+      ported: "clis/tiktok/user.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/explore",
+      standing: { final: "no TikTok API serves Explore" },
+      summary:
+        "The signed-in Explore page, each item whole from its own item list call: `{ items, pages }` (`max`, default 50). Reads only",
+      request: listMax,
+      meter: () => ({ explore: 1 }),
+      browser: { flow: "tiktok/explore" },
+      ported: "clis/tiktok/explore.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/notifications",
+      standing: { final: "no TikTok API reads the inbox" },
+      summary:
+        "Our inbox notices, each whole as the page's own `notice/multi` call sends it: `{ notices, calls }` (`max`, default 50). Reads only",
+      request: listMax,
+      meter: () => ({ notifications: 1 }),
+      browser: { flow: "tiktok/notifications" },
+      ported: "clis/tiktok/notifications.js@9bc5f5c",
     }),
     route({
       method: "GET",

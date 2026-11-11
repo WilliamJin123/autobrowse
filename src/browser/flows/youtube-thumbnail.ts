@@ -27,6 +27,7 @@ export const youtubeThumbnail = defineFlow<
 >({
   site: "google",
   name: "youtube-thumbnail",
+  strategies: ["ui"],
   async run(fp, input) {
     await fp.open(`https://studio.youtube.com/video/${encodeURIComponent(input.videoId)}/edit`);
     if (!(await fp.has({ role: "heading", name: "Video details" }, LAND_MS)))

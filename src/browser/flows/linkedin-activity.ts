@@ -213,6 +213,7 @@ export function newestFirst(lists: Activity[][], max: number): Activity[] {
 export const linkedinActivity = defineFlow<ActivityInput, { activity: Activity[] }>({
   site: "linkedin",
   name: "activity",
+  strategies: ["ui"],
   async run(fp, input) {
     const max = input.max ?? 20;
     const posts = await readTab(fp, "all", input.vanity, max);

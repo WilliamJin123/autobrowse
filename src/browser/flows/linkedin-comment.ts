@@ -146,6 +146,7 @@ export const linkedinComment = defineFlow<
 >({
   site: "linkedin",
   name: "comment",
+  strategies: ["ui"],
   async prepare(fp, { urn, page }) {
     const { post } = targetOf(urn);
     await ready(fp, postUrl(post, page), urn);
@@ -316,6 +317,7 @@ export const linkedinPostComments = defineFlow<
 >({
   site: "linkedin",
   name: "post-comments",
+  strategies: ["intercept"],
   async run(fp, { urn, count, start, pages }) {
     const read = async () => {
       const no = await ready(fp, postUrl(urn), urn);
@@ -606,6 +608,7 @@ export const linkedinPostStats = defineFlow<
 >({
   site: "linkedin",
   name: "post-stats",
+  strategies: ["intercept"],
   async run(fp, { urn }) {
     const kept = seen.get(urn);
     if (kept && Date.now() - kept.at < FRESH_MS) return answer(urn, kept.counts, "cache");

@@ -73,6 +73,7 @@ export function studioTotalsOf(bodies: readonly unknown[]): StudioTotals {
 export const youtubeStudioAnalytics = defineFlow<StudioAnalyticsInput, StudioAnalytics>({
   site: "google",
   name: "youtube-studio-analytics",
+  strategies: ["intercept"],
   async run(fp, { videoId }) {
     if (!/^[\w-]{6,20}$/.test(videoId)) return fp.human(`${videoId} is not a YouTube video id`);
     const bodies: unknown[] = [];

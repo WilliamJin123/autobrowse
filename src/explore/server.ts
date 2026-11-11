@@ -193,6 +193,7 @@ import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
 import { type Box, marksFor, missed } from "./marks.js";
 import { overlayFor, traceRow } from "./overlay.js";
+import { COLLECT_SCRIPTS, type ScriptText, scanScripts } from "./script-scan.js";
 
 export { type Command, commandSchema, placeHint } from "./commands.js";
 export { journalFileFor, readJournal, tokenFileFor } from "./journal.js";
@@ -582,8 +583,9 @@ const SENT_KEEP = 500;
 /** The caller's id for a command (U6), taken off before the schema reads it. */
 export function commandId(raw: Record<string, unknown>): string | null {
   const id = raw.id;
+  // A number is the command's own field (`network` row id), not the caller's id.
+  if (id === undefined || typeof id === "number") return null;
   delete raw.id;
-  if (id === undefined) return null;
   if (typeof id !== "string" || !/^[\w.:-]{1,80}$/.test(id))
     throw new Error("id: 1-80 letters, digits or . : _ -");
   return id;
@@ -998,7 +1000,12 @@ async function serve(
     }
     return { waited: Date.now() - t0, url: page.url() };
   };
-  const network = (c: Extract<Command, { cmd: "network" }>) => {
+  const network = async (c: Extract<Command, { cmd: "network" }>) => {
+    if (c.scripts)
+      return {
+        url: redactUrl(page.url()),
+        ...scanScripts((await page.evaluate(COLLECT_SCRIPTS)) as ScriptText[]),
+      };
     const log = fp.network;
     if (!log) throw new Error(NETWORK_OFF);
     writeNet();

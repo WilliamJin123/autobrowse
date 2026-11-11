@@ -147,6 +147,7 @@ async function answered(fp: FlowPage): Promise<string> {
 export const perplexityAsk = defineFlow<AskInput, Asked>({
   site: "perplexity",
   name: "ask",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, input) {
     await ask(fp, input.q);

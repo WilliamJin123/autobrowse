@@ -29,6 +29,7 @@ export interface DeveloperApp {
 export const linkedinDeveloperApp = defineFlow<{ app: string }, DeveloperApp>({
   site: "linkedin",
   name: "developer-app",
+  strategies: ["ui"],
   async run(fp, { app }) {
     await go(fp, `https://www.linkedin.com/developers/apps/${encodeURIComponent(app)}/products`);
     let lines: string[] = [];

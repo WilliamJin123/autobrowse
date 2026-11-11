@@ -179,6 +179,7 @@ async function find(fp: FlowPage, ref: string | null, snippet: string | null): P
 export const proofShot = defineFlow<ShotInput, ProofShot>({
   site: "web",
   name: "proof-shot",
+  strategies: ["ui"],
   offscreen: true,
   async run(fp, input) {
     const ref = input.ref?.trim() || null;

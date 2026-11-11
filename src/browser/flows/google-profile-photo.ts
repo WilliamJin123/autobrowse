@@ -16,6 +16,7 @@ const EDITOR = 'iframe[src*="profile-picture"]';
 export const googleProfilePhoto = defineFlow<{ file: string }, string>({
   site: "google",
   name: "profile-photo",
+  strategies: ["ui"],
   async run(fp, { file }) {
     await fp.open(PAGE);
     await fp.act(
