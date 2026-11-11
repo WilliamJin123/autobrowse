@@ -34,6 +34,8 @@ export interface SiteCallRow {
   template?: string;
   /** Imported from an older record (Restate's history, the caps ledger), not written live. */
   from?: "restate" | "caps";
+  /** The flow's failure record, when a browser leg failed. */
+  artifact?: string;
 }
 
 export interface SiteCalls {

@@ -28,6 +28,16 @@ export interface ErrorContract {
   status: number;
   /** Seconds before a retry can work. */
   retryAfter?: number;
+  /** The flow's failure record (`.failure.json`): what to read before a repair. */
+  artifact?: string;
+}
+
+/** The failure record a flow error carries, on it or down its `cause` chain. */
+export function failureOf(err: unknown): string | undefined {
+  for (let e = err, i = 0; e && i < 4; e = (e as { cause?: unknown }).cause, i++)
+    if (e instanceof FlowFailed || e instanceof FlowInterrupted || e instanceof NeedsHuman)
+      if (e.artifacts.failure) return e.artifacts.failure;
+  return undefined;
 }
 
 const HINT: Partial<Record<ErrorCode, string>> = {
@@ -132,6 +142,7 @@ export function errorOf(err: unknown): ErrorContract {
   const message = err instanceof Error ? err.message : String(err);
   const { code, status, retryAfter } = codeOf(err);
   const s = status ?? CODE_STATUS[code] ?? 500;
+  const artifact = failureOf(err);
   return {
     code,
     message,
@@ -140,6 +151,7 @@ export function errorOf(err: unknown): ErrorContract {
     ...(mayHaveGone(message) ? { outcome: "unknown" as const } : {}),
     status: s,
     ...(retryAfter !== undefined ? { retryAfter } : {}),
+    ...(artifact ? { artifact } : {}),
   };
 }
 

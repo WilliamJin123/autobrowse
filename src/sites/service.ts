@@ -36,6 +36,7 @@ import type { Watchers } from "../browser/watchers.js";
 import { HttpError, lastingRefusal } from "../clients/http.js";
 import type { RunObject } from "../engine/object.js";
 import type { AnyWorkflow } from "../engine/workflow.js";
+import { failureOf } from "../errors.js";
 import { named } from "../owner.js";
 import type { SiteCalls } from "../runs/calls.js";
 import { COMPILED_OBJECT, compiledKey } from "../workflows/compiled.js";
@@ -212,10 +213,16 @@ async function terminalOnSiteError<T>(
       const status =
         err instanceof SiteError || lastingRefusal(err) ? (err as SiteError).status : 500;
       const message = err instanceof Error ? err.message : String(err);
-      throw new restate.TerminalError(status < 500 ? message : sentWords(message, t.submitted), {
-        errorCode: status,
-        ...codeOf(err),
-      });
+      const e = new restate.TerminalError(
+        status < 500 ? message : sentWords(message, t.submitted),
+        {
+          errorCode: status,
+          ...codeOf(err),
+        },
+      );
+      // keeps the flow's failure record reachable (`failureOf`)
+      Object.defineProperty(e, "cause", { value: err });
+      throw e;
     }
     if (err instanceof SiteError || lastingRefusal(err))
       throw new restate.TerminalError(err.message, {
@@ -268,6 +275,7 @@ async function recorded<T>(
     const terminal = err instanceof restate.TerminalError;
     const status = terminal ? (err.code ?? null) : null;
     const error = err instanceof Error ? err.message : String(err);
+    const artifact = failureOf(err);
     calls?.record({
       ...base,
       ...leg,
@@ -278,6 +286,7 @@ async function recorded<T>(
       terminal,
       error,
       ms: Date.now() - t0,
+      ...(artifact ? { artifact } : {}),
     });
     throw err;
   }

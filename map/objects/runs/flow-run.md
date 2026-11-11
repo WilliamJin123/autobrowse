@@ -17,10 +17,11 @@ A failure record says why one run broke; failure rates need every run. No input 
 
 ## Shape
 
-- `FlowRunRow { site, flow, startedAt, endedAt, ms, outcome, submitted, goal, error, acts, captchaTries, captchaSolved, llmCalls, inputTokens, outputTokens }` — `src/runs/flows.ts:13`; `fileFlowRuns` — `:42`; `readFlowRuns` — `:66`; `flowRunReport` — `:138`; `formatFlowRunReport` — `:170`
+- `FlowRunRow { site, flow, startedAt, endedAt, ms, outcome, submitted, goal, error, acts, captchaTries, captchaSolved, llmCalls, inputTokens, outputTokens, failure? }` — `src/runs/flows.ts:13`; `fileFlowRuns` — `:42`; `readFlowRuns` — `:66`; `flowRunReport` — `:138`; `formatFlowRunReport` — `:170`
 - Default place: `statsDir` — `src/deps/stats.ts`; `RunnerOptions.runs` — `src/browser/flow.ts:335`, default at `:471`; `runRow` — `:351`; the row at `:1080`
 - A browser that never opens still writes a row: goal `open the browser`, acts 0, outcome interrupted (transient) or failed — `src/browser/flow.ts:526`
 - Tokens per run: `tallied` — `src/llm/ledger.ts:85`, run at `src/browser/flow.ts:991`
+- `failure`: the run's `.failure.json` (U19), set in `src/browser/flow.ts` (`failureFile`); `byFailure[].record` shows the newest per kind
 - CLI: `autobrowse success` reads `flowRunsDirFor` — `src/app/services-state.ts:352`
 
 ## Connected to

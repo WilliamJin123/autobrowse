@@ -35,6 +35,8 @@ export interface FlowRunRow {
   outputTokens: number;
   /** The human motions' seed: `AUTOBROWSE_SEED=<it>` replays them on the same page. Absent: no browser opened. */
   seed?: number;
+  /** The failure record (`*.failure.json`): its screenshot, aria, network, trace beside it. */
+  failure?: string;
 }
 
 export interface CaptchaSolve {
@@ -117,7 +119,14 @@ export interface FlowRunReport extends FlowGroup {
   byFlow: (FlowGroup & { flow: string })[];
   bySite: (FlowGroup & { site: string })[];
   /** Failed runs by outcome and the step that broke, most first. */
-  byFailure: { outcome: FlowOutcome; goal: string | null; n: number; example: string | null }[];
+  byFailure: {
+    outcome: FlowOutcome;
+    goal: string | null;
+    n: number;
+    example: string | null;
+    /** The newest failure record of this kind. */
+    record?: string;
+  }[];
   captcha: {
     runs: number;
     tries: number;
@@ -210,6 +219,7 @@ export function flowRunReport(rows: readonly FlowRunRow[]): FlowRunReport {
     const k = `${r.outcome}\u0000${r.goal ?? ""}`;
     const f = failures.get(k) ?? { outcome: r.outcome, goal: r.goal, n: 0, example: r.error };
     f.n++;
+    if (r.failure) f.record = r.failure;
     failures.set(k, f);
   }
   const met = rows.filter((r) => r.captchaSolved !== null);
@@ -264,7 +274,7 @@ export function formatFlowRunReport(r: FlowRunReport): string[] {
     out.push("  why runs failed");
     for (const f of r.byFailure.slice(0, 10))
       out.push(
-        `    ${f.outcome.padEnd(11)} ${String(f.n).padStart(4)}  ${f.goal ?? "(before any act)"}: ${(f.example ?? "").slice(0, 100)}`,
+        `    ${f.outcome.padEnd(11)} ${String(f.n).padStart(4)}  ${f.goal ?? "(before any act)"}: ${(f.example ?? "").slice(0, 100)}${f.record ? `\n${" ".repeat(21)}${f.record}` : ""}`,
       );
   }
   return out;

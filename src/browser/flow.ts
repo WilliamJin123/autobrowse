@@ -853,6 +853,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
         const hands = handsOn(seed);
         let outcome: FlowOutcome = "ok";
         let failure: string | null = null;
+        // the failure record's path, for the run row (U19)
+        let failureFile: string | null = null;
         // Provisional until the run ends ok: a repair that clicked the wrong control fails later.
         const repaired: { report: RepairReport; passed: { look: PageLook; reason: string }[] }[] =
           [];
@@ -1489,6 +1491,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           if (call && resumes) keepResume(call, kind);
           artifacts.failure = join(artifactsDir, `${stamp}.failure.json`);
           writeFileSync(artifacts.failure, JSON.stringify(record, null, 2));
+          failureFile = artifacts.failure;
           runner.onFailure?.(record, artifacts.failure);
           if (err instanceof NeedsHuman) {
             err.artifacts = artifacts;
@@ -1527,6 +1530,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               inputTokens: run.tally.inputTokens,
               outputTokens: run.tally.outputTokens,
               seed,
+              ...(failureFile ? { failure: failureFile } : {}),
             }),
           );
           if (reach) session.context.off("response", onResponse);

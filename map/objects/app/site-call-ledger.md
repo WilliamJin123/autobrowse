@@ -33,6 +33,8 @@ Restate keeps a finished invocation about a day and `caps` only metered reads fo
 - **Hits:** `src/runs/success.ts`, `src/runs/import.ts`, `src/app/cli-runs.ts` (`success`, `success import`).
 - **Does not hit:** the facade, caps, pacing.
 
+- `artifact`: a failed browser leg's `.failure.json`, from `failureOf` (`src/errors.ts`, walks `cause`); `errorOf` gives the same path to every caller (U19).
+
 ## Surfaces
 
 | Surface | Role |

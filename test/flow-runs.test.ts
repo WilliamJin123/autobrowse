@@ -116,6 +116,25 @@ describe("flow runs", () => {
     expect(formatFlowRunReport(r).join("\n")).toMatch(/4 runs, 2 failed \(50%\)/);
   });
 
+  it("links each failure kind to its newest failure record", () => {
+    const r = flowRunReport([
+      row({
+        outcome: "failed",
+        goal: "fill email",
+        error: "Timeout",
+        failure: "/a/1.failure.json",
+      }),
+      row({
+        outcome: "failed",
+        goal: "fill email",
+        error: "Timeout",
+        failure: "/a/2.failure.json",
+      }),
+    ]);
+    expect(r.byFailure[0]?.record).toBe("/a/2.failure.json");
+    expect(formatFlowRunReport(r).join("\n")).toContain("/a/2.failure.json");
+  });
+
   it("reports each captcha wall, whether the run then passed, and each model's share of the vote", () => {
     const look = (lead: boolean) => ({
       kind: "grid" as const,
