@@ -12,6 +12,7 @@ import {
 } from "./connector-keys.js";
 import { discordBotToken, discordInvite } from "./discord.js";
 import { facebookOauthConsent } from "./facebook-oauth-consent.js";
+import { fbAdLibrary } from "./fb-ad-library.js";
 import { fbMarketplace } from "./fb-marketplace.js";
 import { fingerprint } from "./fingerprint.js";
 import { googleDkimGenerate, googleDkimStart } from "./google-dkim.js";
@@ -170,6 +171,17 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       url: z.string(),
       account: z.string().optional(),
       passThrough: z.boolean().optional(),
+    }),
+    true,
+  ),
+  entry(
+    fbAdLibrary,
+    z.object({
+      q: z.string().optional(),
+      page: z.string().optional(),
+      country: z.string().optional(),
+      inactive: z.boolean().optional(),
+      max: z.number().optional(),
     }),
     true,
   ),

@@ -2,8 +2,8 @@
  * Facebook's public pages, read signed out: never Wren's Meta login (it runs our ads, and
  * Meta bans accounts that scrape). Each route is a built walk on the owner's Mac
  * (`walks/fb-public/<name>.json`, a `records` op, designs/2026-10-05-records-and-ai-steps.md),
- * so call it on the desk. `GET /ads?q=` is the Ad Library: ads running now for a keyword,
- * with the advertiser's page and the link each ad sends to. The Ad Library API only covers
+ * so call it on the desk. `GET /ads` is the Ad Library (a keyword, or one advertiser's ads), read
+ * from the library page's own JSON (`browser/flows/fb-ad-library`). The Ad Library API only covers
  * political ads outside the EU, so this is the browser read. Groups: Meta removed the Groups API
  * in 2024. Signed out, a group's About reads whole and its feed shows only the featured post, but
  * a single post's page reads whole with its top comments, and Google indexes public posts: so
@@ -66,7 +66,7 @@ export const fbPublic: SiteApi = {
   origin: "https://www.facebook.com",
   auth: { open: true },
   signedOut: true,
-  // About 30 ads a read; a person browsing the library doesn't load hundreds of pages a day.
+  // 30 ads a result page; a person browsing the library doesn't load hundreds of pages a day.
   caps: { reads: 200, google: 100 },
   pace: { gapMs: 20_000, jitterMs: 20_000 },
   routes: [
@@ -78,19 +78,24 @@ export const fbPublic: SiteApi = {
           "no API has a commercial ad shown outside the EU: Meta's Ad Library API gives political ads and EU-shown ads only (a first pass for those)",
       },
       summary:
-        "Ads running now for keyword `q` in `country` (default US), newest layout first: Library ID, advertiser, its page, start date, text, call to action, the link it sends to (`url`, every one in `urls`), the shown domain (`caption`), and the card's whole text (`all`). A browser leg: call it on the desk",
-      request: z.object({
-        q: z.string().trim().min(2).max(100),
-        country: z
-          .string()
-          .regex(/^[A-Z]{2}$/)
-          .default("US"),
+        "Ad Library ads for keyword `q`, or all of one advertiser's ads (`page`: its page id, URL or username), in `country` (ISO or ALL, default US); running ads only unless `inactive`. Up to `max` (default 30, up to 600; 30 a result page). Each ad: Library ID, advertiser (id, name, page, likes), active, started, ended, daysRunning, platforms, versions (ads on the same creative), format, headline, body, CTA, link, shown domain, media (image URLs; video HD/SD URLs and posters), carousel cards, and the library's record whole (`raw`). Media URLs are signed and expire. `total` is the library's count. A browser leg: call it on the desk",
+      request: z
+        .object({
+          q: z.string().trim().min(2).max(100).optional(),
+          page: z.string().trim().min(2).max(300).optional(),
+          country: z
+            .string()
+            .regex(/^([A-Z]{2}|ALL)$/)
+            .default("US"),
+          inactive: z.coerce.boolean().default(false),
+          max: z.coerce.number().int().min(1).max(600).default(30),
+        })
+        .refine((o) => !!o.q !== !!o.page, { message: "give q or page, not both" }),
+      // one read per result page, one more to find a page id from its URL
+      meter: ({ max, page }) => ({
+        reads: Math.ceil(max / 30) + (page && !/^\d+$/.test(page) ? 1 : 0),
       }),
-      meter: () => ({ reads: 1 }),
-      browser: {
-        flow: "fb-public/walk-ad-library",
-        output: (o) => ({ ads: (o as WalkOutput).records.ads ?? [] }),
-      },
+      browser: { flow: "fb-public/ad-library" },
     }),
     route({
       method: "GET",

@@ -20,6 +20,7 @@ import {
 } from "../browser/flows/connector-keys.js";
 import { discordBotToken, discordInvite } from "../browser/flows/discord.js";
 import { facebookOauthConsent } from "../browser/flows/facebook-oauth-consent.js";
+import { fbAdLibrary } from "../browser/flows/fb-ad-library.js";
 import { fbMarketplace } from "../browser/flows/fb-marketplace.js";
 import { fingerprint } from "../browser/flows/fingerprint.js";
 import { googleDkimGenerate, googleDkimStart } from "../browser/flows/google-dkim.js";
@@ -316,6 +317,7 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     pinterestSearch,
     pinterestUser,
     pinterestBoard,
+    fbAdLibrary,
     fbMarketplace,
     instagramProfileName,
     xProfileName,

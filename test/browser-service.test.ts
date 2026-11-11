@@ -57,6 +57,7 @@ describe("browser service", () => {
       "discord/bot-token",
       "discord/invite",
       "facebook/oauth-consent",
+      "fb-public/ad-library",
       "fb-public/marketplace",
       "fingerprint/check",
       "gemini/ask",

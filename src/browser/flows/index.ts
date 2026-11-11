@@ -17,6 +17,7 @@ export {
   discordInvite,
 } from "./discord.js";
 export { facebookOauthConsent } from "./facebook-oauth-consent.js";
+export { fbAdLibrary } from "./fb-ad-library.js";
 export { fbMarketplace } from "./fb-marketplace.js";
 export { type Fingerprint, fingerprint, tellsOf } from "./fingerprint.js";
 export { googleDkimGenerate, googleDkimStart } from "./google-dkim.js";
