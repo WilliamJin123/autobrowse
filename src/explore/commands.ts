@@ -213,6 +213,15 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   /** Solve the captcha on the page: the checkbox by hand, a picture by the runner's eyes. Journaled, so the compiled flow solves it too. */
   z.object({ cmd: z.literal("captcha") }),
   /**
+   * Native dialogs (confirm, prompt, alert, leave page). No `accept`: the log. With it: the answer
+   * to the next confirm or prompt only. Default: yes to alert and leave page, no to confirm and prompt.
+   */
+  z.object({
+    cmd: z.literal("dialog"),
+    accept: z.boolean().optional(),
+    text: z.string().max(2_000).optional(),
+  }),
+  /**
    * Run a compiled workflow on this page (`autobrowse workflows`): its plan, then its steps, one row each.
    * A stopped run (a gate, a step that failed) is kept: the same command goes on from there; `fresh` starts over.
    */

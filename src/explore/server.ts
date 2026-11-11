@@ -36,6 +36,7 @@ import type { SecretValues } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { cardMask, cardShown } from "../browser/card-mask.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
+import { dialogsOf, watchDialogs } from "../browser/dialogs.js";
 import { fetchFile } from "../browser/download.js";
 import { collectWhenIdle, holdCollect } from "../browser/driver-memory.js";
 import { extrasOf } from "../browser/extras.js";
@@ -651,6 +652,8 @@ async function serve(
   });
   /** The active page: it moves when a popup opens (OAuth) and comes back after; re-read per command. */
   let page: Page = fp.page;
+  // Popups share the context: one watcher sees every tab's dialogs.
+  const dialogs = dialogsOf(fp.page) ?? watchDialogs(fp.page.context());
   // A film stays clean: its rows go to the pane json.
   const overlay = overlayFor(
     opts.overlay ?? (opts.browser.headless === false && !opts.browser.film),
@@ -1660,12 +1663,17 @@ async function serve(
   const looked = async (c: Command, wait: boolean) => {
     if (!LOOKS.has(c.cmd)) return { answer: await act(c, wait), rows: null };
     const before = await rows();
+    const seen = dialogs.count();
     const out = await act(c, wait).finally(() => overlay.after(fp.page));
     page = fp.page;
     const after = await rows();
     const changed = pageChange(before, after);
     lastChanged = changed.added.length + changed.gone + (changed.more ?? 0) > 0;
-    return { answer: { ...(out as object), changed }, rows: after };
+    const opened = dialogs.since(seen);
+    return {
+      answer: { ...(out as object), changed, ...(opened.length ? { dialogs: opened } : {}) },
+      rows: after,
+    };
   };
   /**
    * What a person did since the agent's last command, once: the count, where
@@ -2296,6 +2304,15 @@ async function serve(
       }
       case "url":
         return { url: page.url() };
+      case "dialog": {
+        if (c.accept === undefined) return { dialogs: dialogs.log.slice(-20) };
+        dialogs.answerNext({ accept: c.accept, ...(c.text !== undefined ? { text: c.text } : {}) });
+        journal({
+          kind: "note",
+          text: `the next confirm or prompt is answered ${c.accept ? "yes" : "no"}: \`fp.page.once("dialog", (d) => d.${c.accept ? "accept()" : "dismiss()"})\``,
+        });
+        return { ok: true, next: c.accept ? "accept" : "dismiss" };
+      }
       case "files": {
         if (!opts.files)
           throw new Error("files: none here (they live on the Mac: autobrowse files add)");

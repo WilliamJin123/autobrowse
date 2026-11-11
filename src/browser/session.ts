@@ -12,6 +12,7 @@ import type { Browser, BrowserContext, Page } from "playwright";
 import { type HttpClient, safeUrls } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
 import { assertProfileFree } from "./browsers.js";
+import { type Dialogs, watchDialogs } from "./dialogs.js";
 import { boundRequests } from "./driver-memory.js";
 import type { Egress, Exit } from "./egress.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
@@ -189,6 +190,8 @@ export interface Session {
    * a rented or attached browser).
    */
   offscreen?: (off: boolean) => Promise<void>;
+  /** Native dialogs seen and answered (`browser/dialogs.ts`). */
+  dialogs: Dialogs;
   close(): Promise<void>;
 }
 
@@ -229,6 +232,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     // `webdriver` property on navigator, reading undefined, is itself a tell.
   }
   boundRequests(context);
+  const dialogs = watchDialogs(context);
   const page = context.pages()[0] ?? (await context.newPage());
   const film = opts.film ? await filmContext(context, opts.film) : null;
   const passkeys = virtualAuthenticator(context, await opts.passkeys?.(site).catch(() => []));
@@ -241,6 +245,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     context,
     page,
     passkeys,
+    dialogs,
     ...(film ? { filmed: true } : {}),
     ...(hide ? { offscreen: hide } : {}),
     ...(local && opts.egress ? { newIp: () => (opts.egress as Egress).newIp(profile) } : {}),
@@ -282,6 +287,8 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
     context,
     page,
     shared: true,
+    // Our tab only: their other tabs' dialogs stay theirs.
+    dialogs: watchDialogs(page),
     // Their passkeys stay theirs: no virtual authenticator in their browser.
     passkeys: { export: async () => [] },
     async close() {

@@ -103,6 +103,7 @@ Act (journaled):
   - The same two phases hold for `env set`, `env push`, `env pull`, `env rm`, `creds key add` and `site setup` (`--confirm`), and for a flow or workflow that mints a key (`"replace": true` in its input or plan).
 - `{"cmd":"seed"}` — a site asks to set up an authenticator: open the step that shows its QR or setup key ("another authenticator app", "can't scan"), then `seed` seals the seed into this site's login: the otpauth link in a captured call first, then the page. It never answers the seed. Then `place{secret:"<site>.code"}` types the current code, and sign-ins after that need nobody. A login that holds another seed: it asks first (`"confirm":true` only after William's yes).
 - `{"cmd":"captcha"}` — solves the page's captcha (a checkbox by a human click, a picture by a model, cropped in memory). Returns `{solved, kind, vendor, reason?}`. Never screenshot a captcha yourself.
+- `{"cmd":"dialog"}` — the native dialogs seen (confirm, prompt, alert, leave page). Default: yes to alert and leave page, no to confirm and prompt. `{"cmd":"dialog","accept":true,"text":"…"}` answers the next confirm or prompt only; send it before the act. An act that opened one returns `dialogs`.
 - `{"cmd":"note","text":"…"}` — a comment in the journal.
 - `{"cmd":"eval","js":"…"}` — last resort; not journaled as a click, so the recording misses it.
 - `{"cmd":"batch","cmds":[{…},{…}]}` — up to 30 commands in order, one answer, one `changed`. No `close`, `pause`, `resume`, `save`, `flow`, `code` or nested batch.
