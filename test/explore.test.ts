@@ -722,6 +722,35 @@ describe("explore mode", () => {
       server.close();
     }
   }, 60_000);
+
+  it("a resent act with the same id answers once and acts once (U6); dialogs show on the act (U7)", async () => {
+    const page = `data:text/html,${encodeURIComponent(
+      `<button onclick="n.textContent=+n.textContent+1">Add</button><p id="n">0</p>
+       <button onclick="r.textContent=confirm('Sure?')">Ask</button><p id="r"></p>`,
+    )}`;
+    await send({ cmd: "open", url: page });
+    const add = { cmd: "click", hints: { role: "button", name: "Add" }, id: "add-1" };
+    const first = await send(add);
+    expect(first.body.repeat).toBeUndefined();
+    const again = await send(add);
+    expect(again.status).toBe(first.status);
+    expect(again.body.repeat).toBe(true);
+    expect((await send({ cmd: "read", hints: { css: "#n" }, as: "n" })).body.text).toBe("1");
+    expect((await send({ ...add, id: "bad id!" })).status).toBe(400);
+
+    const ask = { cmd: "click", hints: { role: "button", name: "Ask" } };
+    const no = await send(ask);
+    expect(no.body.dialogs).toMatchObject([{ type: "confirm", message: "Sure?", answered: false }]);
+    expect((await send({ cmd: "read", hints: { css: "#r" }, as: "r" })).body.text).toBe("false");
+    expect((await send({ cmd: "dialog", accept: true })).body).toEqual({
+      ok: true,
+      next: "accept",
+    });
+    await send(ask);
+    expect((await send({ cmd: "read", hints: { css: "#r" }, as: "r" })).body.text).toBe("true");
+    const log = (await send({ cmd: "dialog" })).body.dialogs as { answered: boolean }[];
+    expect(log.map((d) => d.answered)).toEqual([false, true]);
+  });
 });
 
 describe("pause: a person's hand acts land in the journal", () => {

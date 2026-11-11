@@ -28,9 +28,16 @@ export async function postCmd(port, body) {
     });
     return { ok: res.ok, body: await res.text() };
   } catch (err) {
+    // No answer: an act may have run. The same id again gets its answer, never a second act.
     return {
       ok: false,
-      body: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      body: JSON.stringify({
+        error: err instanceof Error ? err.message : String(err),
+        outcome: "unknown",
+        hint: body?.id
+          ? "send the same command with the same id: it answers what happened, it does not act again"
+          : 'look before you act again; give each act an "id" so a resend is safe',
+      }),
     };
   }
 }

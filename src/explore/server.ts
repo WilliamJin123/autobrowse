@@ -571,6 +571,35 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
   return serve(opts, fp, finishFlow, files, leg);
 }
 
+/** Command ids kept per session: a resend this far back still gets its first answer. */
+const SENT_KEEP = 500;
+
+/** The caller's id for a command (U6), taken off before the schema reads it. */
+export function commandId(raw: Record<string, unknown>): string | null {
+  const id = raw.id;
+  delete raw.id;
+  if (id === undefined) return null;
+  if (typeof id !== "string" || !/^[\w.:-]{1,80}$/.test(id))
+    throw new Error("id: 1-80 letters, digits or . : _ -");
+  return id;
+}
+
+/** The first answer, marked as a resend's. */
+export function withRepeat(body: string): string {
+  try {
+    const v = JSON.parse(body) as unknown;
+    if (v && typeof v === "object" && !Array.isArray(v))
+      return JSON.stringify({ ...v, repeat: true });
+  } catch {}
+  return body;
+}
+
+/** The browser or its page closed under the act. */
+export const browserGone = (err: unknown): boolean =>
+  /Target (?:page, context or browser )?(?:has been )?closed|browser has been closed|Browser closed|Session closed/i.test(
+    err instanceof Error ? err.message : String(err),
+  );
+
 /** The leg running now: whose sign-in a wall gets, or why it gets none. */
 interface LegLogin {
   site: string | null;
@@ -2707,6 +2736,12 @@ async function serve(
   };
 
   const token = randomBytes(16).toString("hex");
+  // Answers by command id, newest last; the oldest go past SENT_KEEP.
+  const sent = new Map<string, Promise<{ status: number; body: string }>>();
+  const remember = (id: string, p: Promise<{ status: number; body: string }>) => {
+    sent.set(id, p);
+    if (sent.size > SENT_KEEP) sent.delete(sent.keys().next().value as string);
+  };
   const server: Server = createServer((req, res) => {
     if (req.headers.authorization !== `Bearer ${token}`) {
       res.statusCode = 401;
@@ -2720,8 +2755,11 @@ async function serve(
     req.on("end", async () => {
       res.setHeader("content-type", "application/json");
       let parsed: Command;
+      let id: string | null = null;
       try {
-        parsed = commandSchema.parse(JSON.parse(body || "{}"));
+        const raw = JSON.parse(body || "{}") as Record<string, unknown>;
+        id = commandId(raw);
+        parsed = commandSchema.parse(raw);
       } catch (err) {
         res.statusCode = 400;
         res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
@@ -2733,11 +2771,27 @@ async function serve(
       const t = now();
       const by = req.headers["x-claude-session"];
       const session = typeof by === "string" && /^[\w-]{8,64}$/.test(by) ? by : undefined;
+      // A resend with the same id gets the first answer, never a second act (U6).
+      const first = id ? sent.get(id) : undefined;
+      if (first) {
+        const got = await first;
+        res.statusCode = got.status;
+        res.end(withRepeat(got.body));
+        return;
+      }
+      let settle: (v: { status: number; body: string }) => void = () => undefined;
+      if (id) remember(id, new Promise((r) => (settle = r)));
+      const reply = (body: string) => {
+        settle({ status: res.statusCode, body });
+        // A gate that asked waits on the person: the same command, same id, asks again.
+        if (id && res.statusCode === 202) sent.delete(id);
+        res.end(body);
+      };
       try {
         const answer = await run(parsed, wait);
         const body = JSON.stringify(parsed.cmd === "url" ? answer : leanUrls(answer));
         counted(parsed, t, null, body, undefined, session);
-        res.end(body);
+        reply(body);
       } catch (err) {
         res.statusCode = err instanceof PaymentGate ? (err.reason === "asked" ? 202 : 403) : 500;
         const detail = err instanceof Error ? err.message : String(err);
@@ -2748,11 +2802,13 @@ async function serve(
             ? await run({ cmd: "marks" }).catch(() => null)
             : null;
         const e = errorOf(err);
+        // The browser went mid-act: the click or submit may have landed.
+        const outcome = e.outcome ?? (LOOKS.has(parsed.cmd) && browserGone(err) ? "unknown" : null);
         const body = JSON.stringify({
           error,
           code: e.code,
           retryable: e.retryable,
-          ...(e.outcome ? { outcome: e.outcome } : {}),
+          ...(outcome ? { outcome } : {}),
           url: shortUrl(page.url()),
           ...(err instanceof PaymentGate ? { gate: err.gate, reason: err.reason } : {}),
           ...(shot
@@ -2762,7 +2818,7 @@ async function serve(
               : {}),
         });
         counted(parsed, t, error ?? "", body, detail, session);
-        res.end(body);
+        reply(body);
       }
     });
   });
