@@ -357,6 +357,42 @@ legs. ChatGPT's `/?q=&hints=search` sends with web search and gives sources; Gem
 is Flash-Lite with no sources. Grok shows "Sign up to continue" after the question; DeepSeek and
 Claude open on a sign-in. Those three need accounts: not built.
 
+## Built: the upgrade list (11-10, WA-1294)
+
+| # | Commit | What shipped |
+|---|---|---|
+| U1, U5, U11, U12 | a0bfe31 | Error contract, ladder, in-page JSON (WA-1251.1–.3) |
+| U2 | 21fa728 | `SiteRoute.response`, checked in the facade (`checkResponse`) |
+| U3 | ef9c6f7 | `autobrowse list`, `--help --json`, `catalog.json` with a drift test |
+| U4 | dc2192f | Route and flow conventions in the gates; `site scaffold` |
+| U6 | 7e8a98d | Command ids on explore: a resend answers once |
+| U7 | cc6cbce | Native dialogs answered and logged |
+| U8 | 72f187b | A ban page holds the whole account (`ACCOUNT_HOLD`) |
+| U10 | c465cf9 | Own-browser tabs in a background window; dead owners' tabs reaped |
+| U13 | 97d730a | Site memory: `endpoints.json`, `field-map.json` |
+| U14 | d4f46df | Explore `wait`, downloads, stale marks found again |
+| U16 | 7b3211e | Proof fixtures (`expect.json`) |
+| U17 | a99ab79 | The probe: site who-am-I and workflow re-proofs, in `success` |
+| U18 | 5ac00ed | `auth status` from the cookie DB; a state per route; `doctor --json` |
+| U19 | b50562a | A failure record linked from each row and the error |
+| U20 | 810803d | Heal classifies first; 3 rounds; never loosens a fixture |
+| U21 | 52c9b67 | Skill in the package, `skills` command, `llms.txt` |
+| U22 | f3e1fd3, d0ebd42 | `evals/` suite; baseline base1: train 8/8, test 3/4 |
+| U23 | 51778ec | Before/after call hooks; a trusted mod adds sites and hooks |
+| Small fixes | 59e26ea, d69bdb6, 354cdd0 | Explore code version and skew warning; `ProfileBusy` op and age; `flow.ts` and `facade.ts` split |
+
+Not built, and why:
+- U9: WA-1148 is parked. William rejected its picks; it waits on a research run and a new design.
+- U15: it exists as `fp.each` (WA-1087, 14666cd).
+- U19's retention caps: one trace per shape per day and the 14-day sweep exist. A cap that deletes more breaks the keep-data rule.
+- `route()` keeps its type erasure: a typed `SiteRoute<I, O>` in a list fails on variance. The runtime `response` check covers the gap.
+
+Notes:
+- The probe checks daily and runs when a week has passed (`probeDue`).
+- A workflow opts in to the probe with a `.plan.json` beside it. A proof runs every act but the gated ones, and a profile edit is not gated.
+- Installed outside the repo, the packaged skill's `state.sh` prints "none" for sites and workflows.
+- The flow and facade splits keep one entry point each. `flow.ts` re-exports `flow-api.ts`; `facade.ts` re-exports `facade-api.ts`. The runner and facade closures stay whole: they share mutable run state.
+
 ## Plan once William picks
 
 1. Wave 1 (U1 with its options first).
@@ -406,3 +442,8 @@ Claude open on a sign-in. Those three need accounts: not built.
   browser too, and the feed lists the same articles keyless.
 - 2026-11-10: ChatGPT and Gemini signed out, no account (my call). Grok, DeepSeek and Claude need
   a sign-in; an account for each is William's call (accounts policy).
+- 2026-11-10: The flow and facade splits move shapes and pure steps only. Splitting the
+  runner closure needs a run-state object across every compiled flow, for no change in behavior
+  (my call).
+- 2026-11-10: Explore's code version is the checkout's HEAD sha. Each reply carries `skew` once
+  HEAD moves, checked once a minute at most (my call).
