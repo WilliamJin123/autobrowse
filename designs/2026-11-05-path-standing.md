@@ -83,11 +83,10 @@ When a blocker clears: delete it from `blockers.ts`. The test then names each ro
 | `tiktok-business` | TikTok API for Business, Accounts API | Not filed (WA-1030) | 3 |
 | `tiktok-direct-post` | Direct Post audit | Not filed | 1 |
 | `google-places` | Google Places API, billed per call | Ours to set up | 1 |
-| `npm-trust-cli` | Our API leg on `npm trust` | Ours to build (WA-1111) | 1 |
 | `instagram-local-upload` | Our API leg on resumable upload | Ours to build (WA-1112) | 1 |
 | `connect` | our own setup: no Outlook token | Ours to run | 7 |
 
-The 41 `final` routes: `autobrowse site paths --final`. Each says no API has the call. Three carry a first-pass note: LinkedIn `/company/{company}` (WA-1113), Instagram `/web/p/{shortcode}`, Google `/place/reviews`; Meta `/ads` names the EU-only API.
+The 42 `final` routes: `autobrowse site paths --final`. Each says no API has the call. Three carry a first-pass note: LinkedIn `/company/{company}` (WA-1113), Instagram `/web/p/{shortcode}`, Google `/place/reviews`; Meta `/ads` names the EU-only API.
 
 Not counted as an API: a scraper a vendor runs (SerpApi and the like). It is a browser on another party's machines.
 
@@ -112,3 +111,4 @@ Not counted as an API: a scraper a vendor runs (SerpApi and the like). It is a b
 - 2026-11-05 (WA-1110, my call): a vendor's scraper API is not an API here. William may overrule: then `/google` and `/place/reviews` wait.
 - 2026-11-06 (William): "serpapi doesn't count". A vendor's scraper API is not an API here; `/google` and `/place/reviews` stay `final`.
 - 2026-11-06 (William: "that's your call… no is fine"): Instagram `/web/p/{shortcode}` stays `final`, not waiting on `meta-app`. No API reads a post by its link code; after App Review the API reads a business or creator account's posts, which stays the first-pass note.
+- 2026-11-11: `npm-trust-cli` dropped; npm `/packages/{package}/trust` is `final` (WA-1111). `npm trust` wants 2FA on the first call, and the account's 2FA is a passkey, so the CLI sends that step to a browser page. William agreed to close it.

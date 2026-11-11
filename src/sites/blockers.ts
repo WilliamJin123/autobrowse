@@ -72,13 +72,6 @@ export const GOOGLE_PLACES: Blocker = {
 };
 
 /** Ours to build: no one outside holds it. */
-export const NPM_TRUST: Blocker = {
-  what: "`npm trust` (npm 11.15) sets a trusted publisher by the registry API. It refuses bypass tokens and wants the account's 2FA code on the first call. Our API leg is not built",
-  task: "WA-1111",
-  since: "2026-11-05",
-};
-
-/** Ours to build: no one outside holds it. */
 export const INSTAGRAM_LOCAL_UPLOAD: Blocker = {
   what: "The Graph API takes a local reel by resumable upload; our API leg sends a public URL only. Not built",
   task: "WA-1112",

@@ -11,7 +11,6 @@
  */
 import { z } from "zod";
 import { type HttpClient, HttpError } from "../clients/http.js";
-import { NPM_TRUST } from "./blockers.js";
 import { route, type SiteApi } from "./types.js";
 
 export const NPM_REGISTRY = "https://registry.npmjs.org";
@@ -65,7 +64,6 @@ export async function createRegistryUser(
 export const npm: SiteApi = {
   site: "npm",
   origin: NPM_REGISTRY,
-  blockers: { "npm-trust-cli": NPM_TRUST },
   probe: { path: "/-/whoami" },
   auth: { token: NPM_TOKEN },
   routes: [
@@ -98,7 +96,10 @@ export const npm: SiteApi = {
     route({
       method: "POST",
       path: "/packages/{package}/trust",
-      standing: { waits: "npm-trust-cli" },
+      standing: {
+        final:
+          "`npm trust` wants the account's 2FA on the first call, and this account's 2FA is a passkey: the CLI hands that step to a browser page anyway",
+      },
       summary:
         "Trust a GitHub Actions workflow to publish the package over OIDC (no token in CI); owner, repo and workflow are fixed once made. `allowPublish` (default true; false = stage only) is set on a new or existing connection",
       request: z.object({
