@@ -34,6 +34,8 @@ export const LINKEDIN_PAGES: Blocker = {
   grants: [
     "w_organization_social",
     "r_organization_social",
+    "w_organization_social_feed",
+    "r_organization_social_feed",
     "r_member_social",
     "w_member_social_feed",
   ],

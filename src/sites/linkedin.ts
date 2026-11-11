@@ -316,8 +316,13 @@ async function uploadVideo(leg: ApiLeg, owner: string, file: string): Promise<st
   }
 }
 
+/** LinkedIn's own `message` rides the error: a 403 names the grant it lacks. */
+export const linkedinWhy = (body: unknown): string => {
+  const m = (body as { message?: unknown } | null)?.message;
+  return typeof m === "string" ? m : "";
+};
 const must = <T>(res: JsonResponse<T>, what: string): T =>
-  mustOk(res, `${LINKEDIN_ORIGIN}/${what}`);
+  mustOk(res, `${LINKEDIN_ORIGIN}/${what}`, linkedinWhy);
 
 export const linkedinOAuth: OAuthSpec = {
   authorizeUrl: OAUTH_PROVIDERS.linkedin.authorize,
@@ -585,7 +590,7 @@ export const linkedin: SiteApi = {
       path: "/rest/socialActions/{urn}",
       summary: "Reaction and comment counts for a post",
       request: byUrn,
-      needs: ["r_organization_social"],
+      needs: ["r_organization_social_feed"],
       // The page read loads the post like a comment read; a count the hourly comment read just
       // saw, or the API's answer, loads nothing.
       meter: () => ({ comments: 1 }),
@@ -606,7 +611,7 @@ export const linkedin: SiteApi = {
       path: "/rest/socialActions/{urn}/comments",
       summary: "Comments on a post (`count&start`)",
       request: comments,
-      needs: ["r_organization_social"],
+      needs: ["r_organization_social_feed"],
       meter: () => ({ comments: 1 }),
       api: async ({ urn, count, start }, leg) =>
         must(
@@ -667,7 +672,9 @@ export const linkedin: SiteApi = {
       },
       // Commenting is partner-only for members too (403 partnerApiSocialActions.CREATE on
       // w_member_social, 2026-10-13): Community Management's feed scope, until then the browser.
-      needs: (b) => [PAGE_URN.test(b.actor) ? "w_organization_social" : "w_member_social_feed"],
+      needs: (b) => [
+        PAGE_URN.test(b.actor) ? "w_organization_social_feed" : "w_member_social_feed",
+      ],
       meter: () => ({ comment: 1 }),
       api: async ({ urn, ...body }, leg) =>
         must(

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
-import { LINKEDIN_VERSION } from "./linkedin.js";
+import { LINKEDIN_VERSION, linkedinWhy } from "./linkedin.js";
 import { type ApiLeg, type OAuthSpec, route, type SiteApi } from "./types.js";
 
 const ORIGIN = "https://api.linkedin.com";
@@ -14,7 +14,14 @@ const ORIGIN = "https://api.linkedin.com";
 export const linkedinPagesOAuth: OAuthSpec = {
   authorizeUrl: OAUTH_PROVIDERS.linkedin.authorize,
   tokenUrl: OAUTH_PROVIDERS.linkedin.token,
-  scopes: ["rw_organization_admin", "r_organization_social", "w_organization_social"],
+  // a Page's comments and counts are the `_feed` pair since 2023 (partnerApiSocialActions)
+  scopes: [
+    "rw_organization_admin",
+    "r_organization_social",
+    "w_organization_social",
+    "r_organization_social_feed",
+    "w_organization_social_feed",
+  ],
   clientId: "SOCIAL_LINKEDIN_PAGES_CLIENT_ID",
   clientSecret: "SOCIAL_LINKEDIN_PAGES_CLIENT_SECRET",
   // CM tokens refresh for a year; the access token is minted from it
@@ -62,6 +69,7 @@ export const linkedinPages: SiteApi = {
             { headers: headers(leg) },
           ),
           `${ORIGIN}/rest/organizations?q=vanityName`,
+          linkedinWhy,
         ),
     }),
     route({
@@ -77,6 +85,7 @@ export const linkedinPages: SiteApi = {
             { headers: headers(leg) },
           ),
           `${ORIGIN}/rest/networkSizes/{urn}`,
+          linkedinWhy,
         ),
     }),
   ],
