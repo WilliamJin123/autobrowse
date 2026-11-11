@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Credential, CredentialStore } from "credvault";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { already, markLimited, markReached } from "../src/browser/attempt.js";
+import { already, markBanned, markLimited, markReached } from "../src/browser/attempt.js";
 import { linkedinCompanyJobs, linkedinConnect } from "../src/browser/flows/linkedin-reach.js";
 import { xProfile, xSearch } from "../src/browser/flows/x-read.js";
 import { httpClient } from "../src/clients/http.js";
@@ -654,6 +654,33 @@ describe("tries over a cap", () => {
     expect(again).toMatchObject({ status: 429 });
     expect((again as Error).message).toMatch(/is held for .*: the site undid an act/);
     expect(runs).toBe(1);
+  });
+
+  it("a page that shows the account limited holds every call of it, a ban from 12 h", async () => {
+    let runs = 0;
+    const { caps, call } = follows(async () => {
+      runs++;
+      markReached();
+      markBanned({ site: "linkedin", kind: "restricted", said: "We've restricted your account" });
+      throw new Error("restricted");
+    });
+    await call();
+    const again = await call();
+    expect(again).toMatchObject({ status: 429 });
+    expect((again as Error).message).toMatch(/is held for .*showed the account limited/);
+    expect(runs).toBe(1);
+    expect(caps.accountHeld("linkedin", Object.keys(caps.held())[0]?.split("|")[1] ?? "")).toBe(
+      12 * 3600,
+    );
+  });
+
+  it("an account hold: limit from the first step, never below `from`, per account", () => {
+    const caps = memoryCaps(() => noon);
+    caps.hold("x", "a@x.com", ["*"]);
+    expect(caps.accountHeld("x", "a@x.com")).toBe(3600);
+    expect(caps.accountHeld("x", "b@x.com")).toBe(0);
+    caps.hold("x", "b@x.com", ["*"], 3);
+    expect(caps.accountHeld("x", "b@x.com")).toBe(12 * 3600);
   });
 
   it("a leg the site keeps starts its bucket's hold steps again", async () => {

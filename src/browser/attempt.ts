@@ -7,6 +7,7 @@
  * succeeds; a retry of the same call stops there and asks a person instead
  * of doing it twice.
  */
+
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
@@ -20,6 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { BanHit } from "./ban-signals.js";
 import type { CodeStore } from "./code.js";
 
 /** One try of a durable call: its key, and whether its submit step started. */
@@ -66,6 +68,8 @@ export interface Reach {
   reached: boolean;
   already?: boolean;
   limited?: boolean;
+  /** The page showed the account limited (`ban-signals`): the facade holds the whole account. */
+  banned?: BanHit;
 }
 
 const reaches = new AsyncLocalStorage<Reach>();
@@ -123,6 +127,12 @@ export const markAlready = (): void => {
 export const markLimited = (): void => {
   const r = reaches.getStore();
   if (r) r.limited = true;
+};
+
+/** The page showed the account limited: the facade holds every bucket of the account. */
+export const markBanned = (hit: BanHit): void => {
+  const r = reaches.getStore();
+  if (r) r.banned = hit;
 };
 
 /** `out`, answered as already there (`markAlready`). */

@@ -84,8 +84,13 @@ export interface DailyCaps {
    * `reached` true: it reached the site and did not do the thing, only `used` returns.
    */
   giveBack(site: string, account: string, use: Record<string, number>, reached?: boolean): void;
-  /** The site undid an act: refuse these buckets for the next step of `HOLD_STEPS_MS`. */
-  hold(site: string, account: string, buckets: string[]): void;
+  /**
+   * The site undid an act: refuse these buckets for the next step of `HOLD_STEPS_MS`, never below
+   * step `from`. Bucket `ACCOUNT_HOLD` holds every call of the account (`accountHeld`).
+   */
+  hold(site: string, account: string, buckets: string[], from?: number): void;
+  /** Seconds left on the hold of the whole account (`ACCOUNT_HOLD`); 0 when none. */
+  accountHeld(site: string, account: string): number;
   /** The site kept an act: these buckets' next hold starts at the first step again. */
   kept(site: string, account: string, buckets: string[]): void;
   /** The buckets held now, by `site|account|bucket`. */
@@ -131,6 +136,8 @@ export const RETRY_BUFFER = { act: 0.25, read: 0.5 } as const;
 
 /** How long a bucket stays refused after the site undid an act: by undone acts in a row, the last repeats. */
 export const HOLD_STEPS_MS = [1, 3, 8, 12].map((h) => h * 3_600_000);
+/** The bucket that stands for the whole account: the page showed it limited (`ban-signals`). */
+export const ACCOUNT_HOLD = "*";
 /** An ended hold this old is forgotten: the next undone act is a first one. */
 const HOLD_MEMORY_MS = 86_400_000;
 
@@ -220,7 +227,7 @@ function capsOn(
       d.tried = tried;
       save(d);
     },
-    hold(site, account, buckets) {
+    hold(site, account, buckets, from = 0) {
       const d = current();
       const t = now();
       const held = Object.fromEntries(
@@ -228,7 +235,7 @@ function capsOn(
       );
       for (const b of buckets) {
         const last = held[keyOf(site, account, b)];
-        const step = last ? Math.min(last.step + 1, HOLD_STEPS_MS.length - 1) : 0;
+        const step = Math.min(Math.max(last ? last.step + 1 : 0, from), HOLD_STEPS_MS.length - 1);
         held[keyOf(site, account, b)] = { until: t + (HOLD_STEPS_MS[step] ?? 0), step };
       }
       d.held = held;
@@ -240,6 +247,10 @@ function capsOn(
       if (!mine.length) return;
       d.held = Object.fromEntries(Object.entries(d.held ?? {}).filter(([k]) => !mine.includes(k)));
       save(d);
+    },
+    accountHeld(site, account) {
+      const until = current().held?.[keyOf(site, account, ACCOUNT_HOLD)]?.until ?? 0;
+      return until > now() ? Math.ceil((until - now()) / 1000) : 0;
     },
     held: () => heldNow(current()),
     slot(site, account, pace) {

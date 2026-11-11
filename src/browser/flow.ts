@@ -31,7 +31,15 @@ import {
 } from "../runs/flows.js";
 import { shareOff, shareTrace } from "../share/share.js";
 import { failureShape, firstTraceOfShape } from "../shots/traces.js";
-import { currentCall, currentReach, type DoneActs, markReached, markSubmitted } from "./attempt.js";
+import {
+  currentCall,
+  currentReach,
+  type DoneActs,
+  markBanned,
+  markReached,
+  markSubmitted,
+} from "./attempt.js";
+import { banHit } from "./ban-signals.js";
 import { type CaptchaOutcome, type Eyes, solveCaptcha } from "./captcha/index.js";
 import { cardMask } from "./card-mask.js";
 import type { CodeStore } from "./code.js";
@@ -1372,7 +1380,23 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           if (call) resumes?.clear(call);
           await keepRepairs();
           return out;
-        } catch (err) {
+        } catch (caught) {
+          let err = caught;
+          // The account's own limit on the page: the whole account holds, not one bucket (U8).
+          if (!(err instanceof AccessRefused) && !(err instanceof NeedsHuman && err.person)) {
+            const text = await active.innerText("body", { timeout: 2_000 }).then(
+              (t) => t.slice(0, 50_000),
+              () => "",
+            );
+            const hit = banHit(flow.site, active.url(), text);
+            if (hit) {
+              markBanned(hit);
+              err = new AccessRefused(
+                hit.kind === "limit" ? "rate_limited" : "platform_blocked",
+                `${flow.site}: the account is ${hit.kind === "limit" ? "rate limited" : hit.kind} (${hit.said}); every call for it is held`,
+              );
+            }
+          }
           // a person is asked to look: the window comes back
           if (err instanceof NeedsHuman) await held.offscreen?.(false);
           const artifacts: Artifacts = watch ? { steps: watch.dir } : {};

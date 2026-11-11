@@ -36,7 +36,14 @@ import type { Approver } from "../gates/payment.js";
 import { envSource, ringCount, type SpentKeys } from "../reach/key-ring.js";
 import { type KeysDep, keyCall } from "../reach/key-source.js";
 import type { Proof, RunAs } from "../workflows/proof.js";
-import { type DailyCaps, type Hold, type MeteredCall, RETRY_BUFFER } from "./caps.js";
+import {
+  ACCOUNT_HOLD,
+  type DailyCaps,
+  HOLD_STEPS_MS,
+  type Hold,
+  type MeteredCall,
+  RETRY_BUFFER,
+} from "./caps.js";
 import { type Effective, effective, type LimitStore, type SiteLimits } from "./limits.js";
 import {
   accessTokens,
@@ -836,6 +843,16 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           ...(spent !== undefined ? { spent } : {}),
         });
       };
+      // The page showed this account limited: no call for it until the hold ends (U8).
+      const accountHold = deps.caps?.accountHeld(s.site, chosen ?? s.site) ?? 0;
+      if (accountHold > 0) {
+        note("capped", ACCOUNT_HOLD);
+        throw new SiteError(
+          429,
+          `${s.site} is held for ${chosen ?? "the default account"}: the site showed the account limited; retry after ${accountHold}s`,
+          accountHold,
+        );
+      }
       // Paced before counted: a refusal here spends none of the day's cap.
       const slot =
         byBrowser && lim.pace && deps.caps
@@ -900,6 +917,14 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         // The site undid the act: none of it for this account until the hold ends.
         if (taken && use && reach.limited)
           deps.caps?.hold(s.site, chosen ?? s.site, Object.keys(use));
+        // The page showed the account limited: every call for it holds, a ban from the longest step.
+        if (reach.banned)
+          deps.caps?.hold(
+            s.site,
+            chosen ?? s.site,
+            [ACCOUNT_HOLD],
+            reach.banned.kind === "limit" ? 0 : HOLD_STEPS_MS.length - 1,
+          );
         if (profileBusyOf(e)) throw e;
         note("failed", undefined, reached);
         if (!use || !lim.caps || e instanceof SiteError || !reached) throw e;
