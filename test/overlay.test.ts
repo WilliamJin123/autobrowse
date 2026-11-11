@@ -641,6 +641,24 @@ describe("headed overlay, out of the page", () => {
     );
   });
 
+  it("a row's note counts the new answer fields, never their values", () => {
+    const note = (cmd: string, answer: unknown) =>
+      traceRow({ cmd, hints: {} } as unknown as Command, null, 1, { from: "u", to: "u", answer })
+        .note;
+    expect(
+      note("click", {
+        changed: { added: [], gone: 0, changed: ['textbox "Email": [empty] -> [filled]'] },
+        pageErrors: ["TypeError: x"],
+      }),
+    ).toBe("1 state change · 1 page error");
+    expect(note("text", { article: false, text: "abc" })).toBe("not an article · 3 chars read");
+    expect(note("network", { calls: [{}, {}] })).toBe("2 call groups");
+    const body = note("network", { id: 3, body: '{"token":"s3cret"}' });
+    expect(body).toBe("1 call, body hidden");
+    expect(note("proof", { flags: ["390: scrolls sideways"] })).toBe("1 flag");
+    expect(note("errors", { errors: [], total: 4 })).toBe("4 page errors");
+  });
+
   it("a trace row names the aim, never a typed value or a query", () => {
     const fill = traceRow(
       { cmd: "fill", hints: { role: "textbox", name: "Email" }, value: "me@x.com" } as Command,

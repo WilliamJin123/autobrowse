@@ -1024,12 +1024,33 @@ function noteOf(c: Command, failed: unknown, seen: TraceSeen | undefined): strin
     );
   if (!seen) return "";
   const a = (seen.answer ?? {}) as Record<string, unknown>;
-  const ch = a.changed as { added?: unknown[]; gone?: number; more?: number } | undefined;
+  const ch = a.changed as
+    | { added?: unknown[]; gone?: number; more?: number; changed?: unknown[] }
+    | undefined;
   const added = (ch?.added?.length ?? 0) + (ch?.more ?? 0);
+  const flips = ch?.changed?.length ?? 0;
+  const n = (k: string) => (Array.isArray(a[k]) ? (a[k] as unknown[]).length : null);
+  const plural = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
   return [
     seen.to !== seen.from ? `→ ${shortUrl(seen.to)}` : null,
-    ch && (added || ch.gone) ? `+${added} −${ch.gone ?? 0} controls` : ch ? "no change" : null,
+    ch && (added || ch.gone)
+      ? `+${added} −${ch.gone ?? 0} controls`
+      : ch && !flips
+        ? "no change"
+        : null,
+    // P6: state only ([empty] -> [filled]), never a value
+    flips ? plural(flips, "state change") : null,
+    n("pageErrors") ? plural(n("pageErrors") ?? 0, "page error") : null,
+    a.article === true ? "article" : a.article === false ? "not an article" : null,
     typeof a.text === "string" ? `${a.text.length} chars read` : null,
+    c.cmd === "errors" && typeof a.total === "number" ? plural(a.total, "page error") : null,
+    c.cmd === "proof" && n("flags") !== null ? plural(n("flags") ?? 0, "flag") : null,
+    // network: counts only; bodies and cookies stay out of the panel
+    c.cmd === "network" && n("calls") !== null ? plural(n("calls") ?? 0, "call group") : null,
+    c.cmd === "network" && n("found") !== null
+      ? `found in ${plural(n("found") ?? 0, "call")}`
+      : null,
+    c.cmd === "network" && "body" in a ? "1 call, body hidden" : null,
     typeof a.aria === "string" ? `${a.aria.split("\n").length} lines` : null,
     c.cmd === "type" || c.cmd === "fill" || c.cmd === "place" ? "typed, value hidden" : null,
   ]

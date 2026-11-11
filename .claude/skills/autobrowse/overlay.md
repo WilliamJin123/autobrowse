@@ -21,7 +21,7 @@ macOS, Windows and Linux X11. On Wayland, with no host for the platform, or on L
 - A busy line while a command runs: phase words (locating, aiming, clicking), with a light passing through them.
   Between commands, with a goal set: "thinking".
 - The trace: one row per command or flow step. Each row has the aim, ms and a dim note (a failed act is red; the terminal look adds ✓/✗)
-  (where the page went, controls added and gone, chars read). It never shows a typed value or a query string.
+  (where the page went, controls added and gone, state changes, page errors, chars read; for `network`, `proof`, `errors` a count). It never shows a typed value, a query string, a call body or a cookie.
 - The act's control locks on in purple before the hands reach it; a ring leaves it while the act runs.
 
 ## Buttons
