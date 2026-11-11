@@ -28,6 +28,7 @@ export {
 export { instagram } from "./instagram.js";
 export { langfuse } from "./langfuse.js";
 export { linkedin } from "./linkedin.js";
+export { linkedinPages } from "./linkedin-pages.js";
 export { LOOM_ORIGIN, loom } from "./loom.js";
 export { meta, metaOAuth } from "./meta.js";
 export { createRegistryUser, NPM_TOKEN, npm } from "./npm.js";
@@ -70,6 +71,7 @@ import { gmail } from "./gmail.js";
 import { instagram } from "./instagram.js";
 import { langfuse } from "./langfuse.js";
 import { linkedin } from "./linkedin.js";
+import { linkedinPages } from "./linkedin-pages.js";
 import { loom } from "./loom.js";
 import { meta } from "./meta.js";
 import { npm } from "./npm.js";
@@ -133,6 +135,7 @@ export const SITES: readonly SiteApi[] = [
   chatgpt,
   gemini,
   linkedin,
+  linkedinPages,
   youtube,
   instagram,
   threads,
