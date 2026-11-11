@@ -9,15 +9,15 @@ entity: src/browser/flow.ts
 
 # Flow
 
-One browser leg with a name and a site: `BrowserFlow<I,O>` run by the `FlowRunner` in `src/browser/flow.ts`. What a flow body gets is a `FlowPage`.
+One browser leg with a name and a site: `BrowserFlow<I,O>` run by the `FlowRunner` in `src/browser/flow.ts`. What a flow body gets is a `FlowPage`. `flow.ts` is the one entry point: the shapes live in `flow-api.ts` (re-exported), the page steps (`doOp`, read tabs, stray tabs, the run row) in `flow-steps.ts`.
 
 ## Why this shape
 
-Every act goes through `fp.act` with a goal in words, so the repairer, the trace, the watch, the payment gate and the secret guard all see the same thing. The runner, not the flow, owns walls (sign-in), captchas, repair, kept fixes and learned screens (`RunnerOptions`, `src/browser/flow.ts:209-242`).
+Every act goes through `fp.act` with a goal in words, so the repairer, the trace, the watch, the payment gate and the secret guard all see the same thing. The runner, not the flow, owns walls (sign-in), captchas, repair, kept fixes and learned screens (`RunnerOptions`, `src/browser/flow-api.ts`).
 
 ## Shape
 
-- `BrowserFlow { site, name, run(fp, input) }`; `defineFlow` — `src/browser/flow.ts:192-215`
+- `BrowserFlow { site, name, run(fp, input) }`; `defineFlow` — `src/browser/flow-api.ts`
 - `FlowPage { page, passkeys, open, act, read, scroll … }` — `:121`; `Op` (click, fill, select, press, hover, upload, script) — `:89`; `ActOptions { goal, irreversible, timeoutMs }` — `:107`
 - `FlowInterrupted` (browser died: host retries whole flow) and `FlowFailed` — `:241`, `:265`
 - `RunnerOptions`: `repairer`, `pace`, `login`, `captcha`, `fixes`, `learnedScreens`, `onRepair`, `done`, `runs`, `resume` — `:276-342`
