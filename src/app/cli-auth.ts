@@ -38,11 +38,11 @@ const LINK_TTL_S = 15 * 60;
 
 import { runLeg } from "../engine/leg.js";
 import { accent, bad, columns, dim, good } from "../style.js";
-import { CLIPBOARD_MS, macClipboard } from "./cli-env.js";
+import { CLIPBOARD_MS, macClipboard, pasteboard } from "./cli-env.js";
 import { type KeysCliDeps, registerKeyCommands } from "./cli-keys.js";
 import { credLinkUrl, type Settings } from "./config.js";
 import { headed } from "./display.js";
-import { askSecretTwice } from "./prompt.js";
+import { askSecret, askSecretTwice } from "./prompt.js";
 import {
   auditFor,
   browserFor,
@@ -79,6 +79,15 @@ async function loginOrVia(settings: Settings, site: string) {
   throw new Error(
     `unknown site ${site}; ${KNOWN}, or store a provider sign-in first: \`autobrowse creds via ${site} google --url <its login page>\``,
   );
+}
+
+/** The clipboard as one password: its line end trimmed, more than one line refused. */
+function oneLine(text: string): string {
+  const v = text.replace(/\r?\n$/, "");
+  if (!v) throw new Error("the clipboard is empty");
+  if (/[\r\n]/.test(v))
+    throw new Error("the clipboard holds more than one line; copy just the password");
+  return v;
 }
 
 export function registerAuthCommands(
@@ -154,11 +163,28 @@ export function registerAuthCommands(
   creds
     .command("set <site>")
     .description(
-      'Store a credential from stdin JSON: {"username","password","totpSecret"?,"codesInbox"?}',
+      'Store a credential: stdin JSON {"username","password","totpSecret"?,"codesInbox"?}, or --username with the password from --clipboard or a hidden prompt',
     )
-    .action(async (siteArg: string) => {
+    .option(
+      "--username <name>",
+      "the sign-in name; the password comes from --clipboard or a hidden prompt",
+    )
+    .option("--clipboard", "the password is on the clipboard (never shown)")
+    .action(async (siteArg: string, o: { username?: string; clipboard?: boolean }) => {
       const site = accountSite(siteArg);
-      const raw = JSON.parse(readFileSync(0, "utf8"));
+      // A terminal has no JSON to pipe: reading fd 0 there fails with EAGAIN.
+      const raw = o.username
+        ? {
+            username: o.username,
+            password: o.clipboard ? oneLine(await pasteboard()) : await askSecret("password: "),
+          }
+        : process.stdin.isTTY
+          ? (() => {
+              throw new Error(
+                "pipe JSON in, or give --username (with --clipboard, or type the password hidden)",
+              );
+            })()
+          : JSON.parse(readFileSync(0, "utf8"));
       const parsed = credentialSchema.safeParse(raw);
       if (!parsed.success) {
         for (const i of parsed.error.issues) console.error(`${i.path.join(".")}: ${i.message}`);
