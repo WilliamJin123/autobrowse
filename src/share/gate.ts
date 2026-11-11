@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { lintFiles } from "../compiler/lint.js";
+import { type ProbeRow, workflowProbeRow } from "../runs/probes.js";
+import type { Proof } from "../workflows/proof.js";
 import { PACKAGE } from "../workflows/roots.js";
 import type { ShareAdmin } from "./presidio.js";
 
@@ -50,7 +52,7 @@ export interface RegistryEntry {
   at: string;
 }
 
-/** In a flow's folder: it came from the registry. Beside it, `.plan.json` lets the desk re-prove it. */
+/** In a flow's folder: it came from the registry. `.plan.json` in any flow's folder opts it into the weekly re-proof. */
 export const REGISTRY_MARK = ".registry";
 export const REPROOF_PLAN = ".plan.json";
 
@@ -379,33 +381,31 @@ export async function addFlow(
 }
 
 /**
- * The nightly re-proof: every registry flow here with a `.plan.json` runs its
- * proof (gates declined, so nothing irreversible). A failure opens one issue
- * in the registry, or leaves the open one.
+ * The probe's re-proof (`runs/probes.ts`): every flow here with a `.plan.json` runs its proof
+ * (gates declined). A registry flow that fails opens one issue there, or leaves the open one.
  */
-export async function reproofRegistry(
+export async function reproofPlanned(
   root: string,
-  prove: (name: string, plan: Record<string, unknown>) => Promise<{ status: string }>,
+  prove: (name: string, plan: Record<string, unknown>) => Promise<Proof>,
   exec: Sh = sh,
-): Promise<{ proven: number; broken: string[] }> {
+): Promise<ProbeRow[]> {
   const { readdirSync } = await import("node:fs");
-  const out = { proven: 0, broken: [] as string[] };
-  if (!existsSync(root)) return out;
-  for (const name of readdirSync(root)) {
+  const rows: ProbeRow[] = [];
+  if (!existsSync(root)) return rows;
+  for (const name of readdirSync(root).sort()) {
     const dir = join(root, name);
-    if (!existsSync(join(dir, REGISTRY_MARK)) || !existsSync(join(dir, REPROOF_PLAN))) continue;
+    if (!existsSync(join(dir, REPROOF_PLAN))) continue;
     const plan = JSON.parse(readFileSync(join(dir, REPROOF_PLAN), "utf8")) as Record<
       string,
       unknown
     >;
-    const proof = await prove(name, plan).catch((err: Error) => ({
-      status: `error ${err.message}`,
-    }));
-    if (proof.status === "done") {
-      out.proven++;
-      continue;
-    }
-    out.broken.push(name);
+    const t = Date.now();
+    const proof = await prove(name, plan).catch((err: unknown) =>
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    const row = workflowProbeRow(name, proof, Date.now() - t);
+    rows.push(row);
+    if (row.state === "ready" || !existsSync(join(dir, REGISTRY_MARK))) continue;
     const title = `broken: ${name}`;
     const open = await exec("gh", [
       "issue",
@@ -428,8 +428,8 @@ export async function reproofRegistry(
       "--title",
       title,
       "--body",
-      `The nightly re-proof did not pass (${proof.status.split(" ")[0]}).`,
+      `The re-proof did not pass (${row.state}).`,
     ]);
   }
-  return out;
+  return rows;
 }

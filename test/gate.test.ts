@@ -11,7 +11,7 @@ import {
   REGISTRY_API,
   REGISTRY_MARK,
   REPROOF_PLAN,
-  reproofRegistry,
+  reproofPlanned,
 } from "../src/share/gate.js";
 import { type ShareAdmin, shareAdmin } from "../src/share/presidio.js";
 
@@ -175,8 +175,8 @@ describe("addFlow", () => {
   });
 });
 
-describe("reproofRegistry", () => {
-  it("proves registry flows with a plan; a failure opens one issue", async () => {
+describe("reproofPlanned", () => {
+  it("proves flows with a plan; a broken registry flow opens one issue", async () => {
     const root = mkdtempSync(join(tmpdir(), "reproof-"));
     for (const [name, mark, plan] of [
       ["ok-flow", true, true],
@@ -190,19 +190,34 @@ describe("reproofRegistry", () => {
     }
     const proved: string[] = [];
     const calls: string[] = [];
-    const r = await reproofRegistry(
+    const proof = (status: string, ok?: boolean) => ({
+      at: "2026-11-10T00:00:00.000Z",
+      status,
+      steps: [{ name: "read", status, detail: "x" }],
+      output: null,
+      ...(ok === undefined ? {} : { expect: { ok, failed: ok ? [] : ["rows: empty"] } }),
+    });
+    const rows = await reproofPlanned(
       root,
       async (name) => {
         proved.push(name);
-        return { status: name === "ok-flow" ? "done" : "failed" };
+        return name === "ok-flow"
+          ? proof("done")
+          : name === "own-flow"
+            ? proof("done", false)
+            : proof("failed");
       },
       async (_cmd, args) => {
         calls.push(`${args[0]} ${args[1]}`);
         return args[1] === "list" ? "[]" : "";
       },
     );
-    expect(proved.sort()).toEqual(["bad-flow", "ok-flow"]);
-    expect(r).toEqual({ proven: 1, broken: ["bad-flow"] });
+    expect(proved).toEqual(["bad-flow", "ok-flow", "own-flow"]);
+    expect(rows.map((r) => [r.name, r.state])).toEqual([
+      ["bad-flow", "broken"],
+      ["ok-flow", "ready"],
+      ["own-flow", "off_fixture"],
+    ]);
     expect(calls).toEqual(["issue list", "issue create"]);
   });
 });

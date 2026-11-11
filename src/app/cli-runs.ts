@@ -63,6 +63,7 @@ import {
   flowRunsDirFor,
   llmCallsDirFor,
   llmFor,
+  probesDirFor,
   recordsFile,
   runsDirFor,
   siteCallsDirFor,
@@ -550,7 +551,7 @@ export function registerRunsCommands(
   const success = program
     .command("success")
     .description(
-      "Success rates: explore runs and their failed commands, site calls and their retries, agent steps, model calls",
+      "Success rates: explore runs and their failed commands, site calls and their retries, agent steps, model calls, the probe's newest state per site and workflow",
     )
     .option("--days <n>", "window, in days", "30")
     .option("--site <site>", "one site only")
@@ -573,9 +574,21 @@ export function registerRunsCommands(
           (r) => !o.site || r.site === o.site || r.site.startsWith(`${o.site}@`),
         ),
       );
-      if (o.json) console.log(JSON.stringify({ ...report, flows }, null, 2));
+      const { latestProbes, probeLines, readProbes } = await import("../runs/probes.js");
+      const probes = latestProbes(
+        readProbes(probesDirFor(settings), since).filter(
+          (r) => !o.site || r.name === o.site || r.name.startsWith(`${o.site}-`),
+        ),
+      );
+      if (o.json) console.log(JSON.stringify({ ...report, flows, probes }, null, 2));
       else
-        for (const line of [...formatSuccessReport(report), "", ...formatFlowRunReport(flows)])
+        for (const line of [
+          ...formatSuccessReport(report),
+          "",
+          ...formatFlowRunReport(flows),
+          "",
+          ...probeLines(probes),
+        ])
           console.log(line);
     });
 

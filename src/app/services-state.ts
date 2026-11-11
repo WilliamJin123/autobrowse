@@ -39,6 +39,7 @@ import { registerDataLogins } from "../mods/login.js";
 import { modFixes, modScreens, withModFixes, withModScreens } from "../mods/mod.js";
 import { isDefaultOwner, ownerKeys } from "../owner.js";
 import { clearRun, keepRun, packStale } from "../runs/capture.js";
+import type { ProbeRow } from "../runs/probes.js";
 import { s3BlobStore, s3TraceStore } from "../shots/s3.js";
 import {
   clearDump,
@@ -50,9 +51,11 @@ import {
 import { scrubKeptTraces } from "../shots/trace-scrub.js";
 import { keptTraceSteps } from "../shots/trace-steps.js";
 import { backupTraces, dirTraceStore, sweepTraces, traceDirName } from "../shots/traces.js";
+import type { SiteFacade } from "../sites/facade.js";
 import { fileSendJournal, type SendJournal } from "../sites/index.js";
 import { fileMintedTokens } from "../sites/oauth.js";
 import { walkLogins } from "../walks/login.js";
+import type { Proof } from "../workflows/proof.js";
 import type { Settings } from "./config.js";
 import { holding } from "./metered.js";
 import { type OpsLane, opsLane } from "./ops.js";
@@ -326,30 +329,63 @@ export function sendSharedOnTimer(log: Logger): void {
  * Wren's second scrub (`share/presidio`): hourly, when the ingest's inbox holds files and
  * SHARE_ADMIN_TOKEN is set. Presidio's container runs only for the pass (it holds ~1.5 GB).
  */
-/** Nightly: re-prove registry flows that have a local plan; a broken one opens a registry issue. */
-export function reproofOnTimer(
+/**
+ * Weekly (U17): each site's who-am-I call and a re-proof of each flow with a `.plan.json`,
+ * one typed row each in the probe ledger (`runs/probes.ts`). Checked every 6 h, run when due.
+ */
+export function probeOnTimer(
   log: Logger,
-  root: string,
-  prove: (name: string, plan: Record<string, unknown>) => Promise<{ status: string }>,
+  o: {
+    dir: string;
+    root: string;
+    sites: Pick<SiteFacade, "call" | "list">;
+    prove: (name: string, plan: Record<string, unknown>) => Promise<Proof>;
+  },
 ): void {
+  let busy = false;
   const tick = (): void => {
-    void holding(log)
-      .then(async (hold) => {
-        if (hold) return null;
-        const { reproofRegistry } = await import("../share/gate.js");
-        return reproofRegistry(root, prove);
-      })
-      .then((r) => {
-        if (!r) return;
-        if (r.broken.length) log.warn(r, "registry re-proof: broken flows");
-        else if (r.proven) log.info(r, "registry re-proof");
-      })
-      .catch((err) =>
-        log.warn({ err: err instanceof Error ? err.message : String(err) }, "registry re-proof"),
-      );
+    if (busy) return;
+    busy = true;
+    void (async () => {
+      if (await holding(log)) return;
+      const { probeDue } = await import("../runs/probes.js");
+      if (!probeDue(o.dir)) return;
+      const rows = await runProbe(o);
+      const bad = rows.filter((r) => r.state !== "ready" && r.state !== "unchecked");
+      if (bad.length) log.warn({ bad: bad.map((r) => `${r.kind} ${r.name}: ${r.state}`) }, "probe");
+      else log.info({ rows: rows.length }, "probe: all ready");
+    })()
+      .catch((err) => log.warn({ err: err instanceof Error ? err.message : String(err) }, "probe"))
+      .finally(() => {
+        busy = false;
+      });
   };
-  setInterval(tick, 24 * 60 * 60_000).unref();
+  setInterval(tick, 6 * 60 * 60_000).unref();
   setTimeout(tick, 30 * 60_000).unref();
+}
+
+/** One probe pass, recorded; what `autobrowse probe` and the timer run. */
+export async function runProbe(o: {
+  dir: string;
+  root: string;
+  sites?: Pick<SiteFacade, "call" | "list">;
+  prove?: (name: string, plan: Record<string, unknown>) => Promise<Proof>;
+}): Promise<ProbeRow[]> {
+  const { recordProbes, siteProbeRow } = await import("../runs/probes.js");
+  const rows: ProbeRow[] = [];
+  if (o.sites) {
+    const { checkSite } = await import("../sites/facade.js");
+    const sites = o.sites;
+    const at = new Date().toISOString();
+    const checks = await Promise.all((await sites.list()).map((r) => checkSite(sites, r)));
+    rows.push(...checks.map((c) => siteProbeRow(c, at)));
+  }
+  if (o.prove) {
+    const { reproofPlanned } = await import("../share/gate.js");
+    rows.push(...(await reproofPlanned(o.root, o.prove)));
+  }
+  recordProbes(o.dir, rows);
+  return rows;
 }
 
 /** Weekly: ported routes whose OpenCLI file changed open a task each (WA-1251.6). */
@@ -475,6 +511,9 @@ export const llmCallsDirFor = (settings: Settings): string => join(stateDirFor(s
 
 /** Every flow run (src/runs/flows.ts): `flows/flows-YYYY-MM.jsonl`, the `deps/stats` default after `boot`. */
 export const flowRunsDirFor = (settings: Settings): string => join(stateDirFor(settings), "flows");
+
+/** The weekly probe's rows (`runs/probes.ts`): `probes/probes-YYYY-MM.jsonl`. */
+export const probesDirFor = (settings: Settings): string => join(stateDirFor(settings), "probes");
 
 /** Every try of a `sites`/`desk` call (src/runs/calls.ts): `calls/calls-YYYY-MM.jsonl`, kept for good. */
 export const siteCallsDirFor = (settings: Settings): string => join(stateDirFor(settings), "calls");

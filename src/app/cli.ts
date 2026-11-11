@@ -371,6 +371,31 @@ sitesCmd
   });
 
 program
+  .command("probe")
+  .description(
+    "Prove what still works: each site's who-am-I call and a re-proof of each workflow with a .plan.json (weekly on the desk); rows go to `success`",
+  )
+  .option("--sites", "the site checks only")
+  .option("--workflows", "the re-proofs only")
+  .option("--json", "the rows as JSON")
+  .action(async (o: { sites?: boolean; workflows?: boolean; json?: boolean }) => {
+    const { COMPILED_DIR } = await import("../workflows/roots.js");
+    const { probesDirFor, runProbe } = await import("./services.js");
+    const { latestProbes, probeLines } = await import("../runs/probes.js");
+    const backend = local().backend;
+    const both = !o.sites && !o.workflows;
+    const rows = await runProbe({
+      dir: probesDirFor(settings),
+      root: COMPILED_DIR,
+      ...((both || o.sites) && backend.sites ? { sites: backend.sites } : {}),
+      ...((both || o.workflows) && backend.prove ? { prove: backend.prove.bind(backend) } : {}),
+    });
+    if (o.json) console.log(JSON.stringify(rows, null, 2));
+    else for (const line of probeLines(latestProbes(rows))) console.log(line);
+    if (rows.some((r) => r.state !== "ready" && r.state !== "unchecked")) process.exitCode = 1;
+  });
+
+program
   .command("run <workflow> <key>")
   .description("Start a run from a plan (JSON); omit --plan to resume the stored one")
   .option("--plan <json|file>", "inline JSON, a file path, or - for stdin")

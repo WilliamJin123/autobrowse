@@ -61,6 +61,8 @@ import type { UploadSessions } from "./uploads.js";
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 import { runLeg } from "../engine/leg.js";
+import { errorOf } from "../errors.js";
+import type { ErrorCode } from "../ui/http.js";
 import type { RenewReport } from "./renew.js";
 import { standingOf } from "./standing.js";
 import {
@@ -381,6 +383,8 @@ export interface CheckRow {
   ms?: number;
   /** Why not: no probe, no token, or the API's answer. */
   why?: string;
+  /** The error contract's code when the call threw (the probe's state). */
+  code?: ErrorCode;
 }
 
 /** One who-am-I call on the API leg: proves the token works, not just that one is kept. */
@@ -407,6 +411,7 @@ export async function checkSite(
       site: row.site,
       ok: false,
       ms: now() - t,
+      code: errorOf(e).code,
       why: `${status}${msg}`.replace(/\s+/g, " ").slice(0, 100),
     };
   }

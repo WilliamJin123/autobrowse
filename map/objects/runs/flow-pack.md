@@ -22,7 +22,7 @@ Code from a stranger's machine must never run before a person read it. So the ga
 - Gate: `checkPack` — `src/share/gate.ts:148`; `gateShared` — `:193` puts `gate/review/<id>.json` or `gate/refused/`.
 - Yes: `approvePack` — `:262` (gh clone, branch, PR, squash merge). CLI `share gate|review|approve|refuse` — `src/app/cli-share.ts`.
 - Install: `addFlow` — `:328`, `autobrowse workflows add <name>`; writes `.registry`.
-- Nightly: `reproofRegistry` — `:368`, `reproofOnTimer` in `src/app/services.ts`; a broken flow opens one registry issue.
+- Weekly: `reproofPlanned` — `src/share/gate.ts:387`, run by the [[probe]]; a broken registry flow opens one registry issue.
 
 ## Connected to
 

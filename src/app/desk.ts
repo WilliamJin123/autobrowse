@@ -33,7 +33,8 @@ import {
   keepDiskOnTimer,
   keepSharedOnTimer,
   keyAdminFor,
-  reproofOnTimer,
+  probeOnTimer,
+  probesDirFor,
   sendJournalFor,
   sendSharedOnTimer,
   shareKnownFor,
@@ -113,9 +114,12 @@ upstreamOnTimer(log);
 // what holds memory, each minute under pressure (11-09 incident)
 logPressureOnTimer((e) => log.warn({ err: String(e) }, "memory pressure log"));
 keepSharedOnTimer(log);
-reproofOnTimer(log, COMPILED_DIR, (name, plan) =>
-  proveCompiled(app.catalog, app.browser, name, plan),
-);
+probeOnTimer(log, {
+  dir: probesDirFor(settings),
+  root: COMPILED_DIR,
+  sites: app.sites,
+  prove: (name, plan) => proveCompiled(app.catalog, app.browser, name, plan),
+});
 await shareKnownFor(settings);
 // A stalled event loop starves every Restate stream on it: calls arrive past their 60 s token
 // and connections die (2026-10-16). Log any stall over 2 s, so the next one is proven.
