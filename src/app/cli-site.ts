@@ -335,6 +335,19 @@ export function registerSiteCommands(
       if ((name && !checks[0]?.ok) || open.length) process.exitCode = 1;
     });
   site
+    .command("scaffold <method> <path>")
+    .description(
+      "A new route's skeleton that keeps the house rules (path params in the request, a verify on a write); paste it into the site's routes",
+    )
+    .action(async (method: string, path: string) => {
+      const { routeScaffold } = await import("../sites/conventions.js");
+      const m = method.toUpperCase();
+      if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(m))
+        throw new Error(`method: GET, POST, PUT, PATCH or DELETE, not ${method}`);
+      if (!path.startsWith("/")) throw new Error("path starts with /");
+      console.log(routeScaffold(m, path));
+    });
+  site
     .command("route <site> <method> <path>")
     .description(
       "What one route takes: its fields, or with --template a body to fill in for `site call --body file.json`",
