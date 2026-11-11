@@ -128,6 +128,8 @@ interface Live {
   explorer: Explorer | null;
   stopFlag: boolean;
   finished: Promise<void>;
+  /** A drive loop runs: one driver per session. */
+  driving: boolean;
 }
 
 const LIVE_STATES = new Set<SessionStatus>(["starting", "running", "paused", "needs-human"]);
@@ -192,6 +194,7 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
           explorer: null,
           stopFlag: true,
           finished: Promise.resolve(),
+          driving: false,
         });
       } catch {
         // not a session file
@@ -227,6 +230,7 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
     const ref = { workflow: AGENT, key: view.id };
     const before = { ...view.usage };
     void emit({ type: "started", run: ref, at: now().toISOString() });
+    live.driving = true;
     live.finished = (async () => {
       try {
         const ex = await o.open(req.site, view.port, view.id, {
@@ -329,7 +333,9 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
         summary:
           view.error ?? `${view.achieved ? "achieved" : "not achieved"}: ${view.summary ?? ""}`,
       });
-    })();
+    })().finally(() => {
+      live.driving = false;
+    });
   };
 
   return {
@@ -355,7 +361,13 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
         startedAt: now().toISOString(),
         port: freePort(),
       };
-      const live: Live = { view, explorer: null, stopFlag: false, finished: Promise.resolve() };
+      const live: Live = {
+        view,
+        explorer: null,
+        stopFlag: false,
+        finished: Promise.resolve(),
+        driving: false,
+      };
       sessions.set(id, live);
       persist(view);
       drive(live, req);
@@ -377,6 +389,7 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
       // Its browser died (a crash, a restart): a new one on the last page,
       // and the agent goes on from its last step instead of step 1.
       if (!live.explorer && live.view.status !== "done" && live.view.status !== "stopped") {
+        if (live.driving) throw new Error(`agent session ${id} is still starting or ending`);
         const view = live.view;
         Object.assign(view, { status: "starting", error: null, prompt: null, port: freePort() });
         live.stopFlag = false;
@@ -415,9 +428,10 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
     async close(id) {
       const live = must(id);
       live.stopFlag = true;
+      if (live.explorer?.paused()) await live.explorer.exec({ cmd: "resume" });
+      // still starting: the loop opens its browser, sees the stop, ends; then close that browser
+      await live.finished;
       if (live.explorer) {
-        if (live.explorer.paused()) await live.explorer.exec({ cmd: "resume" });
-        await live.finished;
         await live.explorer.exec({ cmd: "close" }).catch(() => undefined);
         live.explorer = null;
       }

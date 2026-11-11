@@ -1475,6 +1475,14 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
           if (err instanceof AccessRefused) throw err;
           if (kind === "interrupted") {
             broken = true;
+            // an irreversible act began: a retry could send twice, so a person checks first
+            if (submitted) {
+              const held = new NeedsHuman(
+                `${flow.site}/${flow.name}: cut off after "${lastGoal}" began; it may have gone through. Check before running again`,
+              );
+              held.artifacts = artifacts;
+              throw held;
+            }
             throw new FlowInterrupted(`${flow.site}/${flow.name}`, err, artifacts);
           }
           throw new FlowFailed(`${flow.site}/${flow.name}`, err, artifacts);

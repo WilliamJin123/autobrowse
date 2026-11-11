@@ -54,7 +54,10 @@ describe("a retried call never repeats an irreversible act", () => {
         if (breakAfter) throw new Error("net::ERR_INTERNET_DISCONNECTED after the post");
       },
     });
-    await expect(withCall("inv-1 step", () => runner.run(post, undefined))).rejects.toThrow();
+    // cut off after the post began: held for a person, never a retryable interrupt
+    await expect(withCall("inv-1 step", () => runner.run(post, undefined))).rejects.toBeInstanceOf(
+      NeedsHuman,
+    );
     expect(posts).toBe(1);
     breakAfter = false;
     await expect(withCall("inv-1 step", () => runner.run(post, undefined))).rejects.toBeInstanceOf(

@@ -35,6 +35,8 @@ const PLAN = "plan";
 const OUTCOME = "outcome";
 const PAUSED = "paused";
 const GEN = "gen";
+/** The latest step message sent: an older one is stale, so one chain of steps runs per run. */
+const SEQ = "seq";
 /** The caller's feed (`engine/feed.ts`) and how many events it has had. */
 const FEED = "feed";
 
@@ -171,7 +173,7 @@ function effects(ctx: restate.ObjectContext): Effects {
 /** The run object's handlers as the ingress client sees them. */
 export interface RunHandlers<P> {
   run(ctx: restate.ObjectContext, input: P | null): Promise<void>;
-  step(ctx: restate.ObjectContext, input: { gen: number }): Promise<void>;
+  step(ctx: restate.ObjectContext, input: { gen: number; seq?: number }): Promise<void>;
   pause(ctx: restate.ObjectContext): Promise<void>;
   play(ctx: restate.ObjectContext): Promise<void>;
   approve(ctx: restate.ObjectContext, input: { name: GateName; note?: string }): Promise<OpenGate>;
@@ -254,8 +256,11 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
     }
   };
 
-  const next = (ctx: restate.ObjectContext, gen: number) =>
-    ctx.objectSendClient<Self>(service, ctx.key).step({ gen });
+  const next = async (ctx: restate.ObjectContext, gen: number) => {
+    const seq = ((await ctx.get<number>(SEQ)) ?? 0) + 1;
+    ctx.set(SEQ, seq);
+    ctx.objectSendClient<Self>(service, ctx.key).step({ gen, seq });
+  };
 
   const hasUndo = (w: AnyWorkflow) => w.steps.some((s) => s.undo);
   const sendUndo = (ctx: restate.ObjectContext, m: UndoMessage, delay = 0) =>
@@ -298,7 +303,7 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
       const outcome = await outcomeOf(fx, found.workflow, "rejected");
       ctx.set(OUTCOME, outcome);
       await emit(ctx, ref, { type: "finished", status: "rejected", summary: summarize(outcome) });
-    } else next(ctx, (await ctx.get<number>(GEN)) ?? 0);
+    } else await next(ctx, (await ctx.get<number>(GEN)) ?? 0);
     return gate;
   };
 
@@ -322,14 +327,20 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
         const gen = ((await ctx.get<number>(GEN)) ?? 0) + 1;
         ctx.set(GEN, gen);
         await emit(ctx, ref, { type: "started" });
-        next(ctx, gen);
+        await next(ctx, gen);
       },
 
       /** One step, then the next. Internal: `run`, `play` and `approve` send it. */
-      step: async (ctx: restate.ObjectContext, input: { gen: number }): Promise<void> => {
+      step: async (
+        ctx: restate.ObjectContext,
+        input: { gen: number; seq?: number },
+      ): Promise<void> => {
         const gen = (await ctx.get<number>(GEN)) ?? 0;
         const raw = await ctx.get<PlanOf<W>>(PLAN);
         if (input.gen !== gen || !raw) return; // a message from a run that is gone
+        // a later next() replaced it (pause then play while a step ran); no seq: sent before seq
+        if (input.seq !== undefined && input.seq !== (await ctx.get<number>(SEQ))) return;
+        if (await ctx.get<Outcome>(OUTCOME)) return; // the run ended
         if (await ctx.get<boolean>(PAUSED)) return; // `play` sends the next step
         const ref = refOf(ctx.key);
         let found: Resolved<W>;
@@ -359,7 +370,7 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
             : await go();
         if (a.kind === "continue") {
           await emit(ctx, ref, { type: "step", step: a.step, result: a.result });
-          next(ctx, gen);
+          await next(ctx, gen);
           return;
         }
         if (a.kind === "waiting") {
@@ -390,7 +401,7 @@ export function makeRunObjectFrom<W extends AnyWorkflow>(
         await emit(ctx, refOf(ctx.key), { type: "resumed" });
         if (await ctx.get<OpenGate>(KEYS.gate)) return; // the answer will send the next step
         if (await ctx.get<Outcome>(OUTCOME)) return; // nothing left to run
-        next(ctx, (await ctx.get<number>(GEN)) ?? 0);
+        await next(ctx, (await ctx.get<number>(GEN)) ?? 0);
       },
 
       approve: (ctx: restate.ObjectContext, input: { name: GateName; note?: string }) =>
