@@ -80,6 +80,7 @@ import {
   shapes,
 } from "../browser/network.js";
 import { pageErrorLog } from "../browser/page-errors.js";
+import { compareProofs, type Proof, proofFlags, proofPage } from "../browser/page-proof.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/records.js";
 import { snapshotPage } from "../browser/repair.js";
 import { lookAt, type PageLook, urlShape } from "../browser/screens.js";
@@ -2477,6 +2478,24 @@ async function serve(
       }
       case "screenshot":
         return { file: await shoot() };
+      case "proof": {
+        const n = String(shotN++).padStart(4, "0");
+        const proof = await proofPage(page, {
+          url: c.url ?? page.url(),
+          ...(c.widths ? { widths: c.widths } : {}),
+          errors: pageErrors,
+          shotPath: (w) => join(shotsDir, `proof-${n}-${w}.png`),
+        });
+        const file = join(shotsDir, `proof-${n}.json`);
+        writeFileSync(file, JSON.stringify(proof, null, 1));
+        const before = c.against ? (JSON.parse(readFileSync(c.against, "utf8")) as Proof) : null;
+        return {
+          file,
+          flags: proofFlags(proof),
+          shots: proof.widths.map((w) => w.shot),
+          ...(before ? { drift: compareProofs(before, proof) } : {}),
+        };
+      }
       case "marks":
         return takeMarks();
       case "network":

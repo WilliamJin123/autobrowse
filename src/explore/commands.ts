@@ -102,6 +102,17 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     index: z.union([z.number().int().min(0), z.literal("main")]),
   }),
   z.object({ cmd: z.literal("screenshot") }),
+  /**
+   * The page (or `url`) loaded at each width (390, 1280): sideways scroll, boxes past the edge,
+   * cut text, page errors, broken assets, a full-page shot each. `against` = an earlier proof's
+   * file: what changed, by identity (origin masked, HTTP failures only).
+   */
+  z.object({
+    cmd: z.literal("proof"),
+    url: z.string().url().optional(),
+    widths: z.array(z.number().int().min(240).max(2560)).min(1).max(4).optional(),
+    against: z.string().min(1).optional(),
+  }),
   /** A screenshot with a numbered box on each control in view, and the list; act with `hints:{mark:n}`. */
   z.object({ cmd: z.literal("marks") }),
   /**

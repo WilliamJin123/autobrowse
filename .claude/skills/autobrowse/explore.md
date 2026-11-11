@@ -109,6 +109,7 @@ Act (journaled):
 - `{"cmd":"wait","text":"Saved"}`: waits for one thing, then answers. Also `gone` (text leaves), `url` (URL holds it), `hints` (+`hidden`), `idle`, `download`; `timeout` ms (15 s, max 60 s). Not journaled. A click that starts a download returns `downloads` with the saved file.
 - `{"cmd":"dialog"}` — the native dialogs seen (confirm, prompt, alert, leave page). Default: yes to alert and leave page, no to confirm and prompt. `{"cmd":"dialog","accept":true,"text":"…"}` answers the next confirm or prompt only; send it before the act. An act that opened one returns `dialogs`.
 - `{"cmd":"errors"}` — what the pages threw that nothing caught, every tab (`last`, `clear`). An act during which the page threw returns `pageErrors`: read it when a click seems to do nothing.
+- `{"cmd":"proof"}` — the page (or `url`) at 390 and 1280 (`widths`): sideways scroll, boxes past the edge, cut text, page errors, broken assets, a full-page shot each; `flags` lists them. `against:"<earlier proof file>"` gives `drift`: what changed, the host masked, resets ignored. It reloads the page: not on a half-filled form.
 - `{"cmd":"note","text":"…"}` — a comment in the journal.
 - `{"cmd":"eval","js":"…"}` — last resort; not journaled as a click, so the recording misses it.
 - `{"cmd":"batch","cmds":[{…},{…}]}` — up to 30 commands in order, one answer, one `changed`. No `close`, `pause`, `resume`, `save`, `flow`, `code` or nested batch.
