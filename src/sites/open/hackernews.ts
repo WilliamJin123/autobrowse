@@ -77,7 +77,7 @@ export const hackernews: SiteApi = {
             label: "hackernews /stories",
           })) ?? [];
         const stories = await mapLimit(ids.slice(start, start + n), AT_ONCE, (id) => item(leg, id));
-        return { total: ids.length, start, stories: stories.filter(Boolean) };
+        return { total: ids.length, start, stories: stories.filter((s): s is Item => s !== null) };
       },
     }),
     route({

@@ -14,76 +14,41 @@
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BrowserContext, FileChooser, Locator, Page } from "playwright";
+import type { Locator, Page } from "playwright";
 import { resumeDir, statsDirOf } from "../deps/stats.js";
 // Explore's panel; moves to browser/ once its open peer edit lands.
 import type { Command } from "../explore/commands.js";
-import { type OverlayDeps, overlayFor, traceRow } from "../explore/overlay.js";
+import { overlayFor, traceRow } from "../explore/overlay.js";
 import { expandHome } from "../google/auth.js";
 import { tallied } from "../llm/ledger.js";
 import { redactAria, redactText } from "../recorder/redact.js";
-import {
-  type CaptchaSolve,
-  type FlowOutcome,
-  type FlowRunRow,
-  type FlowRuns,
-  fileFlowRuns,
-} from "../runs/flows.js";
+import { type CaptchaSolve, type FlowOutcome, fileFlowRuns } from "../runs/flows.js";
 import { shareOff, shareTrace } from "../share/share.js";
 import { failureShape, firstTraceOfShape } from "../shots/traces.js";
-import {
-  currentCall,
-  currentReach,
-  type DoneActs,
-  markBanned,
-  markReached,
-  markSubmitted,
-} from "./attempt.js";
+import { currentCall, currentReach, markBanned, markReached, markSubmitted } from "./attempt.js";
 import { banHit } from "./ban-signals.js";
-import { type CaptchaOutcome, type Eyes, solveCaptcha } from "./captcha/index.js";
+import { type CaptchaOutcome, solveCaptcha } from "./captcha/index.js";
 import { cardMask } from "./card-mask.js";
-import type { CodeStore } from "./code.js";
 import { collectWhenIdle } from "./driver-memory.js";
 import { filmLog, filmStep } from "./film.js";
-import { type Fixes, flowKey } from "./fixes.js";
-import {
-  freshSeed,
-  type Hands,
-  HUMAN_PACE,
-  handsFor,
-  instantHands,
-  type Pace,
-  pickOption,
-  seeded,
-} from "./human/index.js";
-import { inPage } from "./in-page.js";
+import { flowKey } from "./fixes.js";
+import { freshSeed, HUMAN_PACE, handsFor, seeded } from "./human/index.js";
 import { asQuestion, settleKeeps } from "./keeps.js";
-import type { Strategy } from "./ladder.js";
 import { type Hints, locate, textOf } from "./locate.js";
 import { KeyedMutex } from "./lock.js";
 import { htmlForFile, NetLog, networkOn } from "./network.js";
 import { describePage } from "./page-state.js";
-import type { SessionPark } from "./park.js";
-import {
-  COMMITTING,
-  canLearn,
-  noRepairer,
-  type Repairer,
-  type RepairReport,
-  snapshotPage,
-} from "./repair.js";
-import { fileResumes, keptUrl, type Resumes, sameHost } from "./resume.js";
+import { COMMITTING, canLearn, noRepairer, type RepairReport, snapshotPage } from "./repair.js";
+import { fileResumes, keptUrl, sameHost } from "./resume.js";
 import {
   INTERRUPTS,
   isOn,
   keepOf,
-  type LearnedScreens,
   lookAt,
   memoryScreens,
   type PageLook,
   type Screen,
   type ScreenHelp,
-  type ScreenReader,
   type Trail,
 } from "./screens.js";
 import { holdsSecret } from "./secrets.js";
@@ -101,578 +66,46 @@ import {
 } from "./session.js";
 import { scrubSecretsFile } from "./trace-secrets.js";
 import { type Watch, watches, watchSteps } from "./watch.js";
-import type { Passkeys } from "./webauthn.js";
 
 /** Calls a flow's log keeps, and their body bytes. */
 const FLOW_NET_ROWS = 300;
 const FLOW_NET_BYTES = 8 * 1024 * 1024;
 
-/** A site names a persistent profile; any kebab-case string. Known ones have a home page for `login`. */
-export type Site = string;
+export * from "./flow-api.js";
 
-export const SITES: Record<string, { home: string }> = {
-  cloudflare: { home: "https://dash.cloudflare.com/" },
-  "google-admin": { home: "https://admin.google.com/" },
-  instantly: { home: "https://app.instantly.ai/" },
-};
+import {
+  type BrowserFlow,
+  FlowFailed,
+  FlowInterrupted,
+  type FlowPage,
+  type FlowRunner,
+  type HeldTab,
+  isTransientBrowserError,
+  OFFLINE_PAGE,
+  type Op,
+  type OpenOptions,
+  pageWide,
+  type RunnerOptions,
+} from "./flow-api.js";
+import {
+  ACT_TIMEOUT_MS,
+  closeStrayTabs,
+  doOp,
+  keptTabs,
+  MAX_DETOURS,
+  openReadTab,
+  PERSON_MS,
+  POLL_MS,
+  runRow,
+  SETTLE_MS,
+  samePage,
+  seedOf,
+  settle,
+  solveRow,
+} from "./flow-steps.js";
 
-/** One recorded gesture, replayed. */
-export type Op =
-  | { kind: "click" }
-  | { kind: "fill"; value: string }
-  | { kind: "select"; value: string }
-  | { kind: "press"; key: string }
-  /** The pointer onto the control, and it stays: a hover menu, a control shown on hover, a tooltip. */
-  | { kind: "hover" }
-  /**
-   * Files into a file input, or through the chooser a button opens: paths or refs, or bytes
-   * held in memory (a stored file), which reach the page without touching the disk.
-   */
-  | { kind: "upload"; files: string[] | FilePayload[] }
-  /** A script: a function of `el` on the target, or an expression on the page when there are no hints. */
-  | { kind: "script"; js: string };
+export { chooseOption, closeStrayTabs, openReadTab, seedOf } from "./flow-steps.js";
 
-/** No hints at all: an act on the page, not an element. */
-export const pageWide = (h: Hints): boolean => !Object.values(h).some((v) => v != null);
-
-/** A file held in memory, as Playwright's `setInputFiles` takes it. */
-export interface FilePayload {
-  name: string;
-  mimeType: string;
-  buffer: Buffer;
-}
-
-export interface ActOptions {
-  /** In words, for the repairer and the trace: "click Purchase". */
-  goal: string;
-  /** Never repaired: a miss goes to a person. */
-  irreversible?: boolean;
-  timeoutMs?: number;
-}
-
-/** What a flow body gets: the page, plus the things every flow does. */
-export interface OpenOptions {
-  /** Land on a login page on purpose (the sign-in flow itself). */
-  allowWall?: boolean;
-  /** `url`: sign in only on a wall its URL shows; a wall only the text suggests is left for the caller (explore). */
-  signIn?: "url";
-}
-
-export interface FlowPage {
-  page: Page;
-  /** The session's virtual authenticator: export after a passkey enrollment. */
-  passkeys: Passkeys;
-  /**
-   * Navigate. On a login wall the runner signs in with stored credentials
-   * and tries again; a captcha, or a site nobody has credentials for,
-   * goes to a person.
-   */
-  open(url: string, opts?: OpenOptions): Promise<void>;
-  url(): string;
-  /** Visible text of the page, capped; what a person would read. */
-  text(): Promise<string>;
-  /** Raw markup, capped; for things the eye cannot see (an otpauth link behind a QR). */
-  html(): Promise<string>;
-  /**
-   * Visible now, or within `withinMs` when given (a page still rendering its
-   * next step); a wait handles interrupts on the way, as an act does.
-   */
-  has(hints: Hints, withinMs?: number): Promise<boolean>;
-  /** The element's text, trimmed and capped: what a scraping step keeps. */
-  read(hints: Hints): Promise<string>;
-  wait(ms: number): Promise<void>;
-  /**
-   * Answer requests under `prefix` in the browser itself (an OAuth redirect
-   * nothing serves), so the page lands there and its URL keeps the query.
-   */
-  answer(prefix: string, body: string): Promise<void>;
-  /** Resolves when the URL matches, or null at the timeout. */
-  waitForUrl(pattern: RegExp | ((url: string) => boolean), timeoutMs: number): Promise<boolean>;
-  /** The next page the site opens (an OAuth popup), or null when none comes in time. */
-  nextPage(timeoutMs: number): Promise<Page | null>;
-  /** Move the page down about `dy` px with the runner's hands (a feed read). */
-  scroll(dy: number): Promise<void>;
-  /** Every page open right now: a card that opened itself is already here, so no event comes. */
-  pages(): Page[];
-  /** Act on this page from now on (a popup); pass the main page to return. */
-  switchTo(page: Page): void;
-  /**
-   * Find by hints and do the op. On a miss, ask the repairer for other
-   * hints for the same goal and try once more; report the repair either way.
-   */
-  act(op: Op, hints: Hints, opts: ActOptions): Promise<void>;
-  /**
-   * Answer a wall the flow walked into on its own (a re-verification in
-   * the middle of an OAuth consent): the runner signs in where the page
-   * is, with no navigation to lose the URL that carries the walk.
-   */
-  signIn(
-    site?: Site,
-    account?: string,
-  ): Promise<"signed-in" | "no-credential" | "unknown-site" | "no-login">;
-  /**
-   * Solve the captcha the page shows with the runner's hands and eyes
-   * (`browser/captcha`): a checkbox always, a picture one when the runner
-   * has eyes. Never throws for an unsolved one; the outcome says why.
-   */
-  captcha(): Promise<CaptchaOutcome>;
-  /**
-   * A new IP for this profile, when its exit rotates (`browser/egress`): true
-   * once the line has the new address. False on the machine's own line.
-   */
-  newIp(): Promise<boolean>;
-  /** Stop here and ask a person. */
-  human(reason: string): never;
-  /**
-   * A step a person answers on this page (a phone tap's number, a puzzle). In a window a person
-   * sees: the window comes to the front and the flow waits here till `gone` says the step is
-   * past; no answer in `ms` is a NeedsHuman. In a headless run: a NeedsHuman marked `person`,
-   * and the runner runs the flow once more in a window. Absent in fakes: use `human`.
-   */
-  person?(reason: string, gone: () => Promise<boolean>, ms?: number): Promise<void>;
-  /** Under a durable call: `code`'s store for `scope`, kept across retries. Null on a local run. */
-  codeStore?(scope: string): CodeStore | null;
-  /** What a screens walk asks of the runner: the page's shape, learned screens, a model (`browser/screens`). */
-  screens?: ScreenHelp;
-  /** The session's page calls, redacted (`browser/network`); absent in fakes. */
-  network?: NetLog;
-  /** A new background tab in this session, for `code`'s `fp.each`; absent in fakes. */
-  readTab?(): Promise<ReadTab>;
-  /** Most read tabs at once (`READ_TABS`). */
-  readTabs?: number;
-}
-
-/** A background tab for parallel reads: same sign-in, never an act that changes a site. */
-export interface ReadTab {
-  readonly page: Page;
-  /** Navigate; a wall throws: sign in on the main page, then run again. */
-  open(url: string): Promise<void>;
-  url(): string;
-  read(hints: Hints): Promise<string>;
-  has(hints: Hints, withinMs?: number): Promise<boolean>;
-  wait(ms: number): Promise<void>;
-  scroll(dy: number): Promise<void>;
-  /** hover, click or press only; the caller decides it changes the page, not the site. */
-  act(op: Op, hints: Hints): Promise<void>;
-  close(): Promise<void>;
-}
-
-export interface BrowserFlow<I, O> {
-  site: Site;
-  /** Unique per site; names the trace files and the fake in tests. */
-  name: string;
-  /** The ways a laddered read tries, in order (`browser/ladder`): shown on the route's row. */
-  strategies?: readonly Strategy[];
-  /** The flow puts a secret on screen (a minted token): no screenshot, trace or step watch keeps it. */
-  secret?: boolean;
-  /**
-   * A read no person takes over (a search, an open page): on a Mac its headed window is
-   * hidden while it runs (`Session.offscreen`). The next flow without it shows the window again.
-   */
-  offscreen?: true;
-  /**
-   * false: no Playwright trace. For a flow that lasts hours (explore): the trace keeps every
-   * response body in the driver until the flow ends (WA-1118: 207 MB after ten page opens).
-   */
-  trace?: false;
-  /**
-   * "provider": open the profile where the site's sign-in provider holds the
-   * session (William's LinkedIn signs in by Google, in the `google` profile),
-   * the one `autobrowse login` keeps warm. The site's own profile otherwise.
-   */
-  profile?: "provider";
-  run(fp: FlowPage, input: I): Promise<O>;
-  /**
-   * Env names the run makes a new value for and keeps. The runner asks before the first act
-   * when one holds a value (`settleKeeps`). A flow that reads a value the site already has
-   * names none: the store's own refusal covers it, and nothing is lost.
-   */
-  keeps?(input: I): readonly string[];
-  /**
-   * The part of `run` safe to do before anyone says yes: open the page, find the box. Armed
-   * (`sites/arm`), it runs early in its own tab; the call then runs `run` there, and `run`'s
-   * own opening finds the page already open. Never types, clicks or sends.
-   */
-  prepare?(fp: FlowPage, input: I): Promise<void>;
-}
-
-export function defineFlow<I, O>(flow: BrowserFlow<I, O>): BrowserFlow<I, O> {
-  return flow;
-}
-
-export interface FlowRunner {
-  /** `on`: run in this tab (an armed one, `tab`) instead of the browser's own page, kept as it is. */
-  run<I, O>(flow: BrowserFlow<I, O>, input: I, on?: { page: Page }): Promise<O>;
-  /**
-   * A new tab in `site`'s browser (a profile name: `linkedin@wren`) that outlives the runs on it:
-   * the browser stays open, pinned in the park, until `release`. Flows on the profile still
-   * queue and run beside it. Absent without a park.
-   */
-  tab?(site: string): Promise<HeldTab>;
-}
-
-export interface HeldTab {
-  page: Page;
-  /** The browser is the person's own: nothing context-wide or page-routed is done to it. */
-  shared: boolean;
-  /** Close the tab and let the browser idle out again. */
-  release(): Promise<void>;
-}
-
-/**
- * The browser leg broke under the flow (Chrome died, the network went
- * away, the CDP socket closed). Nothing about the site or the flow is
- * wrong, so the host retries the whole flow with a fresh session.
- */
-export class FlowInterrupted extends Error {
-  readonly artifacts: Artifacts;
-  constructor(flow: string, cause: unknown, artifacts: Artifacts) {
-    super(`${flow}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    this.artifacts = artifacts;
-    this.name = "FlowInterrupted";
-  }
-}
-
-const TRANSIENT =
-  /target (page|context|browser) has been closed|browser has been closed|target closed|connection closed|websocket|socket hang up|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|net::ERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|CONNECTION_(RESET|CLOSED|REFUSED)|NAME_NOT_RESOLVED|TIMED_OUT|ADDRESS_UNREACHABLE)|browser process (crashed|exited)|Protocol error.*(Target|Session) closed/i;
-
-/** Sleep, a dropped network, a crashed or closed browser: retry, do not fail. */
-/** Chrome's own error page (no internet, DNS gone): the leg is down, whatever the flow was doing. */
-const OFFLINE_PAGE = /^chrome-error:\/\//;
-
-export function isTransientBrowserError(err: unknown): boolean {
-  const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  return TRANSIENT.test(msg);
-}
-
-/** A flow threw something other than NeedsHuman; the artifacts say where. */
-export class FlowFailed extends Error {
-  readonly artifacts: Artifacts;
-  constructor(flow: string, cause: unknown, artifacts: Artifacts) {
-    super(`${flow}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    this.artifacts = artifacts;
-    this.name = "FlowFailed";
-  }
-}
-
-export interface RunnerOptions {
-  repairer?: Repairer;
-  /**
-   * A headless run that met a person's step (`fp.person`) runs once more in the browser these
-   * options open: by default the same one, headed, where this machine has a screen. A run
-   * that already sent something, or runs in an armed tab, is never run again. false: never.
-   */
-  person?: false | ((opts: BrowserOptions) => BrowserOptions);
-  /**
-   * The page-call log's caps (`browser/network`); a flow's short log by default. An explore
-   * session keeps more, and sets `on` (capture there by default, WA-1251.4).
-   */
-  network?: { maxRows: number; maxBodyBytes: number; on?: boolean };
-  /**
-   * How a person's hands would do each act (`browser/human`): a pause to
-   * read, a curved reach, typing in runs. On by default; null is instant
-   * (tests, demos).
-   */
-  pace?: Pace | null;
-  /** Every run's motion seed, to replay a run's moves (`AUTOBROWSE_SEED`). Absent: fresh per run, kept in its row. */
-  seed?: number;
-  /**
-   * Solves a login wall for a site: "signed-in" to retry the open,
-   * anything else to hand off. Absent = every wall is a person's.
-   */
-  login?: (
-    fp: FlowPage,
-    site: Site,
-    /** Whose sign-in it is, when the caller knows: picks the `<site>@<label>` credential for it. */
-    account?: string,
-  ) => Promise<"signed-in" | "no-credential" | "unknown-site">;
-  /**
-   * A captcha wall is solved before it goes to a person: checkboxes by the
-   * hands alone, pictures when `eyes` is given (a model that sees). Absent =
-   * every captcha is a person's. `attempts` whole solves before that
-   * (`CAPTCHA_ATTEMPTS`, default 3; 0 = straight to a person).
-   */
-  captcha?: { eyes: Eyes | readonly Eyes[] | null; attempts?: number };
-  /** Repair misses on irreversible acts too (the `irreversible` guard is off). */
-  repairIrreversible?: boolean;
-  /** Every repair, tried or not, so the flow's source can be fixed for good. */
-  onRepair?: (report: RepairReport) => void;
-  /** Repairs that worked, tried before the source's own hints on the next run (`browser/fixes`). */
-  fixes?: Fixes;
-  /** Pages seen before on each site and what worked on them: walks' screens, clicks past interrupts (`browser/screens`). */
-  learnedScreens?: LearnedScreens;
-  /** Names a page a walk does not know, from the walk's own screens. Absent = such a page fails the walk. */
-  screenReader?: ScreenReader | null;
-  /** Irreversible acts a durable call already did: a retry never does them twice (`browser/attempt`). */
-  done?: DoneActs;
-  /** `code`'s saved calls and acts per durable call: a retry goes on where the last try ended (`fileCodeStores`). */
-  codeStores?: (call: string, scope: string) => CodeStore;
-  /** Every failure record written (kind failed/human/interrupted): what healing starts from. */
-  onFailure?: (record: FailureRecord, file: string) => void;
-  locks?: KeyedMutex;
-  /**
-   * Keep each run's browser for the next run on the same site instead of
-   * closing it: a gate or a hand-off between two steps keeps the page.
-   * Only for a long-lived worker; a one-shot CLI would never exit.
-   */
-  park?: SessionPark;
-  /**
-   * The flows to watch step by step (`WATCH_FLOWS`: `all`, a site, or
-   * `site/flow`, comma separated): a masked screenshot and the aria tree per
-   * step, and the trace kept even when the run works (`browser/watch`).
-   */
-  watch?: string;
-  /**
-   * Draw the panel and a box on each act's control (`explore/overlay`), a native
-   * window over Chrome's, for a person who watches. Off by default; never on a
-   * secret flow or the person's own browser.
-   */
-  overlay?: boolean;
-  /** The overlay's window; default the native host (tests inject one). */
-  overlayHost?: OverlayDeps["host"];
-  /**
-   * One line per run, success or not (`runs/flows`): outcome, time, acts,
-   * captcha tries, model tokens. Absent = the stats dir (`deps/stats`,
-   * `~/.config/autobrowse/flows`, read by `autobrowse success`); null = none.
-   */
-  runs?: FlowRuns | null;
-  /**
-   * Where a keyed run (`withCall`) stopped, so the next try of the same call opens that page
-   * and its walks go on from there (`browser/resume`). Absent = files in the owner's state dir
-   * (`deps/stats`, `~/.config/autobrowse/resume`); false = every try starts at step 1.
-   */
-  resume?: Resumes | false;
-}
-
-const ACT_TIMEOUT_MS = 15_000;
-/** How often a step waiting for its control looks for something in the way. */
-const POLL_MS = 250;
-/** Clicks past what is in the way before one act gives up: a new screen or two, not a new flow. */
-const MAX_DETOURS = 3;
-
-/** One flow-run row (`runs/flows`), timed from `startedAt` to now. */
-function runRow(
-  flow: { site: Site; name: string },
-  startedAt: number,
-  r: Omit<FlowRunRow, "site" | "flow" | "startedAt" | "endedAt" | "ms">,
-): FlowRunRow {
-  return {
-    site: flow.site,
-    flow: flow.name,
-    startedAt: new Date(startedAt).toISOString(),
-    endedAt: new Date().toISOString(),
-    ms: Date.now() - startedAt,
-    ...r,
-  };
-}
-
-/** One solve for the run's row: the page without its query, each model's answers. */
-function solveRow(got: CaptchaOutcome, url: string, ms: number): CaptchaSolve {
-  let page = url;
-  try {
-    const u = new URL(url);
-    page = `${u.origin}${u.pathname}`;
-  } catch {
-    // not a URL: kept as is
-  }
-  return {
-    kind: got.kind,
-    vendor: got.vendor,
-    solved: got.solved,
-    ...(got.solved ? { rounds: got.rounds } : { reason: got.reason }),
-    page,
-    ms,
-    ...(got.looks ? { looks: got.looks } : {}),
-  };
-}
-
-/** `AUTOBROWSE_SEED`: one run's seed, to replay its motions. */
-export function seedOf(given = process.env.AUTOBROWSE_SEED): number | undefined {
-  const n = Number(given);
-  return given && Number.isInteger(n) && n >= 0 ? n >>> 0 : undefined;
-}
-
-/** The same page, fragment aside. */
-function samePage(current: string, url: string): boolean {
-  const strip = (u: string) => u.replace(/#.*$/, "").replace(/\/$/, "");
-  return strip(current) === strip(url);
-}
-
-// Busy apps never go idle: this caps what each open pays (8 s was half of an App Store Connect step).
-const SETTLE_MS = 4_000;
-/** AWS's console → sign-in chain takes 30–60 s to DOMContentLoaded headless; Playwright's 30 s default cut it. */
-const NAVIGATE_MS = 90_000;
-
-/**
- * Navigate and let client-side redirects finish: a dashboard that bounces
- * to its login page does so after DOMContentLoaded, and a wall check
- * before that would call an unauthenticated page "signed in".
- */
-async function settle(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATE_MS });
-  // after the load: a goto that fails offline reached nothing
-  markReached();
-  await page.waitForLoadState("networkidle", { timeout: SETTLE_MS }).catch(() => undefined);
-}
-
-/**
- * Choose a value on a `<select>`, or on a custom dropdown (a combobox/button
- * that opens a list): open it, then click the option whose text is the value.
- * The step stays a `select` either way, so a recording replays the same.
- */
-export async function chooseOption(
-  target: Locator,
-  value: string,
-  timeout: number,
-  hands: Hands = instantHands,
-): Promise<void> {
-  const o = { timeout };
-  // Asked to choose: a combobox input opens a list too.
-  await pickOption(target, value, o, (l) => hands.click(l, o), null);
-}
-
-async function doOp(
-  page: Page,
-  hints: Hints,
-  op: Op,
-  timeout: number,
-  hands: Hands,
-): Promise<void> {
-  if (op.kind === "script" && pageWide(hints)) {
-    await inPage(page, op.js);
-    return;
-  }
-  const target = locate(page, hints);
-  await hands.think(page);
-  switch (op.kind) {
-    case "script":
-      // A string is an expression to Playwright, never called: wrap it as a function of el.
-      await target
-        .first()
-        .evaluate(
-          new Function("el", `return (${op.js})(el);`) as (el: unknown) => unknown,
-          undefined,
-          {
-            timeout,
-          },
-        );
-      return;
-    case "click":
-      return hands.click(target, { timeout });
-    case "fill":
-      await hands.type(target, op.value, { timeout });
-      return;
-    case "select":
-      return chooseOption(target, op.value, timeout, hands);
-    case "press":
-      return hands.press(target, op.key, { timeout });
-    case "hover":
-      return hands.hover(target, { timeout });
-    case "upload": {
-      if (op.files.some((f) => typeof f !== "string"))
-        return uploadFiles(page, target, op.files as FilePayload[], timeout, hands);
-      // A ref from another machine (s3://, a signed URL) becomes a cached local file.
-      const { resolveFile } = await import("./run-files.js");
-      const paths = await Promise.all((op.files as string[]).map((f) => resolveFile(f)));
-      return uploadFiles(page, target, paths, timeout, hands);
-    }
-  }
-}
-
-const TAB_ACTS = new Set(["hover", "click", "press"]);
-
-/** Tabs that outlive a run on purpose (a watcher's): never closed as strays. */
-const keptTabs = new WeakSet<Page>();
-
-/**
- * Closes the tabs a run's steps left open beside `main` (a `target=_blank` link, a popup). A
- * parked browser serves run after run: each stray holds a renderer until the browser closes.
- */
-export async function closeStrayTabs(context: BrowserContext, main: Page): Promise<number> {
-  const strays = context.pages().filter((p) => p !== main && !keptTabs.has(p) && !p.isClosed());
-  await Promise.all(strays.map((p) => p.close().catch(() => undefined)));
-  return strays.length;
-}
-
-/**
- * CDP `background: true`: the headed window stays on the main tab.
- * Measured 2026-11-05: lazy rows load in such a tab, headless and headed.
- */
-export async function openReadTab(
-  context: BrowserContext,
-  from: Page,
-  hands: Hands,
-): Promise<ReadTab> {
-  const made = context.waitForEvent("page", { timeout: SETTLE_MS * 4 });
-  let page: Page;
-  try {
-    const cdp = await context.newCDPSession(from);
-    await cdp.send("Target.createTarget", { url: "about:blank", background: true });
-    await cdp.detach().catch(() => undefined);
-    page = await made;
-  } catch {
-    made.catch(() => undefined);
-    page = await context.newPage();
-    await from.bringToFront().catch(() => undefined);
-  }
-  return {
-    page,
-    async open(url) {
-      await settle(page, url);
-      if (OFFLINE_PAGE.test(page.url()))
-        throw new Error(`net::ERR_INTERNET_DISCONNECTED opening ${url}`);
-      const wall = await looksLikeWall(page);
-      if (wall) throw new Error(`read tab: ${wall.detail}; sign in on fp first, then send again`);
-    },
-    url: () => page.url(),
-    read: async (hints) => (await textOf(locate(page, hints))).slice(0, 2_000),
-    has: async (hints, withinMs = 0) => {
-      const l = locate(page, hints).first();
-      if (withinMs > 0)
-        await l.waitFor({ state: "visible", timeout: withinMs }).catch(() => undefined);
-      return l.isVisible().catch(() => false);
-    },
-    wait: (ms) => page.waitForTimeout(ms),
-    scroll: (dy) => hands.scroll(page, dy),
-    act: async (op, hints) => {
-      if (!TAB_ACTS.has(op.kind)) throw new Error(`read tab: no ${op.kind}; do it on fp`);
-      await doOp(page, hints, op, ACT_TIMEOUT_MS, hands);
-    },
-    close: () => page.close().catch(() => undefined),
-  };
-}
-
-/** Files into a file input, else through the chooser the target opens. */
-async function uploadFiles(
-  page: Page,
-  target: Locator,
-  files: string[] | FilePayload[],
-  timeout: number,
-  hands: Hands,
-): Promise<void> {
-  const isInput = await target
-    .evaluate(
-      (el) => el.tagName === "INPUT" && (el as { type?: string }).type === "file",
-      undefined,
-      { timeout },
-    )
-    .catch(() => false);
-  if (isInput) return target.setInputFiles(files, { timeout });
-  // Caught here: a click that throws must not leave the wait to reject unhandled.
-  const chooser = page.waitForEvent("filechooser", { timeout }).catch((e: unknown) => e);
-  await hands.click(target, { timeout });
-  const got = await chooser;
-  if (!(got instanceof Error)) return (got as FileChooser).setFiles(files);
-  // Some buttons open no chooser (YouTube Studio): their hidden input sits beside them.
-  const near = target
-    .locator("xpath=ancestor-or-self::*[.//input[@type='file']][1]//input[@type='file']")
-    .first();
-  if (await near.count()) return near.setInputFiles(files, { timeout });
-  throw got;
-}
-
-/** How long a person has for a step on the page, and how often the page is asked. */
-const PERSON_MS = 5 * 60_000;
 const PERSON_POLL_MS = 2_000;
 
 export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): FlowRunner {

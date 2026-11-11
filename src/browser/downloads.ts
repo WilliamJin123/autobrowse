@@ -67,7 +67,7 @@ export function watchDownloads(context: BrowserContext, dir: string): Downloads 
         row.bytes = statSync(file).size;
       } catch (err) {
         row.state = "failed";
-        row.error = (await d.failure().catch(() => null)) ?? String(err).split("\n")[0];
+        row.error = (await d.failure().catch(() => null)) ?? String(err).split("\n")[0] ?? "failed";
       }
     })();
     saving.add(p);

@@ -58,7 +58,9 @@ export function watchDialogs(target: BrowserContext | Page): Dialogs {
   const seen = async (d: Dialog) => {
     const page = d.page();
     const type = d.type();
-    const theirs = page ? page.listenerCount("dialog") > own : false;
+    const theirs = page
+      ? (page as unknown as { listenerCount(e: string): number }).listenerCount("dialog") > own
+      : false;
     let answered: boolean | null = null;
     let text: string | undefined;
     if (!theirs) {

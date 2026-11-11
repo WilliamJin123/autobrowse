@@ -263,8 +263,8 @@ export class ProfileBusy extends Error {
   readonly opener: Opener;
   readonly profileDir: string;
   /** What the holder runs (`site call x GET /me`, an explore session) and its browser's age. */
-  readonly op?: string;
-  readonly ageS?: number;
+  readonly op?: string | undefined;
+  readonly ageS?: number | undefined;
   constructor(
     profile: string,
     pid: number,
