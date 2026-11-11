@@ -54,7 +54,7 @@ import {
   registerWatchedCommands,
 } from "./cli-watched.js";
 import { ingress } from "./client.js";
-import { tidyHelp } from "./help.js";
+import { helpJson, tidyHelp } from "./help.js";
 import { fileDone } from "./needs.js";
 import { needsContextFor } from "./owed.js";
 import { awsFor, boot, ownerFromArgv } from "./owner.js";
@@ -1009,6 +1009,11 @@ registerAutotrackCommands(program, settings);
 registerAccessCommands(program, settings);
 
 tidyHelp(program);
+const asJson = helpJson(program, process.argv.slice(2));
+if (asJson) {
+  console.log(JSON.stringify(asJson));
+  process.exit(0);
+}
 program
   .hook("postAction", async (_, cmd) => {
     if (cmd.parent?.name() !== "share") await sendAfterCommand();

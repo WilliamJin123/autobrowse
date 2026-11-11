@@ -4,7 +4,8 @@
  * ready, the agent explores and what it achieved is compiled for next time.
  */
 import type { Command } from "commander";
-import { fieldLine } from "../do/catalog.js";
+import { type AbilityKind, fieldLine } from "../do/catalog.js";
+import { listAbilities } from "../do/list.js";
 import type { LocalBackend } from "./backend.js";
 
 export function registerDoCommands(program: Command, local: LocalBackend): void {
@@ -55,12 +56,36 @@ export function registerDoCommands(program: Command, local: LocalBackend): void 
       },
     );
   program
-    .command("abilities")
-    .description("Everything `do` can pick from right now, and what is not recorded yet")
-    .action(async () => {
-      for (const a of await local().backend.abilities())
+    .command("list [query...]")
+    .alias("abilities")
+    .description(
+      "Everything this worker can do (site routes, workflows, flows, tools), found by words; each with the command that uses it",
+    )
+    .option("--kind <kind>", "site | workflow | flow | tool")
+    .option("--site <site>", "one site's only")
+    .option("--limit <n>", "a page's size", (v) => Number.parseInt(v, 10))
+    .option("--offset <n>", "skip this many", (v) => Number.parseInt(v, 10))
+    .option("--json", "the page as JSON, with `next` for the following page")
+    .action(
+      async (
+        words: string[],
+        o: { kind?: AbilityKind; site?: string; limit?: number; offset?: number; json?: boolean },
+      ) => {
+        const page = listAbilities(await local().backend.abilities(), {
+          query: words.join(" "),
+          ...(o.kind ? { kind: o.kind } : {}),
+          ...(o.site ? { site: o.site } : {}),
+          ...(o.limit ? { limit: o.limit } : {}),
+          ...(o.offset ? { offset: o.offset } : {}),
+        });
+        if (o.json) return console.log(JSON.stringify(page));
+        for (const a of page.items)
+          console.log(
+            `${a.kind.padEnd(8)} ${a.name.padEnd(48)} ${a.ready ? "ready" : `not ready: ${a.missing}`}${a.irreversible ? "  !" : ""}\n         ${a.summary}${a.inputs.length ? `\n         ${a.inputs.map(fieldLine).join(", ")}` : ""}\n         ${a.use}`,
+          );
         console.log(
-          `${a.kind.padEnd(8)} ${a.name.padEnd(48)} ${a.ready ? "ready" : `not ready: ${a.missing}`}${a.irreversible ? "  !" : ""}${a.inputs.length ? `\n         ${a.inputs.map(fieldLine).join(", ")}` : ""}`,
+          `\n${page.offset + 1}-${page.offset + page.items.length} of ${page.total}${page.next ? `; next: ${page.next.replace(/ --json$/, "")}` : ""}`,
         );
-    });
+      },
+    );
 }

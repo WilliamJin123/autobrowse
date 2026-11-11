@@ -80,8 +80,14 @@ export interface AbilitySources {
   sites?: { apis: readonly SiteApi[]; rows: readonly SiteRow[] };
   /** Compiled workflows (hand-written ones take plans no goal maps onto). */
   workflows?: readonly AnyWorkflow[];
-  /** Hand-written flows by `site/name`. */
-  flows?: readonly string[];
+  /** Hand-written flows by `site/name`, with their doc line and input when the generator has them. */
+  flows?: readonly FlowSource[];
+}
+
+export interface FlowSource {
+  name: string;
+  summary?: string | null;
+  input?: unknown;
 }
 
 export function abilitiesOf(s: AbilitySources): Ability[] {
@@ -116,10 +122,10 @@ export function abilitiesOf(s: AbilitySources): Ability[] {
   for (const f of s.flows ?? [])
     out.push({
       kind: "flow",
-      name: f,
-      site: f.split("/")[0] ?? null,
-      summary: `hand-written browser flow ${f}`,
-      inputs: [],
+      name: f.name,
+      site: f.name.split("/")[0] ?? null,
+      summary: f.summary ?? `hand-written browser flow ${f.name}`,
+      inputs: fieldsOf(f.input),
       irreversible: false,
       ready: true,
       missing: null,

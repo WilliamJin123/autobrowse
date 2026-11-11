@@ -71,7 +71,7 @@ describe("abilities", () => {
     const list = abilitiesOf({
       sites: { apis: [api], rows },
       workflows: [rename],
-      flows: ["google/oauth-consent"],
+      flows: [{ name: "google/oauth-consent" }],
     });
     expect(
       list.map((a) => [a.kind, a.name, a.ready, a.inputs.map((f) => f.name), a.irreversible]),
@@ -228,7 +228,7 @@ const deps = (over: Partial<DoerDeps> = {}): DoerDeps & { calls: string[] } => {
       abilitiesOf({
         sites: { apis: [api], rows },
         workflows: [rename],
-        flows: ["google/oauth-consent"],
+        flows: [{ name: "google/oauth-consent" }],
       }),
     sites: async () => ["google", "tube"],
     callSite: async (site, method, path, input) => {

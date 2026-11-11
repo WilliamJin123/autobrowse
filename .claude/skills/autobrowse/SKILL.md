@@ -26,7 +26,7 @@ Right now:
 | Credentials, which account does what, keys and env, what William owes | [accounts.md](accounts.md) |
 
 The files sit in `${CLAUDE_SKILL_DIR}/`. Read only the one the job needs; read it
-again after a context summary. Every command: `README.md` (Run, Site APIs).
+again after a context summary. Every command: `README.md` (Run, Site APIs). Find anything it can do: `autobrowse list <words>` (`--json` pages with `next`); any command as JSON: `--help --json`.
 Changing autobrowse's code: `map/CLAUDE.md`.
 
 A long worker call you need later, not now: start it as a job, do other work, collect.

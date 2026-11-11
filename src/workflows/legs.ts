@@ -23,6 +23,7 @@ const DRY = z.object({ dryRun: z.boolean().default(false) });
 export function legWorkflow<I, O>(
   flow: BrowserFlow<I, O>,
   input: z.ZodType<I>,
+  summary: string | null = null,
 ): Workflow<{ dryRun: boolean }, LegDeps, Record<string, never>> {
   const flat = input instanceof z.ZodObject;
   const plan = flat
@@ -33,7 +34,7 @@ export function legWorkflow<I, O>(
   const name = legName(flow as BrowserFlow<never, unknown>);
   return {
     name,
-    description: `${flow.site}/${flow.name}`,
+    description: summary ? `${flow.site}/${flow.name}: ${summary}` : `${flow.site}/${flow.name}`,
     site: flow.site,
     plan: plan as unknown as z.ZodType<{ dryRun: boolean }>,
     emptyMemo: () => ({}),
@@ -59,7 +60,7 @@ export type LegWorkflow = Workflow<{ dryRun: boolean }, LegDeps, Record<string, 
 /** Every hand-written leg as a workflow, by name. */
 export const LEG_WORKFLOWS: ReadonlyMap<string, LegWorkflow> = new Map(
   FLOW_INPUTS.map((e) => {
-    const w = legWorkflow(e.flow, e.input as z.ZodType<never>);
+    const w = legWorkflow(e.flow, e.input as z.ZodType<never>, e.summary);
     return [w.name, w] as const;
   }),
 );

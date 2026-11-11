@@ -116,23 +116,32 @@ export interface FlowInput {
   flow: BrowserFlow<never, unknown>;
   input: z.ZodType;
   data: boolean;
+  /** The flow's doc comment, one line; null when it has none. */
+  summary: string | null;
 }
 /** Held to the flow's own input type: a changed input fails typecheck until this file is made again. */
 const entry = <I>(
   flow: BrowserFlow<I, unknown>,
   input: z.ZodType<I>,
   data: boolean,
+  summary: string | null = null,
 ): FlowInput => ({
   flow: flow as BrowserFlow<never, unknown>,
   input,
   data,
+  summary,
 });
 
 export const FLOW_INPUTS: readonly FlowInput[] = [
   entry(awsCliLogin, z.object({ url: z.string(), user: z.string().optional() }), true),
   entry(calcomApiKey, z.object({ name: z.string(), replace: z.boolean().optional() }), true),
   entry(chatgptAsk, z.object({ q: z.string(), search: z.boolean().optional() }), true),
-  entry(cloudflareAccountId, z.undefined(), true),
+  entry(
+    cloudflareAccountId,
+    z.undefined(),
+    true,
+    "A signed-in dashboard URL carries the account id.",
+  ),
   entry(
     cloudflareApiToken,
     z.object({
@@ -217,7 +226,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     z.object({ file: z.string(), caption: z.string().optional(), account: z.string().optional() }),
     true,
   ),
-  entry(instagramFeed, z.object({ max: z.number().optional() }), true),
+  entry(
+    instagramFeed,
+    z.object({ max: z.number().optional() }),
+    true,
+    "The signed-in account's home feed: posts by the accounts it follows, newest first as Instagram orders them, with caption and counts, in one load scrolled deep. Read off the page's own timeline data; the flow makes no call of its own.",
+  ),
   entry(instagramFollow, z.object({ username: z.string(), undo: z.boolean().optional() }), true),
   entry(instagramFollowing, z.object({ max: z.number().optional() }), true),
   entry(instagramLike, z.object({ undo: z.boolean().optional(), shortcode: z.string() }), true),
@@ -238,7 +252,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(instagramProfileName, z.object({ name: z.string() }), true),
   entry(instagramReels, z.object({ username: z.string(), max: z.number().optional() }), true),
-  entry(instagramSearch, z.object({ q: z.string(), max: z.number().optional() }), true),
+  entry(
+    instagramSearch,
+    z.object({ q: z.string(), max: z.number().optional() }),
+    true,
+    "Instagram's keyword search (a hashtag page lands here too): the posts it shows, top first, as codes to read one by one. The page runs past a megabyte, so links are read in the page.",
+  ),
   entry(jobberConnectorKeys, z.object({ url: z.string(), replace: z.boolean().optional() }), true),
   entry(
     learnQuizAttempt,
@@ -249,9 +268,20 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       submit: z.boolean(),
     }),
     true,
+    "Answer a quiz by option text, check each answer took, and with `submit` end the attempt.",
   ),
-  entry(learnQuizReview, z.object({ ou: z.number(), qi: z.number() }), true),
-  entry(learnQuizzes, z.object({ ou: z.number() }), true),
+  entry(
+    learnQuizReview,
+    z.object({ ou: z.number(), qi: z.number() }),
+    true,
+    "A quiz's attempts as their review pages show them.",
+  ),
+  entry(
+    learnQuizzes,
+    z.object({ ou: z.number() }),
+    true,
+    "A course's quizzes and the attempts left on each.",
+  ),
   entry(linkedinActivity, z.object({ vanity: z.string(), max: z.number().optional() }), true),
   entry(linkedinAudience, z.object({ page: z.string().optional() }), true),
   entry(
@@ -264,6 +294,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     linkedinCompanyJobs,
     z.object({ company: z.string(), max: z.number().optional(), location: z.string().optional() }),
     true,
+    "A company's open roles. Mapped 2026-09-29: the logged-in jobs UI (and the public list with the session's cookies) is geo-filtered to the account's city, so this reads the public list without cookies from inside the page, a page at a time,…",
   ),
   entry(
     linkedinCompanyPeople,
@@ -272,7 +303,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(linkedinCompanyPosts, z.object({ company: z.string(), max: z.number().optional() }), true),
   entry(linkedinConnect, z.object({ vanity: z.string(), note: z.string().optional() }), true),
-  entry(linkedinConnections, z.object({ max: z.number().optional() }), true),
+  entry(
+    linkedinConnections,
+    z.object({ max: z.number().optional() }),
+    true,
+    "Recently added connections, newest first. An accepted invite shows here, so one read finds every accept since the last one; the loop never reads a profile per pending invite. The list loads as it scrolls, so it scrolls until `max`, the hea…",
+  ),
   entry(
     linkedinCreatePost,
     z.object({
@@ -287,7 +323,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(linkedinDashboard, z.record(z.string(), z.never()), true),
   entry(linkedinDeveloperApp, z.object({ app: z.string() }), true),
-  entry(linkedinFeed, z.object({ max: z.number().optional() }), true),
+  entry(
+    linkedinFeed,
+    z.object({ max: z.number().optional() }),
+    true,
+    "The signed-in account's home feed, set to Recent where the menu shows: posts from the people and pages it follows and its connections. Ads and LinkedIn's suggestions are left.",
+  ),
   entry(
     linkedinFollow,
     z.object({
@@ -301,12 +342,14 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     linkedinInbox,
     z.object({ max: z.number().optional(), unread: z.boolean().optional() }),
     true,
+    "The messaging inbox's left list, newest first: who, the preview, whether unread. Replies to outreach are caught here, then the conversation is read on its `url` by the person (or a later flow). Mapped from the 2026 UI's list items (`li` un…",
   ),
   entry(linkedinLike, z.object({ urn: z.string(), undo: z.boolean().optional() }), true),
   entry(
     linkedinListPosts,
     z.object({ author: z.string(), count: z.number().optional(), start: z.number().optional() }),
     true,
+    "The author's own posts, newest first, in the API's shape: a member's from their recent activity (the signed-in member, whoever `author` names), a Page's from its Posts tab sorted by Recent. Reposts and comments are left out. `publishedAt`…",
   ),
   entry(linkedinMessage, z.object({ vanity: z.string(), text: z.string() }), true),
   entry(linkedinNotifications, z.object({ max: z.number().optional() }), true),
@@ -319,7 +362,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
-  entry(linkedinPost, z.object({ urn: z.string() }), true),
+  entry(
+    linkedinPost,
+    z.object({ urn: z.string() }),
+    true,
+    "One post by its urn, off its own page: the card whose urn has the same number, else the page's first (a ugcPost's page can key its card by activity). Read only.",
+  ),
   entry(linkedinPostAnalytics, z.object({ urn: z.string() }), true),
   entry(
     linkedinPostComments,
@@ -342,7 +390,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
-  entry(linkedinRelationship, z.object({ vanity: z.string() }), true),
+  entry(
+    linkedinRelationship,
+    z.object({ vanity: z.string() }),
+    true,
+    'Where this account stands with a member, from the buttons on the profile\'s top card: "Message" with no "Connect" = 1st degree, "Pending" = our invite is out, "Connect" = nothing yet. One profile read; the outreach loop asks it before every…',
+  ),
   entry(
     linkedinSearchPeople,
     z.object({
@@ -398,7 +451,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
-  entry(linkedinWithdraw, z.object({ vanity: z.string() }), true),
+  entry(
+    linkedinWithdraw,
+    z.object({ vanity: z.string() }),
+    true,
+    'Withdraw our pending invite from the profile\'s Pending button, then its "Withdraw" confirm. The button is read first: connected or no invite out withdraws nothing and says what it saw, so an accept the loop missed is caught here. LinkedIn…',
+  ),
   entry(loomDelete, z.object({ id: z.string() }), true),
   entry(loomRename, z.object({ id: z.string(), title: z.string() }), true),
   entry(loomUpload, z.object({ file: z.string(), title: z.string().optional() }), true),
@@ -448,7 +506,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
   ),
   entry(redditComment, z.object({ thing_id: z.string(), text: z.string() }), true),
-  entry(redditMessage, z.object({ to: z.string(), subject: z.string(), text: z.string() }), true),
+  entry(
+    redditMessage,
+    z.object({ to: z.string(), subject: z.string(), text: z.string() }),
+    true,
+    "A private message through old Reddit's compose form (`/message/compose/?to=<name>`: `input[name=to]`, `input[name=subject]`, `textarea[name=text]`, a reCAPTCHA for a new account, `button#send`). A delivered message leaves \"your message has…",
+  ),
   entry(redditProfileName, z.object({ name: z.string() }), true),
   entry(
     redditRead,
@@ -485,6 +548,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       dry: z.boolean().optional(),
     }),
     true,
+    "Join (or leave) a subreddit with the sidebar's toggle on old Reddit, as a person does. Mapped 2026-10-15: `/r/<sr>/` shows `span.subscribe-button` with two `a.option`s, the active one the button a visitor sees. Already in that state answer…",
   ),
   entry(
     resetMailProbe,
@@ -639,7 +703,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   ),
   entry(wranglerLogin, z.object({ url: z.string() }), true),
   entry(xFollow, z.object({ username: z.string(), undo: z.boolean().optional() }), true),
-  entry(xFollowing, z.object({ max_results: z.number().optional() }), true),
+  entry(
+    xFollowing,
+    z.object({ max_results: z.number().optional() }),
+    true,
+    "Who the signed-in account follows, newest first, in v2's `{ data, meta }`. The page has no numeric ids, so each row is the username and name. The rail's profile link names us.",
+  ),
   entry(
     xHome,
     z.object({
@@ -649,6 +718,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       expansions: z.string().optional(),
     }),
     true,
+    "The signed-in account's home: posts from the accounts it follows, newest first.",
   ),
   entry(xLike, z.object({ id: z.string(), undo: z.boolean().optional() }), true),
   entry(
@@ -671,6 +741,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       expansions: z.string().optional(),
     }),
     true,
+    "As the API: replies come back unless `exclude` names them, each with `in_reply_to_status_id` and its parent's author (the Replies tab); with replies excluded, the profile's Posts tab.",
   ),
   entry(xProfile, z.object({ username: z.string() }), true),
   entry(xProfileName, z.object({ name: z.string() }), true),

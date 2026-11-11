@@ -3,6 +3,7 @@
  * the agent. Every catalog it reads (sites, flows, logins) is an option with
  * the built-in as default, so a library caller can hand a narrower world.
  */
+
 import {
   allowsSite,
   allowsTool,
@@ -15,6 +16,7 @@ import type { AgentSessions } from "../agent/sessions.js";
 import type { SiteLogin } from "../auth/login.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import type { BrowserFlow, FlowRunner } from "../browser/flow.js";
+import { FLOW_INPUTS } from "../browser/flows/inputs.gen.js";
 import type { KeyKeeper } from "../deps/keys.js";
 import { localShell, type Shell } from "../deps/shell.js";
 import type { SecretSink } from "../deps/sink.js";
@@ -27,9 +29,13 @@ import type { SiteApi } from "../sites/types.js";
 import type { CompiledCatalog } from "../workflows/compiled.js";
 import { runCompiled } from "../workflows/proof.js";
 import { type Ability, abilitiesOf } from "./catalog.js";
+
 import { DoError, type Doer, doer } from "./doer.js";
 import type { PickMemory } from "./memory.js";
 import { binPresence, runTool, TOOLS, type Tool, ToolInputError, toolAbilities } from "./tools.js";
+
+/** The generated input and doc line of each hand-written flow, by the flow itself. */
+const FLOW_INPUT_OF = new Map(FLOW_INPUTS.map((e) => [e.flow, e]));
 
 export interface DoerParts {
   /** None: exact-name asks still route; anything else is 501. */
@@ -95,7 +101,10 @@ export function doerFor(p: DoerParts): Verb {
       ...abilitiesOf({
         ...(p.sites ? { sites: { apis: p.siteApis ?? SITES, rows: await p.sites.list() } } : {}),
         workflows: (await p.catalog.list()).map((c) => c.workflow),
-        flows: Object.keys(flows),
+        flows: Object.entries(flows).map(([name, flow]) => {
+          const gen = FLOW_INPUT_OF.get(flow);
+          return { name, summary: gen?.summary ?? null, input: gen?.input };
+        }),
       }),
       ...toolAbilities(tools, (bin) => has.get(bin) ?? false),
     ];

@@ -86,6 +86,7 @@
     "desk": "tsx src/app/desk.ts",
     "autobrowse": "node --disable-warning=ExperimentalWarning --import ./bin/ts-loader.mjs src/app/cli.ts",
     "record": "tsx src/app/cli-record.ts",
+    "catalog": "tsx scripts/catalog.ts",
     "gen:flow-inputs": "tsx scripts/gen-flow-inputs.ts && biome check --write src/browser/flows/inputs.gen.ts",
     "gates": "lockf -s /tmp/wren_automation-checks.lock sh -c 'export TMPDIR=$HOME/Library/Caches/wren_automation/tmp/autobrowse && rm -rf $TMPDIR && mkdir -p $TMPDIR && pnpm lint && pnpm typecheck && pnpm test'",
     "ui:dev": "vite --config ui/vite.config.ts ui",

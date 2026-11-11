@@ -111,7 +111,18 @@ interface Entry {
   name: string;
   schema: string;
   data: boolean;
+  summary: string | null;
 }
+/** The flow's doc comment, one line: its summary in `autobrowse list` (U3). */
+const SUMMARY_MAX = 240;
+const summaryOf = (sym: ts.Symbol): string | null => {
+  const text = ts
+    .displayPartsToString(sym.getDocumentationComment(checker))
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > SUMMARY_MAX ? `${text.slice(0, SUMMARY_MAX - 1).trimEnd()}…` : text;
+};
 const entries: Entry[] = [];
 for (const file of files) {
   const src = program.getSourceFile(file);
@@ -128,7 +139,13 @@ for (const file of files) {
     if (sig?.getParameters()[0]?.name !== "fp") continue;
     data = true;
     const schema = param ? zodOf(checker.getTypeOfSymbol(param)) : "z.undefined()";
-    entries.push({ file: basename(file, ".ts"), name: sym.name, schema, data });
+    entries.push({
+      file: basename(file, ".ts"),
+      name: sym.name,
+      schema,
+      data,
+      summary: summaryOf(sym),
+    });
   }
 }
 entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -149,16 +166,24 @@ export interface FlowInput {
   flow: BrowserFlow<never, unknown>;
   input: z.ZodType;
   data: boolean;
+  /** The flow's doc comment, one line; null when it has none. */
+  summary: string | null;
 }
 /** Held to the flow's own input type: a changed input fails typecheck until this file is made again. */
-const entry = <I>(flow: BrowserFlow<I, unknown>, input: z.ZodType<I>, data: boolean): FlowInput => ({
+const entry = <I>(
+  flow: BrowserFlow<I, unknown>,
+  input: z.ZodType<I>,
+  data: boolean,
+  summary: string | null = null,
+): FlowInput => ({
   flow: flow as BrowserFlow<never, unknown>,
   input,
   data,
+  summary,
 });
 
 export const FLOW_INPUTS: readonly FlowInput[] = [
-${entries.map((e) => `  entry(${e.name}, ${e.schema}, ${e.data}),`).join("\n")}
+${entries.map((e) => `  entry(${e.name}, ${e.schema}, ${e.data}${e.summary ? `, ${JSON.stringify(e.summary)}` : ""}),`).join("\n")}
 ];
 `;
 writeFileSync(OUT, out);

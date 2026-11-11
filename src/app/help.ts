@@ -13,9 +13,8 @@ const GROUPS: [string, [string, string][]][] = [
     "Do things",
     [
       ["do", "Say what you want; it routes there or builds it"],
-      ["abilities", "Everything `do` can pick from"],
+      ["list", "Find anything it can do, by words (`--json`)"],
       ["workflows", "What this worker can run; a name shows steps, inputs"],
-      ["flows", "Every deterministic browser leg"],
       ["run", "Start a run from a plan"],
       ["try", "Run a workflow here, no Restate"],
       ["runs", "Runs, newest first"],
@@ -179,4 +178,48 @@ export function tidyHelp(program: Command): void {
     for (const sub of c.commands) nested(sub);
   };
   for (const c of commands) nested(c);
+}
+
+export interface HelpJson {
+  command: string;
+  summary: string;
+  description: string;
+  usage: string;
+  options: { flags: string; description: string }[];
+  commands: { name: string; summary: string; group: string | null }[];
+  /** Commands to run next: the finder and a subcommand's own help. */
+  next: string[];
+}
+
+/**
+ * `autobrowse [cmd…] --help --json` (U3): the command an argv names, as JSON, for an agent.
+ * Null when the argv does not ask for it.
+ */
+export function helpJson(program: Command, argv: readonly string[]): HelpJson | null {
+  if (!argv.includes("--json") || !(argv.includes("--help") || argv.includes("-h"))) return null;
+  let at = program;
+  const path: string[] = [];
+  for (const word of argv.filter((a) => !a.startsWith("-"))) {
+    const sub = at.commands.find((c) => c.name() === word || c.aliases().includes(word));
+    if (!sub) break;
+    at = sub;
+    path.push(sub.name());
+  }
+  const name = ["autobrowse", ...path].join(" ");
+  return {
+    command: name,
+    summary: at.summary() || firstClause(at.description()),
+    description: at.description(),
+    usage: `${name} ${at.usage()}`.trim(),
+    options: at.options.map((o) => ({ flags: o.flags, description: o.description })),
+    commands: at.commands.map((c) => ({
+      name: c.name(),
+      summary: c.summary() || firstClause(c.description()),
+      group: c.helpGroup() || null,
+    })),
+    next: [
+      "autobrowse list <words> --json",
+      ...(at.commands.length ? [`${name} <command> --help --json`] : []),
+    ],
+  };
 }
