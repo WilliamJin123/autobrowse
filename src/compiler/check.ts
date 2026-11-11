@@ -13,6 +13,8 @@ export interface CheckOptions {
   timeoutMs?: number;
   /** The person's values this workflow must not carry (the account's username). */
   known?: readonly Known[];
+  /** False: typecheck only (a mod's site or hook file has no tests). */
+  tests?: boolean;
 }
 
 /** The module and the outline carry no personal data at all; the test, none of the known values. */
@@ -50,6 +52,7 @@ export async function checkCompiled(dir: string, o: CheckOptions = {}): Promise<
     .join("\n");
   if (own) return `typecheck:\n${own}`;
   if (tsc.code !== 0 && !tsc.output.includes("error TS")) return `typecheck:\n${tsc.output}`;
+  if (o.tests === false) return null;
   const test = await run(cwd, "vitest", ["run", rel], o.timeoutMs);
   if (test.code !== 0) return `tests:\n${trim(test.output)}`;
   return null;

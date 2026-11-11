@@ -19,6 +19,12 @@ export {
 } from "./facade.js";
 export { fbPublic } from "./fb-public.js";
 export { gmail, gmailOAuth } from "./gmail.js";
+export {
+  type CallHook,
+  type HookCall,
+  type HookOutcome,
+  withHooks,
+} from "./hooks.js";
 export { instagram } from "./instagram.js";
 export { langfuse } from "./langfuse.js";
 export { linkedin } from "./linkedin.js";

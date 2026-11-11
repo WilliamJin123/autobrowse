@@ -29,12 +29,14 @@ import type { AnyWorkflow } from "../engine/workflow.js";
 import { expandHome } from "../google/auth.js";
 import { withTrace } from "../llm/trace.js";
 import type { Memory } from "../memory/index.js";
+import { modExtensions } from "../mods/extend.js";
 import { modWorkflowRoots } from "../mods/mod.js";
 import { named } from "../owner.js";
 import { fileSpent } from "../reach/key-ring.js";
 import { fileSiteCalls } from "../runs/calls.js";
 import { fileCaps } from "../sites/caps.js";
 import {
+  SITES,
   SITES_SERVICE,
   type SiteFacade,
   type SitesService,
@@ -335,9 +337,17 @@ export async function buildApp(settings: Settings, log: Logger): Promise<App> {
     });
   const extra = await compiledNow();
   if (extra.length) log.info({ compiled: extra.map((c) => c.workflow.name) }, "compiled workflows");
+  const ext = await modExtensions(
+    modsDirFor(settings),
+    SITES.map((s) => s.site),
+  );
+  for (const why of ext.skipped) log.warn(`mod not loaded: ${why}`);
   const sites = holding(
     idle,
     sitesFor({
+      ...(ext.sites.length ? { sites: [...SITES, ...ext.sites] } : {}),
+      hooks: ext.hooks,
+      onHookError: (hook, err) => log.warn({ hook, err: (err as Error).message }, "hook failed"),
       catalog,
       browser,
       sink,

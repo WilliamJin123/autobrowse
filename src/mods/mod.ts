@@ -23,11 +23,13 @@ export const KIND_DIRS = {
   fixes: "fixes/",
   login: "logins/",
   workflow: "workflows/",
+  site: "sites/",
+  hook: "hooks/",
 } as const;
 export type ModKind = keyof typeof KIND_DIRS;
 const KINDS = Object.keys(KIND_DIRS) as [ModKind, ...ModKind[]];
 /** Kinds that run new code: never loaded without `--trust`. */
-export const CODE_KINDS: ReadonlySet<ModKind> = new Set(["workflow"]);
+export const CODE_KINDS: ReadonlySet<ModKind> = new Set(["workflow", "site", "hook"]);
 
 const SITE = /^[a-z0-9][a-z0-9._-]*$/;
 const DOMAIN = /^([a-z0-9-]+\.)+[a-z0-9-]+$|^(localhost|127\.0\.0\.1)(:\d+)?$/;
@@ -70,17 +72,15 @@ export const modSchema = z
           path: ["files", i, "path"],
           message: `a ${f.kind} lives under ${KIND_DIRS[f.kind]}`,
         });
-      if (
+      const where =
         f.kind === "workflow"
-          ? !/^workflows\/[a-z][a-z0-9-]*\//.test(f.path)
-          : !f.path.endsWith(".json")
-      )
-        ctx.addIssue({
-          code: "custom",
-          path: ["files", i, "path"],
-          message:
-            f.kind === "workflow" ? "a workflow lives at workflows/<name>/" : "data is .json",
-        });
+          ? /^workflows\/[a-z][a-z0-9-]*\//.test(f.path) || "a workflow lives at workflows/<name>/"
+          : f.kind === "site" || f.kind === "hook"
+            ? /^(sites|hooks)\/[a-z][a-z0-9-]*\.ts$/.test(f.path) ||
+              `a ${f.kind} is one file, ${KIND_DIRS[f.kind]}<name>.ts`
+            : f.path.endsWith(".json") || "data is .json";
+      if (where !== true)
+        ctx.addIssue({ code: "custom", path: ["files", i, "path"], message: where });
       if (seen.has(f.path))
         ctx.addIssue({ code: "custom", path: ["files", i], message: "listed twice" });
       seen.add(f.path);

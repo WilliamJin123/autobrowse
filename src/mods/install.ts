@@ -107,7 +107,9 @@ export function checkMod(dir: string, o: { version: string; trust?: boolean }): 
       bad.push(`${where}: ${hostOf(url)} is outside domains ${mod.domains.join(", ")}`);
   };
   if (hasCode(mod) && !o.trust)
-    bad.push("ships code (a workflow): add it with --trust, only if you trust its author");
+    bad.push(
+      "ships code (a workflow, site or hook): add it with --trust, only if you trust its author",
+    );
   const credSites = new Set(mod.credentials.map((c) => c.split(":")[0] as string));
   const root = resolve(dir) + sep;
   for (const f of mod.files) {
@@ -305,7 +307,7 @@ async function checkCode(dir: string, mod: Mod): Promise<string | null> {
   writeFileSync(join(dir, "package.json"), '{ "type": "module", "private": true }\n');
   writeFileSync(
     join(dir, "tsconfig.json"),
-    `${JSON.stringify({ extends: join(HOME, "tsconfig.json"), include: ["index.ts", "workflows"] }, null, 2)}\n`,
+    `${JSON.stringify({ extends: join(HOME, "tsconfig.json"), include: ["index.ts", "workflows", "sites", "hooks"] }, null, 2)}\n`,
   );
   const names = new Set(
     mod.files.filter((f) => f.kind === "workflow").map((f) => f.path.split("/")[1] as string),
@@ -313,6 +315,16 @@ async function checkCode(dir: string, mod: Mod): Promise<string | null> {
   for (const w of names) {
     const why = await checkCompiled(join(dir, "workflows", w), { cwd: dir, timeoutMs: 300_000 });
     if (why) return `workflows/${w}: ${why}`;
+  }
+  for (const kind of ["site", "hook"] as const) {
+    if (!mod.files.some((f) => f.kind === kind)) continue;
+    const sub = KIND_DIRS[kind].slice(0, -1);
+    const why = await checkCompiled(join(dir, sub), {
+      cwd: dir,
+      timeoutMs: 300_000,
+      tests: false,
+    });
+    if (why) return `${sub}: ${why}`;
   }
   return null;
 }

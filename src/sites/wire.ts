@@ -5,6 +5,7 @@
  * Everything it reads from the process (env, the HTTP client, the catalog of
  * sites and flows) is an option, so a library caller can hand its own.
  */
+
 import type { CredentialStore, EnvEntry, EnvListing } from "credvault";
 import {
   DEFAULT_PURPOSE,
@@ -27,6 +28,7 @@ import type { CompiledCatalog } from "../workflows/compiled.js";
 import { runCompiled } from "../workflows/proof.js";
 import type { DailyCaps } from "./caps.js";
 import { checkSite, type SiteFacade, type SiteRow, siteFacade } from "./facade.js";
+import { type CallHook, withHooks } from "./hooks.js";
 import { SITES } from "./index.js";
 import type { LimitStore } from "./limits.js";
 import { type MintedTokens, pointedAt, TokenRefused } from "./oauth.js";
@@ -59,6 +61,9 @@ export interface SiteParts {
   oauthPort: number;
   /** The sites served; every built-in one unless said. */
   sites?: readonly SiteApi[];
+  /** Before/after each call (U23): a library caller's own, and trusted mods'. */
+  hooks?: readonly CallHook[];
+  onHookError?: (hook: string, err: unknown) => void;
   /** Where keys and tokens are read from; the process env unless said. */
   env?: (name: string) => string | undefined;
   http?: HttpClient;
@@ -328,7 +333,7 @@ export function sitesFor(p: SiteParts): SiteFacade {
     const mine = refused?.list().filter((r) => r.site === row.site) ?? [];
     return mine.length ? { ...row, refused: mine } : row;
   };
-  const base = { ...facade, call, setup };
+  const base = withHooks({ ...facade, call, setup }, p.hooks ?? [], p.onHookError);
   if (!refused) return withRenew(base);
   return withRenew({
     ...base,
