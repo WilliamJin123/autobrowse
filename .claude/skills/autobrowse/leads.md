@@ -3,13 +3,15 @@
 Output is a CSV that wren imports. Re-running a job resumes it.
 
 ```sh
-autobrowse maps "staffing agency in austin tx" --max-minutes 10   # listings with phone, site, emails → wren --format google-maps
+autobrowse maps "staffing agency in austin tx" --max-minutes 10   # listings with phone, site, emails, socials, owner → wren --format google-maps
 autobrowse people recruiting founder austin --pages 2 --enrich    # LinkedIn people → wren --format linkedin
 autobrowse people founder --company <handle> --enrich             # one firm's people; keywords narrow
 ```
 
 `maps`: several searches in one run; `--depth` goes further down each list
-(1 ≈ 20 places); `--no-email` skips visiting each site. Needs Docker.
+(1 ≈ 20 places); `--no-email` skips visiting each site. Two engines merged by
+`cid`: the Maps kit (emails, socials) and the current Maps scraper in Docker
+(owner). `--no-owner`: the kit alone, no Docker.
 `people`: `--network F,S,O`, `--max`, `--out` (appended to).
 
 One LinkedIn read at a time, through the facade (paced and capped per day):

@@ -10,6 +10,8 @@
     "dist",
     "!dist/**/*.test.*",
     "assets/overlay/bin",
+    "vendor/google-maps-scraper-kit",
+    "!vendor/**/.engine",
     "evals",
     "README.md",
     "LICENSE.md"
@@ -126,6 +128,8 @@
     "@toon-format/toon": "4.4.0",
     "commander": "15.0.0",
     "credvault": "0.16.2",
+    "csv-parse": "7.0.3",
+    "csv-stringify": "6.9.0",
     "entities": "8.1.0",
     "fast-xml-parser": "^5.12.0",
     "fflate": "0.8.3",

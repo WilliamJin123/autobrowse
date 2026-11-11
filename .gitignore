@@ -22,3 +22,6 @@ __pycache__/
 # overlay host (native/overlay): cargo output; CI drops the prebuilt binaries in bin/
 native/overlay/target/
 assets/overlay/bin/
+
+# the Maps kit keeps its jobs, logs and Chrome here
+vendor/google-maps-scraper-kit/.engine/

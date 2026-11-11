@@ -19,7 +19,17 @@ import type { Person, Profile } from "../browser/flows/linkedin-reach.js";
 import { envSource, ringCount, type SpentKeys } from "../reach/key-ring.js";
 import { type KeysDep, keyCall, reachEnv } from "../reach/key-source.js";
 import { writeLeads } from "../reach/linkedin-leads.js";
-import { csvRows, ensureMapsServer, mapsReady, mapsScrape, stopMapsServer } from "../reach/maps.js";
+import {
+  csvRows,
+  ensureKitServer,
+  ensureMapsServer,
+  MAPS_KIT_BASE,
+  mapsReady,
+  mapsScrape,
+  mergeMaps,
+  stopKitServer,
+  stopMapsServer,
+} from "../reach/maps.js";
 import { READ_ORDER, readPage, SEARCH_ORDER, search } from "../reach/web.js";
 import { checkSite } from "../sites/index.js";
 import { refusedLine } from "../sites/refused.js";
@@ -75,7 +85,7 @@ export function registerReachCommands(
           bold("search"),
           `exa ${await exaRing()} · brave ${await has("BRAVE_API_KEY")} · duckduckgo ${good("ready")}`,
         ],
-        [bold("maps"), maps.startsWith("ready") ? good(maps) : warn(maps)],
+        [bold("maps"), maps.startsWith("kit ok") ? good(maps) : warn(maps)],
         [bold("egress"), egressLine()],
       ];
       const sites = local().backend.sites;
@@ -204,31 +214,74 @@ export function registerReachCommands(
   program
     .command("maps <searches...>")
     .description(
-      "Google Maps listings as a lead CSV (gosom/google-maps-scraper in Docker); one search per argument",
+      "Google Maps listings as a lead CSV: the Maps kit (emails, socials) merged with the current Maps scraper (owner, in Docker); one search per argument",
     )
     .option("--depth <n>", "how far down each results list; 1 is about 20 places", "1")
-    .option("--no-email", "skip visiting each website for emails (faster)")
-    .option("--max-minutes <n>", "the job gives up after this long", "20")
+    .option("--no-email", "skip visiting each website for emails and socials (faster)")
+    .option("--no-owner", "the kit alone: no Docker, no owner field (about 20 s, not minutes)")
+    .option("--max-minutes <n>", "a job gives up after this long", "20")
     .option("--out <file>", "where the CSV goes")
-    .option("--keep", "leave the scraper running afterwards")
+    .option("--keep", "leave the engines running afterwards")
     .action(
       async (
         searches: string[],
-        o: { depth: string; email: boolean; maxMinutes: string; out?: string; keep?: boolean },
+        o: {
+          depth: string;
+          email: boolean;
+          owner: boolean;
+          maxMinutes: string;
+          out?: string;
+          keep?: boolean;
+        },
       ) => {
-        const dataDir = join(homedir(), ".autobrowse", "maps");
-        mkdirSync(dataDir, { recursive: true });
-        const started = await ensureMapsServer(dataDir);
+        const root = join(homedir(), ".autobrowse");
+        const kitDir = join(root, "maps-kit");
+        const ownerDir = join(root, "maps");
+        mkdirSync(kitDir, { recursive: true });
+        mkdirSync(ownerDir, { recursive: true });
+        const job = {
+          keywords: searches,
+          depth: Number(o.depth) || 1,
+          maxMinutes: Number(o.maxMinutes) || 20,
+        };
+        const say = (who: string) => (s: string) => console.error(`maps ${who}: ${s}`);
+        let kitStarted = false;
+        let ownerStarted = false;
         try {
-          const csv = await mapsScrape(
-            {
-              keywords: searches,
-              depth: Number(o.depth) || 1,
-              email: o.email,
-              maxMinutes: Number(o.maxMinutes) || 20,
-            },
-            { onStatus: (s) => console.error(`maps: ${s}`) },
-          );
+          const kit = (async () => {
+            kitStarted = await ensureKitServer(kitDir);
+            return mapsScrape(
+              { ...job, email: o.email, socials: o.email },
+              { base: MAPS_KIT_BASE, onStatus: say("kit") },
+            );
+          })();
+          // The owner comes off the place page: no email crawl, the slow half of that engine.
+          const owner = o.owner
+            ? (async () => {
+                ownerStarted = await ensureMapsServer(ownerDir);
+                return mapsScrape({ ...job, email: false }, { onStatus: say("owner") });
+              })()
+            : Promise.reject(new Error("skipped (--no-owner)"));
+          const [k, w] = await Promise.allSettled([kit, owner]);
+          if (k.status === "rejected" && w.status === "rejected")
+            throw new Error(
+              `maps: both engines failed: kit: ${String(k.reason)}; owner: ${String(w.reason)}`,
+            );
+          let csv: string;
+          if (k.status === "fulfilled" && w.status === "fulfilled") {
+            const m = mergeMaps(k.value, w.value);
+            csv = m.csv;
+            console.error(
+              `maps: ${m.both} places in both, ${m.kitOnly} kit only, ${m.ownerOnly} owner scraper only; ${m.owners} with an owner`,
+            );
+          } else if (k.status === "fulfilled") {
+            csv = k.value;
+            if (o.owner && w.status === "rejected")
+              console.error(`maps: no owner field: ${String(w.reason)}`);
+          } else {
+            csv = (w as PromiseFulfilledResult<string>).value;
+            console.error(`maps: no emails or socials, the kit failed: ${String(k.reason)}`);
+          }
           const slug = (searches[0] ?? "maps")
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
@@ -238,7 +291,10 @@ export function registerReachCommands(
           console.log(`${csvRows(csv)} places → ${out}`);
           console.log(`into wren: wren email import ${out} --format google-maps --niche <niche>`);
         } finally {
-          if (started && !o.keep) await stopMapsServer();
+          if (!o.keep) {
+            if (kitStarted) stopKitServer(kitDir);
+            if (ownerStarted) await stopMapsServer();
+          }
         }
       },
     );
