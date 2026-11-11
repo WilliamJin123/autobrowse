@@ -316,6 +316,7 @@ export class Watchers {
     const first = l.state.paused === null;
     l.state.open = false;
     l.state.paused = `profile ${busy.profile} is open in ${busy.opener}`;
+    l.state.error = null; // one flag at a time
     l.retryAt = this.now() + 60_000;
     if (first) this.d.log?.("watch paused", { id: l.state.id, opener: busy.opener });
   }
@@ -328,6 +329,7 @@ export class Watchers {
     l.timer = null;
     l.state.open = false;
     l.state.error = why;
+    l.state.paused = null;
     l.retryAt = this.now() + l.backoffMs;
     l.backoffMs = Math.min(l.backoffMs * 2, 30 * 60_000);
     void held?.release();

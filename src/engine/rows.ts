@@ -37,7 +37,8 @@ export function applyRunEvent(row: RunRow | null, event: RunEvent): RunRow {
       break;
     case "step":
       next.lastStep = event.step;
-      next.status = "running";
+      // a late step never reopens a settled row (a projection: last event in wins otherwise)
+      if (!SETTLED.has(next.status)) next.status = "running";
       break;
     case "gate-opened":
       next.status = "waiting";
@@ -66,7 +67,7 @@ export function applyRunEvent(row: RunRow | null, event: RunEvent): RunRow {
 /** Rows the registry keeps; past it the oldest settled ones go (a running or waiting run never does). */
 export const KEEP_ROWS = 2_000;
 
-const SETTLED = new Set<RunRow["status"]>(["done", "failed", "rejected", "reset"]);
+const SETTLED = new Set<RunRow["status"]>(["done", "failed", "rejected", "reset", "planned"]);
 
 /** A list in order once over `keep`: every live row stays, settled ones only while under the cap. */
 export function trimRows(rows: readonly RunRow[], keep = KEEP_ROWS): RunRow[] {
@@ -95,6 +96,7 @@ export const ROW_STATUSES = [
   "failed",
   "rejected",
   "reset",
+  "planned",
 ] as const satisfies readonly RunRow["status"][];
 
 /** The row passes the query's filters (not its page bounds). */

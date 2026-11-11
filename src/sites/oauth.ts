@@ -202,11 +202,14 @@ export function accessTokens(
   // A refresh token the platform refused, by name and value: not asked again for a few minutes.
   // A rolled or re-consented token is another value, so it is tried at once.
   const refused = new Map<string, { err: TokenRefused; until: number }>();
+  // A rolled refresh token the sink would not take: the old one is dead, so this process mints
+  // from this one until a keep lands (no write-ahead: the site names it only in the mint's answer).
+  const unkept = new Map<string, string>();
   return async (spec, account) => {
     const asked = accountEnv(spec.refreshToken, account);
     // An alias names the real copy (`pointTo`): mint from it and keep the new one there.
     const refreshName = pointedAt(env(asked)) ?? asked;
-    const refresh = env(refreshName);
+    const refresh = unkept.get(refreshName) ?? env(refreshName);
     const id = env(spec.clientId);
     const secret = env(spec.clientSecret);
     if (!refresh || !id || !secret)
@@ -271,7 +274,25 @@ export function accessTokens(
     } catch {
       // A machine that can't write the file mints per process, as before.
     }
-    if (keep && next !== refresh) await keep(refreshName, next);
+    // against what's stored: an unkept roll is kept at the next mint even when that one doesn't roll
+    if (keep && next !== env(refreshName)) {
+      unkept.set(refreshName, next);
+      for (let i = 0; ; i++) {
+        try {
+          await keep(refreshName, next);
+          unkept.delete(refreshName);
+          break;
+        } catch (err) {
+          if (i >= 2) {
+            console.error(
+              `oauth: ${refreshName} rolled but not kept (${(err as Error).message}); held in memory, kept at the next mint`,
+            );
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 500 * 2 ** i));
+        }
+      }
+    }
     return token;
   }
 }

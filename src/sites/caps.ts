@@ -314,15 +314,27 @@ export function fileCaps(
 ): DailyCaps {
   return capsOn(
     () => {
+      // only a missing file is a fresh day: an unreadable or corrupt one fails closed, never
+      // resets the used counts and holds
+      let text: string;
       try {
-        return JSON.parse(readFileSync(path, "utf8")) as Day;
-      } catch {
-        return null;
+        text = readFileSync(path, "utf8");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw err;
+      }
+      try {
+        return JSON.parse(text) as Day;
+      } catch (err) {
+        throw new Error(
+          `${path}: not valid caps JSON (${(err as Error).message}); fix or remove it`,
+        );
       }
     },
     (d) => {
       mkdirSync(dirname(path), { recursive: true });
-      const tmp = `${path}.tmp`;
+      // per process: two writers never clobber one tmp file
+      const tmp = `${path}.${process.pid}.tmp`;
       writeFileSync(tmp, `${JSON.stringify(d)}\n`, { mode: 0o600 });
       renameSync(tmp, path);
     },

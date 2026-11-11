@@ -133,6 +133,14 @@ interface Live {
 }
 
 const LIVE_STATES = new Set<SessionStatus>(["starting", "running", "paused", "needs-human"]);
+/** The run finished: never resumed. */
+const FINAL = new Set<SessionStatus>(["done", "stopped"]);
+/** Nothing drives it: finished, or ended by a fault or a close (those two resume). */
+export const SETTLED: ReadonlySet<SessionStatus> = new Set<SessionStatus>([
+  ...FINAL,
+  "failed",
+  "closed",
+]);
 
 /** The registry's workflow name for agent sessions. */
 export const AGENT = "agent";
@@ -388,7 +396,7 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
       const live = must(id);
       // Its browser died (a crash, a restart): a new one on the last page,
       // and the agent goes on from its last step instead of step 1.
-      if (!live.explorer && live.view.status !== "done" && live.view.status !== "stopped") {
+      if (!live.explorer && !FINAL.has(live.view.status)) {
         if (live.driving) throw new Error(`agent session ${id} is still starting or ending`);
         const view = live.view;
         Object.assign(view, { status: "starting", error: null, prompt: null, port: freePort() });

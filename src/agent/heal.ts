@@ -32,7 +32,7 @@ import { brokenOp, replaceOp } from "../compiler/patch.js";
 import { structure } from "../compiler/structure.js";
 import { redactText } from "../recorder/redact.js";
 import { loadRecording } from "../recorder/store.js";
-import type { AgentSessions, SessionView, StartRequest } from "./sessions.js";
+import { type AgentSessions, SETTLED, type SessionView, type StartRequest } from "./sessions.js";
 
 export interface HealOptions {
   agent: AgentSessions;
@@ -113,8 +113,6 @@ export function healRequest(
       "Stop as soon as that act is done: the flow does the rest.",
   };
 }
-
-const SETTLED = new Set<SessionView["status"]>(["done", "stopped", "failed", "closed"]);
 
 /** A session that neither finishes nor asks for a person within this is given up on. */
 const SETTLE_MS = 30 * 60_000;

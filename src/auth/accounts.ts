@@ -99,6 +99,7 @@ export function accountsOf(opts: {
     const cred = await store.get(site);
     return cred?.via ? viaLogin(site, cred) : null;
   };
+  const saving = new Map<string, Promise<void>>();
   const row = async (site: string) =>
     rowOf(site, await store.get(site), resolveLogin(logins, site));
   return {
@@ -117,9 +118,20 @@ export function accountsOf(opts: {
     },
     async save(site, edit) {
       if (!SITE.test(site)) throw new Error(`not a site name: ${site}`);
-      const parsed = credentialSchema.safeParse(merged(await store.get(site), edit));
-      if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
-      await store.put(site, parsed.data);
+      // read-merge-write per site in turn: two saves never drop each other's fields
+      const prev = saving.get(site) ?? Promise.resolve();
+      const turn = prev.then(async () => {
+        const parsed = credentialSchema.safeParse(merged(await store.get(site), edit));
+        if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
+        await store.put(site, parsed.data);
+      });
+      const tail = turn.catch(() => {});
+      saving.set(site, tail);
+      try {
+        await turn;
+      } finally {
+        if (saving.get(site) === tail) saving.delete(site);
+      }
       return row(site);
     },
     async check(site) {

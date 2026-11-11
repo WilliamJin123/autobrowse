@@ -7,7 +7,7 @@
  * a purchase or a password still waits for a person.
  */
 import type { Proposal } from "./evaluator.js";
-import type { AgentSessions, SessionView } from "./sessions.js";
+import { type AgentSessions, SETTLED, type SessionView } from "./sessions.js";
 
 export interface BuilderOptions {
   agent: AgentSessions;
@@ -34,8 +34,6 @@ export interface BuildOutcome {
   workflow: string | null;
   summary: string;
 }
-
-const SETTLED = new Set<SessionView["status"]>(["done", "stopped", "failed", "closed"]);
 
 /** `Title Of Thing` → `title-of-thing`, bounded. */
 export function recordingNameFor(title: string): string {
