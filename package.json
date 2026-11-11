@@ -79,7 +79,7 @@
     "lint": "biome check --error-on-warnings . && sh map/_meta/rebuild.sh --check",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit && tsc -p ui --noEmit",
-    "build": "tsc && node scripts/prune-private.mjs",
+    "build": "tsc && node scripts/prune-private.mjs && node scripts/pack-skills.mjs",
     "build:check": "pnpm build && node scripts/build-check.mjs",
     "test": "vitest run",
     "worker": "tsx src/app/main.ts",

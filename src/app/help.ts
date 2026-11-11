@@ -6,6 +6,7 @@
  */
 
 import type { Command } from "commander";
+import type { HelpNode } from "../skills-pack.js";
 
 /** Groups in print order; each command with its one line. A command missing here lands in "More" with its own description. */
 const GROUPS: [string, [string, string][]][] = [
@@ -14,6 +15,7 @@ const GROUPS: [string, [string, string][]][] = [
     [
       ["do", "Say what you want; it routes there or builds it"],
       ["list", "Find anything it can do, by words (`--json`)"],
+      ["skills", "The agent skill: list, read, install"],
       ["workflows", "What this worker can run; a name shows steps, inputs"],
       ["run", "Start a run from a plan"],
       ["try", "Run a workflow here, no Restate"],
@@ -191,11 +193,23 @@ export interface HelpJson {
   next: string[];
 }
 
+/** Every command under `c`, for `--help --json --all` and llms.txt (U21). */
+export function helpTree(c: Command): HelpNode {
+  return {
+    name: c.name(),
+    summary: c.summary() || firstClause(c.description()),
+    commands: c.commands.map(helpTree),
+  };
+}
+
 /**
  * `autobrowse [cmd…] --help --json` (U3): the command an argv names, as JSON, for an agent.
  * Null when the argv does not ask for it.
  */
-export function helpJson(program: Command, argv: readonly string[]): HelpJson | null {
+export function helpJson(
+  program: Command,
+  argv: readonly string[],
+): HelpJson | (HelpNode & { command: string }) | null {
   if (!argv.includes("--json") || !(argv.includes("--help") || argv.includes("-h"))) return null;
   let at = program;
   const path: string[] = [];
@@ -206,6 +220,7 @@ export function helpJson(program: Command, argv: readonly string[]): HelpJson | 
     path.push(sub.name());
   }
   const name = ["autobrowse", ...path].join(" ");
+  if (argv.includes("--all")) return { command: name, ...helpTree(at) };
   return {
     command: name,
     summary: at.summary() || firstClause(at.description()),
