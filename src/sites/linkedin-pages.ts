@@ -20,6 +20,8 @@ export const linkedinPagesOAuth: OAuthSpec = {
   // CM tokens refresh for a year; the access token is minted from it
   refreshToken: "LINKEDIN_PAGES_REFRESH_TOKEN",
   accessToken: "LINKEDIN_PAGES_ACCESS_TOKEN",
+  // the app's one registered redirect: wren's portal callback; the code is read off the landed URL
+  redirect: "https://app.wrenautomation.com/oauth/social/linkedin_page",
   consent: { flow: "linkedin/oauth-consent" },
 };
 
