@@ -53,6 +53,8 @@ const HINT: Partial<Record<ErrorCode, string>> = {
   needs_person: "a person must act on the page: say what the step is and wait",
   gate_refused: "a person said no or has not answered: never work around it",
   profile_busy: "another browser holds the profile: wait, or see `autobrowse browsers`",
+  tabs_full:
+    "our tabs in that browser are at their cap: close ours (`autobrowse browsers`) or wait",
   browser_down: "the browser or its connection died: retry the same call",
   url_refused:
     "the URL is a private address, a non-http scheme or outside NET_ALLOW_DOMAINS: do not retry",
@@ -74,6 +76,7 @@ const RETRYABLE = new Set<ErrorCode>([
   "rate_limited",
   "unavailable",
   "profile_busy",
+  "tabs_full",
   "browser_down",
 ]);
 
@@ -98,6 +101,7 @@ const CODE_STATUS: Partial<Record<ErrorCode, number>> = {
   needs_person: 409,
   gate_refused: 403,
   profile_busy: 409,
+  tabs_full: 409,
   url_refused: 403,
   browser_down: 503,
   flow_broken: 502,
@@ -125,8 +129,8 @@ function codeOf(err: unknown): { code: ErrorCode; status?: number; retryAfter?: 
     };
   if (err instanceof PaymentGate || err instanceof GateOpen) return { code: "gate_refused" };
   if (err instanceof NetRefused) return { code: "url_refused" };
-  if (profileBusyOf(err) || err instanceof PoolFull || err instanceof OwnTabsFull)
-    return { code: "profile_busy" };
+  if (err instanceof OwnTabsFull) return { code: "tabs_full" };
+  if (profileBusyOf(err) || err instanceof PoolFull) return { code: "profile_busy" };
   if (
     err instanceof FlowInterrupted ||
     err instanceof BrowserNotReady ||
@@ -193,6 +197,7 @@ export function exitCodeOf(e: Pick<ErrorContract, "code" | "status" | "outcome">
     case "rate_limited":
     case "conflict":
     case "profile_busy":
+    case "tabs_full":
       return 75;
     case "need_login":
     case "platform_blocked":

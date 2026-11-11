@@ -10,7 +10,8 @@ type Launch = { args: string[]; proxy?: unknown; env?: Record<string, string | u
 const launches: Launch[] = [];
 
 vi.mock("patchright", () => {
-  const page = { on: () => undefined };
+  // evaluate: the launch readiness probe (P8)
+  const page = { on: () => undefined, evaluate: async () => 1 };
   const context = {
     pages: () => [page],
     newPage: async () => page,

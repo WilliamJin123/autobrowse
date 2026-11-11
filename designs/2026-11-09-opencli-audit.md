@@ -182,7 +182,7 @@ Browserbase, `own.ts`). Serving one from our Chrome is option D, and stays explo
 | Product Hunt, Hacker News, Bluesky, Substack, Medium, dev.to, Indeed, Pinterest | public or cookie reads | HN search only |
 
 Account rules hold: LinkedIn signed-in reads only as `linkedin@wren`, under its caps, and a
-LinkedIn profile reader still needs William's yes (10-28 design). Facebook stays signed out
+LinkedIn profile reader: William's yes 11-11 (`GET /in/{vanity}`, built; waits on `linkedin-partner` for the API). Facebook stays signed out
 (the ad account). Writes stay on our routes.
 
 ## Full upgrade list (nine facets)
@@ -371,7 +371,7 @@ profiles, whole items.
   listing page show nothing signed out; events lists only categories.
 
 Not built, and why:
-- LinkedIn profile-read/-experience: a profile reader waits on William's yes (10-28 design).
+- LinkedIn profile-read/-experience: `GET /in/{vanity}` with `experience=true`; William's yes 11-11.
 - Sales Navigator: needs a subscription (money).
 - TikTok friends: it is TikTok's who-to-follow list for our own account, not a read of others.
 - Facebook feed, friends, notifications, inbox: signed in only, and Facebook stays signed out.
@@ -483,3 +483,4 @@ Rules: a route is a read when its access is `read` and it is not irreversible; a
   first (my call).
 - 2026-11-10: Pinterest and Marketplace read signed out, not on new accounts (my call): the reads
   render without one, and an account is William's call.
+- 2026-11-11: LinkedIn profile details signed in: yes (William: "if so yes. And hopefully api can take over that in the future"). The route stays `waits: linkedin-partner`.

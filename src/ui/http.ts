@@ -34,6 +34,8 @@ export type ErrorCode =
   | "gate_refused"
   /** Another browser holds the profile: nothing was opened. */
   | "profile_busy"
+  /** Our own tabs in a person's browser are at their cap: nothing was opened. */
+  | "tabs_full"
   /** Chrome or its connection died under the flow: retry with a fresh session. */
   | "browser_down"
   /** The URL is outside the net rules (private address, scheme, allowlist): nothing was sent. */

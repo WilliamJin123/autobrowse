@@ -57,6 +57,7 @@ ad-account risk.
 
 **LinkedIn stays on Exa's cache.** A signed-in profile read is the riskiest read for
 `linkedin@wren`. No signed-in LinkedIn reader without William's yes.
+Yes given 2026-11-11 for profile details (`linkedin GET /in/{vanity}`, as `linkedin@wren`, cap `profile` 80 a day). Its standing `waits: linkedin-partner` moves it to the API once a partner program opens.
 
 **The fetcher's user agent stays declared.** The ladder's `plain` and `impersonate` rungs already
 send Chrome's user agent, headers and TLS. A Chrome user agent on weaver's own fetcher would save a

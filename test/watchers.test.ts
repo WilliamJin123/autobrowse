@@ -8,6 +8,9 @@ import { SessionPark } from "../src/browser/park.js";
 import type { Session } from "../src/browser/session.js";
 import { Watchers, watchSkips } from "../src/browser/watchers.js";
 
+// The net guard resolves DNS; fake timers never let it settle. Its own tests: net-guard.test.ts.
+vi.mock("../src/reach/net-guard.js", () => ({ checkUrl: async () => undefined }));
+
 const session = () => {
   const s = { closed: false };
   return Object.assign(s, {

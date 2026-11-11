@@ -86,7 +86,7 @@ describe("launch hygiene", () => {
     expect(selfOpener(["node", "/x/dist/app/cli.js", "site"])).toBe("cli");
     expect(selfOpener(["node", "/x/other.js"])).toBe("other");
   });
-  it("P11: our tabs past the cap refuse as profile_busy; another browser's tabs do not count", () => {
+  it("P11: our tabs past the cap refuse as tabs_full; another browser's tabs do not count", () => {
     const f = join(dir(), "tabs.json");
     for (let i = 0; i < 2; i++) addTab(f, { pid: 1, targetId: `t${i}`, browser: "/a", at: "" });
     addTab(f, { pid: 1, targetId: "u", browser: "/b", at: "" });
@@ -100,6 +100,6 @@ describe("launch hygiene", () => {
       }
     })();
     expect(err).toBeInstanceOf(OwnTabsFull);
-    expect(errorOf(err).code).toBe("profile_busy");
+    expect(errorOf(err).code).toBe("tabs_full");
   });
 });
