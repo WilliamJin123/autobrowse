@@ -200,7 +200,6 @@ export const needsOf = <I>(r: Pick<SiteRoute<I>, "needs">, input?: I): readonly 
 export const siteEnv = (site: string, what: string): string =>
   `${site.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${what}`;
 
-/** One key or token the site needs, and what makes it. */
 /**
  * A literal, the value of an env name (one an earlier setup step made, or the
  * person set), or the account the step runs as (`{ account: true }`: the one
@@ -208,6 +207,7 @@ export const siteEnv = (site: string, what: string): string =>
  */
 export type SetupInput = unknown | { env: string } | { account: true };
 
+/** One key or token the site needs, and what makes it. */
 export interface SetupStep {
   name: string;
   /** Env names this step produces. */

@@ -175,6 +175,7 @@ import {
   toolkitFor,
   toolsOf,
 } from "../workflows/toolkit.js";
+import { codeVersion, skewWatch } from "./code-version.js";
 import {
   type Command,
   commandSchema,
@@ -473,6 +474,8 @@ export interface ExploreInfo {
   startedAt: string;
   /** The Claude Code session that started it (`ExploreOptions.owner`). */
   session?: string;
+  /** The code it runs (`codeVersion`): a HEAD sha, or `v<version>` from npm. */
+  version?: string;
 }
 
 export interface Explorer {
@@ -2803,6 +2806,15 @@ async function serve(
     sent.set(id, p);
     if (sent.size > SENT_KEEP) sent.delete(sent.keys().next().value as string);
   };
+  const startedCode = codeVersion();
+  const skewOf = skewWatch(startedCode);
+  /** A reply object gains `skew` once the checkout moved past this session's code. */
+  const withSkew = (body: string): string => {
+    const skew = skewOf();
+    return skew && body.startsWith("{") && body !== "{}"
+      ? `${body.slice(0, -1)},${JSON.stringify({ skew }).slice(1)}`
+      : body;
+  };
   const server: Server = createServer((req, res) => {
     if (req.headers.authorization !== `Bearer ${token}`) {
       res.statusCode = 401;
@@ -2846,7 +2858,7 @@ async function serve(
         settle({ status: res.statusCode, body });
         // A gate that asked waits on the person: the same command, same id, asks again.
         if (id && res.statusCode === 202) sent.delete(id);
-        res.end(body);
+        res.end(withSkew(body));
       };
       try {
         const answer = await run(parsed, wait);
@@ -2899,6 +2911,7 @@ async function serve(
       held: idleMs === 0,
       startedAt,
       ...(opts.owner?.session ? { session: opts.owner.session } : {}),
+      version: startedCode,
     };
     writeFileSync(infoFile, JSON.stringify(info), { mode: 0o600 });
   }

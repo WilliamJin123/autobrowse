@@ -75,20 +75,41 @@ export function openerOf(
   procs: Proc[],
   explorers: ExploreInfo[],
 ): Opener {
+  return holderOf(pid, profile, procs, explorers).opener;
+}
+
+/** `ps` args after the script: `site call x GET /me`. */
+const argsAfter = (command: string, script: RegExp): string | undefined =>
+  command.split(script)[1]?.trim().slice(0, 120) || undefined;
+
+/** `openerOf`, plus what the opener runs (`op`) and how long the browser has lived. */
+export function holderOf(
+  pid: number,
+  profile: string,
+  procs: Proc[],
+  explorers: ExploreInfo[],
+): { opener: Opener; op?: string; ageS?: number } {
   const byPid = new Map(procs.map((p) => [p.pid, p]));
   const root = byPid.get(pid);
-  if (!root) return "gone";
+  if (!root) return { opener: "gone" };
+  const ageS = root.age;
+  const out = (opener: Opener, op?: string) => ({
+    opener,
+    ...(op ? { op } : {}),
+    ...(ageS !== undefined ? { ageS } : {}),
+  });
   for (let p = byPid.get(root.ppid), hops = 0; p && hops < 8; p = byPid.get(p.ppid), hops++) {
     const ex = explorers.find(
       (e) => e.pid === p?.pid && (profile === e.site || profile.startsWith(`${e.site}@`)),
     );
-    if (ex) return explorerOpener(ex);
-    if (/app\/desk\.[jt]s\b/.test(p.command)) return "desk";
-    if (/app\/main\.[jt]s\b/.test(p.command)) return "worker";
-    if (/app\/cli\.[jt]s\b|\/autobrowse(\s|$)/.test(p.command)) return "cli";
+    if (ex) return out(explorerOpener(ex), ex.session ? `session ${ex.session}` : ex.driver);
+    if (/app\/desk\.[jt]s\b/.test(p.command)) return out("desk");
+    if (/app\/main\.[jt]s\b/.test(p.command)) return out("worker");
+    if (/app\/cli\.[jt]s\b|\/autobrowse(\s|$)/.test(p.command))
+      return out("cli", argsAfter(p.command, /app\/cli\.[jt]s|\/autobrowse(?=\s|$)/));
   }
   // Checked last: in a container the worker is init itself.
-  return root.ppid === 1 ? "orphan" : "other";
+  return out(root.ppid === 1 ? "orphan" : "other");
 }
 
 /** The explore servers whose process still lives, from their info files. */
@@ -229,11 +250,21 @@ export function warnings(v: BrowsersView): string[] {
  * A live browser holds the profile: nothing was opened, nothing done. A caller waits for it
  * (`browser/profile-wait`), never calls it a failure of the act it was about to do.
  */
+const ageText = (s: number) =>
+  s < 120
+    ? `${Math.round(s)}s`
+    : s < 7200
+      ? `${Math.round(s / 60)} min`
+      : `${Math.round(s / 3600)} h`;
+
 export class ProfileBusy extends Error {
   readonly profile: string;
   readonly pid: number;
   readonly opener: Opener;
   readonly profileDir: string;
+  /** What the holder runs (`site call x GET /me`, an explore session) and its browser's age. */
+  readonly op?: string;
+  readonly ageS?: number;
   constructor(
     profile: string,
     pid: number,
@@ -241,8 +272,13 @@ export class ProfileBusy extends Error {
     opener: Opener,
     /** The profile's directory: where its `SingletonLock` is. */
     profileDir: string,
+    held: { op?: string; ageS?: number } = {},
   ) {
-    super(`profile ${profile} is open in pid ${pid} (${opener})`);
+    super(
+      `profile ${profile} is open in pid ${pid} (${opener})${held.op ? `: ${held.op}` : ""}${held.ageS !== undefined ? `, for ${ageText(held.ageS)}` : ""}`,
+    );
+    this.op = held.op;
+    this.ageS = held.ageS;
     this.profile = profile;
     this.pid = pid;
     this.opener = opener;
@@ -285,12 +321,8 @@ export async function assertProfileFree(
   const procs = await listProcs().catch(() => []);
   const holder = procs.find((p) => p.pid === pid);
   if (!holder || !/chrom/i.test(holder.command)) return; // a reused pid: the lock is stale
-  throw new ProfileBusy(
-    profile,
-    pid,
-    openerOf(pid, profile, procs, readExplorers(procs)),
-    profileDir,
-  );
+  const { opener, ...held } = holderOf(pid, profile, procs, readExplorers(procs));
+  throw new ProfileBusy(profile, pid, opener, profileDir, held);
 }
 
 function isAlive(pid: number): boolean {

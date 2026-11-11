@@ -7,10 +7,12 @@ import {
   BROWSER_WARN_MB,
   DRIVER_WARN_MB,
   HELD_WARN_HOURS,
+  holderOf,
   IDLE_WARN_MINUTES,
   lockHolder,
   NEW_BROWSER_MB,
   openerOf,
+  ProfileBusy,
   viewOf,
   warnings,
 } from "../src/browser/browsers.js";
@@ -73,6 +75,17 @@ describe("who owns a browser", () => {
   it("in a container the worker is init: its browser is no orphan", () => {
     const boxed = [{ pid: 1, ppid: 0, command: "node dist/app/main.js" }, chrome(7, 1, "x")];
     expect(openerOf(7, "x", boxed, [])).toBe("worker");
+  });
+  it("says what the holder runs and how long its browser has lived", () => {
+    expect(holderOf(31, "google", procs, explorers)).toEqual({
+      opener: "cli",
+      op: "explore x --port 9090",
+      ageS: 60,
+    });
+    expect(holderOf(30, "x", procs, [{ ...ex9090, session: "s1" }]).op).toBe("session s1");
+    expect(holderOf(99, "x", procs, explorers)).toEqual({ opener: "gone" });
+    const e = new ProfileBusy("google", 31, "cli", "/p", { op: "site call x", ageS: 300 });
+    expect(e.message).toBe("profile google is open in pid 31 (cli): site call x, for 5 min");
   });
   it("reads ps elapsed time", () => {
     expect(etimeSeconds("05:07")).toBe(307);
