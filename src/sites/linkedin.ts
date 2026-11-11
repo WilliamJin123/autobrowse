@@ -388,6 +388,9 @@ export const linkedin: SiteApi = {
     // Loads of our own post pages (comments, counts): 60 ran out by evening on 2026-10-23; reads of
     // our own posts are the lowest-risk load, so 150 (William).
     comments: 150,
+    // Verify reads of our own sends (WA-982): apart from the send buckets, so a check never takes a
+    // send's room; VERIFY_GAP_MS already holds each send to one read an hour.
+    verify: 40,
   },
   // William's own profile: off since 2026-11-04 (William: research runs as the Wren founder
   // account, linkedin@wren). Live limits.json already held it at 0 from 2026-10-30.
@@ -413,6 +416,7 @@ export const linkedin: SiteApi = {
       comment: 0,
       comments: 0,
       publish: 0,
+      verify: 0,
       total: 0,
     },
     // The research alt (2026-10-05): restricted by LinkedIn 2026-10-06 (asks for an ID); off.
@@ -437,6 +441,7 @@ export const linkedin: SiteApi = {
       comment: 0,
       comments: 0,
       publish: 0,
+      verify: 0,
       total: 0,
     },
   },

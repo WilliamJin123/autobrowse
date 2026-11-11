@@ -145,6 +145,8 @@ export interface CallFrom {
   arm?: boolean;
   /** An earlier `arm`'s id: run the leg in its tab. Without it, the newest arm on the same path. */
   armId?: string;
+  /** A send's verify read: metered in the site's `verify` bucket, not the route's own. */
+  verify?: boolean;
 }
 
 /** What `arm` answers: an id for the call to carry, or null when there is nothing to warm. */

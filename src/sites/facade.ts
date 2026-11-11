@@ -385,15 +385,32 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       ...(s.probe ? { probe: s.probe } : {}),
     };
   };
-  /** The chosen account's own caps (`SiteApi.accountCaps`), its credential names read as addresses. */
-  const capsOfAccount = async (s: SiteApi, lim: Effective, chosen: string | null) => {
+  /**
+   * The chosen account's own caps (`SiteApi.accountCaps`), by credential name. A name the caller
+   * gave matches exactly; else names are read as addresses, and two names on one address throw:
+   * the caps of either could hold.
+   */
+  const capsOfAccount = async (
+    s: SiteApi,
+    lim: Effective,
+    chosen: string | null,
+    named: string | null | undefined,
+  ) => {
     if (!lim.accountCaps || !chosen) return {};
+    const exact = named?.trim().toLowerCase();
+    if (exact && lim.accountCaps[exact]) return lim.accountCaps[exact];
     const who = chosen.trim().toLowerCase();
-    for (const [name, caps] of Object.entries(lim.accountCaps)) {
+    const hits: string[] = [];
+    for (const name of Object.keys(lim.accountCaps)) {
       const address = (await deps.accountOf?.(deps.providerOf?.(s) ?? s.site, name)) ?? name;
-      if (address.trim().toLowerCase() === who) return caps;
+      if (address.trim().toLowerCase() === who) hits.push(name);
     }
-    return {};
+    if (hits.length > 1)
+      throw new SiteError(
+        500,
+        `${s.site}: credentials ${hits.join(", ")} hold one address, so their caps cannot be told apart; name the credential in the call, or give each its own address`,
+      );
+    return hits[0] ? (lim.accountCaps[hits[0]] ?? {}) : {};
   };
   /** `capsPerKey` buckets at their cap times the ring's live keys (one at least, so a missing key says so). */
   const capsOfKeys = async (
@@ -496,8 +513,11 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         }
       }
       const byBrowser = !(r.api && token !== null) && Boolean(r.browser);
-      const use = r.meter?.(parsed.data as never);
       const lim = limitsOf(s);
+      // A send's own verify read spends the site's `verify` bucket, where it has one, not the sends'.
+      const metered = r.meter?.(parsed.data as never);
+      const use =
+        from?.verify && metered && lim.caps?.verify !== undefined ? { verify: 1 } : metered;
       const note = (outcome: MeteredCall["outcome"], bucket?: string, spent?: boolean) => {
         if (!use || !lim.caps || !deps.caps) return;
         deps.caps.note({
@@ -540,7 +560,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         const limits = {
           ...lim.caps,
           ...(await capsOfKeys(s, lim, keyAccount)),
-          ...(await capsOfAccount(s, lim, chosen)),
+          ...(await capsOfAccount(s, lim, chosen, named)),
         };
         const buffer = lim.retryBuffer ?? (method === "GET" ? RETRY_BUFFER.read : RETRY_BUFFER.act);
         const t = deps.caps.take(s.site, chosen ?? s.site, use, limits, buffer);

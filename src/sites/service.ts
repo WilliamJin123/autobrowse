@@ -593,7 +593,7 @@ export function sitesService(
             path,
             inp,
             at?.site && at.site !== rec.site ? null : rec.account,
-            from,
+            { ...from, verify: true },
           );
         const read = await v.read(input, get);
         const seen = settle(read, {

@@ -211,6 +211,69 @@ describe("limits.json", () => {
     err.mockRestore();
     expect(() => limits.write({ linkedin: { caps: { connect: -1 } } })).toThrow();
   });
+
+  it("matches a named credential exactly, and two names on one address fail loudly", async () => {
+    const browser = fakeBrowser([]);
+    browser.on(linkedinCompanyJobs, async () => ({ companyId: "1", jobs: [] }));
+    const make = (addr: Record<string, string>) =>
+      siteFacade(
+        [
+          {
+            ...linkedin,
+            pace: { gapMs: 0 },
+            accountCaps: { linkedin: { company: 0 }, "linkedin@wren": { company: 5 } },
+          },
+        ],
+        {
+          http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
+          env: () => undefined,
+          sink: memorySink(),
+          runner: browser,
+          flow: (n) => (n === "linkedin/company-jobs" ? (linkedinCompanyJobs as never) : null),
+          caps: memoryCaps(() => noon),
+          accountOf: async (_site, name) => addr[name] ?? null,
+        },
+      );
+    const jobs = (sites: ReturnType<typeof make>, who: string) =>
+      sites.call("linkedin", "GET", "/company/stripe/jobs", {}, who);
+    // One address under both names: the name the caller gave picks the caps.
+    const shared = make({ linkedin: "w@x.com", "linkedin@wren": "w@x.com" });
+    await expect(jobs(shared, "linkedin@wren")).resolves.toBeDefined();
+    await expect(jobs(shared, "linkedin")).rejects.toMatchObject({ status: 429 });
+    // Picked by address alone (no credential name given), the pair cannot be told apart.
+    await expect(jobs(shared, "w@x.com")).rejects.toMatchObject({
+      status: 500,
+      message: expect.stringContaining("linkedin, linkedin@wren"),
+    });
+    const apart = make({ linkedin: "me@x.com", "linkedin@wren": "w@x.com" });
+    await expect(jobs(apart, "w@x.com")).resolves.toBeDefined();
+  });
+
+  it("a send's verify read spends the verify bucket, never the route's", async () => {
+    const browser = fakeBrowser([]);
+    browser.on(linkedinCompanyJobs, async () => ({ companyId: "1", jobs: [] }));
+    const caps = memoryCaps(() => noon);
+    const sites = siteFacade(
+      [{ ...linkedin, pace: { gapMs: 0 }, caps: { company: 1, verify: 2 }, accountCaps: {} }],
+      {
+        http: httpClient({ fetch: fakeFetch(() => ({ status: 500 })).fetch }),
+        env: () => undefined,
+        sink: memorySink(),
+        runner: browser,
+        flow: (n) => (n === "linkedin/company-jobs" ? (linkedinCompanyJobs as never) : null),
+        caps,
+        accountOf: async () => "w@x.com",
+      },
+    );
+    const jobs = (verify: boolean) =>
+      sites.call("linkedin", "GET", "/company/stripe/jobs", {}, "linkedin@wren", { verify });
+    await jobs(false);
+    await jobs(true);
+    await jobs(true);
+    await expect(jobs(true)).rejects.toMatchObject({ status: 429, message: /verify/ });
+    expect(caps.today()["linkedin|w@x.com|company"]).toBe(1);
+    expect(caps.today()["linkedin|w@x.com|verify"]).toBe(2);
+  });
 });
 
 describe("the exa budget on web", () => {
