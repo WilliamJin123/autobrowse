@@ -7,7 +7,7 @@ export const igContainer = z.object({
   igUserId: id,
   image_url: z.string().url().optional(),
   video_url: z.string().url().optional(),
-  media_type: z.enum(["IMAGE", "REELS", "STORIES", "CAROUSEL"]).optional(),
+  media_type: z.enum(["IMAGE", "VIDEO", "REELS", "STORIES", "CAROUSEL"]).optional(),
   caption: z.string().max(2200).optional(),
   children: z.array(id).optional(),
   is_carousel_item: z.boolean().optional(),

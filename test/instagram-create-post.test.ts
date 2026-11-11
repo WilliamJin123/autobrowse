@@ -22,6 +22,13 @@ describe("instagram/create-post", () => {
     expect(BROWSER_FLOWS["instagram/create-post"]).toBe(instagramCreatePost);
   });
 
+  it("takes images only: a video goes by meta's resumable upload", () => {
+    const route = instagram.routes.find((r) => r.path === "/web/posts");
+    expect(route?.request.safeParse({ file: "/tmp/a.png" }).success).toBe(true);
+    for (const file of ["/tmp/r.mp4", "https://s.test/r.MOV?sig=1"])
+      expect(route?.request.safeParse({ file }).success).toBe(false);
+  });
+
   it("walks the four dialogs and answers with the new post's link", async () => {
     let shared = false;
     const { fp, acts } = fakePage({

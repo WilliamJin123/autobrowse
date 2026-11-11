@@ -71,9 +71,8 @@ export const GOOGLE_PLACES: Blocker = {
   since: "2026-11-05",
 };
 
-/** Ours to build: no one outside holds it. */
-export const INSTAGRAM_LOCAL_UPLOAD: Blocker = {
-  what: "The Graph API takes a local reel by resumable upload; our API leg sends a public URL only. Not built",
-  task: "WA-1112",
-  since: "2026-11-05",
+/** Ours to set up: a host for our own media. */
+export const INSTAGRAM_IMAGE_URL: Blocker = {
+  what: "Graph takes an image only by public URL (a video goes by resumable upload on meta, WA-1112). A local image needs a media host: wren's prod sets no WREN_MEDIA_BUCKET",
+  since: "2026-11-11",
 };

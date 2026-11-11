@@ -83,7 +83,7 @@ When a blocker clears: delete it from `blockers.ts`. The test then names each ro
 | `tiktok-business` | TikTok API for Business, Accounts API | Not filed (WA-1030) | 3 |
 | `tiktok-direct-post` | Direct Post audit | Not filed | 1 |
 | `google-places` | Google Places API, billed per call | Ours to set up | 1 |
-| `instagram-local-upload` | Our API leg on resumable upload | Ours to build (WA-1112) | 1 |
+| `instagram-image-url` | A host for a local image (Graph takes images by URL only; video by rupload since WA-1112) | Ours to set up: a media bucket | 1 |
 | `connect` | our own setup: no Outlook token | Ours to run | 7 |
 
 The 42 `final` routes: `autobrowse site paths --final`. Each says no API has the call. Three carry a first-pass note: LinkedIn `/company/{company}` (WA-1113), Instagram `/web/p/{shortcode}`, Google `/place/reviews`; Meta `/ads` names the EU-only API.
@@ -112,3 +112,4 @@ Not counted as an API: a scraper a vendor runs (SerpApi and the like). It is a b
 - 2026-11-06 (William): "serpapi doesn't count". A vendor's scraper API is not an API here; `/google` and `/place/reviews` stay `final`.
 - 2026-11-06 (William: "that's your call… no is fine"): Instagram `/web/p/{shortcode}` stays `final`, not waiting on `meta-app`. No API reads a post by its link code; after App Review the API reads a business or creator account's posts, which stays the first-pass note.
 - 2026-11-11: `npm-trust-cli` dropped; npm `/packages/{package}/trust` is `final` (WA-1111). `npm trust` wants 2FA on the first call, and the account's 2FA is a passkey, so the CLI sends that step to a browser page. William agreed to close it.
+- 2026-11-11: WA-1112. Instagram Login (`graph.instagram.com`) refuses `upload_type=resumable` (it asks for `video_url`); Facebook Login takes it. So a local video goes by meta `POST /{igUserId}/media` with `video_file` (rupload), proven with one public reel. `/web/posts` now takes images only and waits on `instagram-image-url`: Graph takes an image by URL only, and wren's prod has no media bucket.

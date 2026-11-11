@@ -11,7 +11,7 @@ import { z } from "zod";
 import { MAX_THREADS_SEARCH } from "../browser/flows/threads-act.js";
 import { type JsonResponse, mustOk } from "../clients/http.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
-import { INSTAGRAM_LOCAL_UPLOAD, META_APP } from "./blockers.js";
+import { INSTAGRAM_IMAGE_URL, META_APP } from "./blockers.js";
 import { fields } from "./facets/core.js";
 import { THREADS_SEARCH } from "./facets/sets.js";
 import { igContainer } from "./ig-container.js";
@@ -19,6 +19,7 @@ import { WEB_REDIRECT } from "./oauth.js";
 import { bearer, type OAuthSpec, route, type SiteApi } from "./types.js";
 import type { Seen, VerifyGet, VerifyRead } from "./verdict.js";
 import { arr, hasNext, isoOf, rec, str, text, unclear } from "./verify-kit.js";
+import { graphWhy } from "./why.js";
 
 /**
  * Whose account the browser legs post as. The composer follows whoever the
@@ -63,10 +64,19 @@ const containerState = z.object({
   containerId: id,
   fields: z.string().default("id,status_code"),
 });
+/** A video file: it goes by resumable upload on meta, never the composer. */
+const VIDEO_FILE = /\.(?:mp4|mov|m4v|webm|avi|mkv)(?:[?#]|$)/i;
+
 const webPost = z.object({
   caption: z.string().max(2200).default(""),
-  /** The image or video the browser leg uploads: a path on the box, or a URL it downloads. */
-  file: z.string().min(1),
+  /** The image the browser leg uploads: a path on the box, or a URL it downloads. */
+  file: z
+    .string()
+    .min(1)
+    .refine(
+      (f) => !VIDEO_FILE.test(f),
+      "a video goes by meta POST /{igUserId}/media with video_file, then media_publish",
+    ),
 });
 
 const username = z.string().regex(/^[A-Za-z0-9._]{1,30}$/, "an Instagram username without the @");
@@ -119,7 +129,7 @@ const profileName = z.object({
 });
 
 const must = <T>(res: JsonResponse<T>, what: string): T =>
-  mustOk(res, `${INSTAGRAM_ORIGIN}/${what}`);
+  mustOk(res, `${INSTAGRAM_ORIGIN}/${what}`, graphWhy);
 const v = (path: string) => `${INSTAGRAM_ORIGIN}/${INSTAGRAM_VERSION}/${path}`;
 /** The signed-in account: its numeric id and username (`GET /me`). */
 async function ownAccount(
@@ -164,7 +174,7 @@ export const instagramOAuth: OAuthSpec = {
 
 export const instagram: SiteApi = {
   site: "instagram",
-  blockers: { "meta-app": META_APP, "instagram-local-upload": INSTAGRAM_LOCAL_UPLOAD },
+  blockers: { "meta-app": META_APP, "instagram-image-url": INSTAGRAM_IMAGE_URL },
   origin: INSTAGRAM_ORIGIN,
   probe: { path: "/me" },
   auth: { oauth: instagramOAuth },
@@ -261,9 +271,9 @@ export const instagram: SiteApi = {
       method: "POST",
       path: "/web/posts",
       meter: () => ({ publish: 1 }),
-      standing: { waits: "instagram-local-upload" },
+      standing: { waits: "instagram-image-url" },
       summary:
-        "A post from a local file with a caption (no official path: the API wants a public URL; the browser leg uploads)",
+        "An image post from a local file with a caption (Graph takes an image by public URL only; the browser leg uploads). A video goes by meta `POST /{igUserId}/media` with `video_file`",
       request: webPost,
       irreversible: true,
       verify: {

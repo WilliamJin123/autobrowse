@@ -9,7 +9,12 @@
  * Written from the docs 2026-09-22; unproven until a Meta app, an ad
  * account with a payment method and a Page exist.
  */
+
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { z } from "zod";
+import { resolveFile } from "../browser/run-files.js";
 import { HttpError, type JsonResponse, mustOk } from "../clients/http.js";
 import type { Amount } from "../gates/spend.js";
 import { OAUTH_PROVIDERS } from "../oauth/providers.js";
@@ -275,6 +280,10 @@ const leads = z.object({
   ...page,
 });
 const igPublish = z.object({ igUserId: id, creation_id: id });
+/** A container whose video is a file: `video_file` (a path on this machine or a URL) in place of `video_url`. */
+const igContainerOrFile = igContainer
+  .extend({ video_file: z.string().min(1).optional() })
+  .refine((b) => !(b.video_file && b.video_url), "send `video_file` or `video_url`, not both");
 const igMedia = z.object({
   igUserId: id,
   fields: z
@@ -386,6 +395,50 @@ const pageMessage = z.object({
 
 const must = <T>(res: JsonResponse<T>, what: string): T =>
   mustOk(res, `${META_ORIGIN}/${what}`, graphWhy);
+
+/** A video's bytes up to Instagram, this long at most: ~1 GB at a slow uplink. */
+const RUPLOAD_MS = 60 * 60_000;
+
+/**
+ * A resumable container's video (Facebook Login only: graph.instagram.com refuses
+ * `upload_type=resumable`, 2026-11-11). A URL goes as `file_url`, fetched by Meta; a path's
+ * bytes go in the body. A rerun makes a new container: an unpublished one expires in a day.
+ */
+async function rupload(leg: ApiLeg, container: string, file: string): Promise<void> {
+  const url = `https://rupload.facebook.com/ig-api-upload/${META_VERSION}/${container}`;
+  // rupload answers `{debug_info: {type, message}}`, not Graph's `error`.
+  const must = <T>(res: JsonResponse<T>, what: string): T =>
+    mustOk(res, `https://rupload.facebook.com/${what}`, (b) => {
+      const d = rec(rec(b).debug_info);
+      return graphWhy(b) || [str(d.type), str(d.message)].filter(Boolean).join(": ");
+    });
+  const auth = { authorization: `OAuth ${leg.token}` };
+  if (/^https?:\/\//i.test(file)) {
+    must(
+      await leg.http.json<unknown>(url, { method: "POST", headers: { ...auth, file_url: file } }),
+      "ig-api-upload",
+    );
+    return;
+  }
+  const path = await resolveFile(file);
+  const { size } = await stat(path);
+  must(
+    await leg.http.json<unknown>(url, {
+      method: "POST",
+      headers: {
+        ...auth,
+        offset: "0",
+        file_size: String(size),
+        // A stream needs both lengths stated, or rupload refuses the headers.
+        "content-length": String(size),
+        "x-entity-length": String(size),
+      },
+      raw: Readable.toWeb(createReadStream(path)) as ReadableStream<Uint8Array>,
+      timeoutMs: RUPLOAD_MS,
+    }),
+    "ig-api-upload",
+  );
+}
 const v = (path: string) => `${META_ORIGIN}/${META_VERSION}/${path}`;
 const withQuery = (url: string, q: Record<string, string | number | boolean | undefined>) => {
   const u = new URL(url);
@@ -1014,9 +1067,20 @@ export const meta: SiteApi = {
       method: "POST",
       path: "/{igUserId}/media",
       summary:
-        "An Instagram media container for the Page's professional account (step 1; a Reel from a public video URL)",
-      request: igContainer,
-      api: ({ igUserId, ...body }, leg) => post(leg, `${igUserId}/media`, body),
+        "An Instagram media container for the Page's professional account (step 1): media by public URL, or a video by `video_file` (a path or URL, sent by resumable upload)",
+      request: igContainerOrFile,
+      api: async ({ igUserId, video_file, ...body }, leg) => {
+        if (!video_file) return post(leg, `${igUserId}/media`, body);
+        const made = (await post(leg, `${igUserId}/media`, {
+          media_type: "REELS",
+          ...body,
+          upload_type: "resumable",
+        })) as { id?: string };
+        if (!made.id)
+          throw new HttpError("CALL", `${META_ORIGIN}/${igUserId}/media`, 502, "no container id");
+        await rupload(leg, made.id, video_file);
+        return { id: made.id };
+      },
     }),
     route({
       method: "POST",

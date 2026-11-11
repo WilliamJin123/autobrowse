@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FACEBOOK_LOGIN_URL, signInToFacebook } from "../src/auth/facebook.js";
 import type { CodeKind, SignInContext } from "../src/auth/login.js";
@@ -116,7 +119,13 @@ describe("meta site", () => {
   });
 
   function facade(approve: ((a: Approval) => Promise<boolean>) | null) {
-    const calls: Array<{ method: string; url: URL; auth: string | null; body: string }> = [];
+    const calls: Array<{
+      method: string;
+      url: URL;
+      auth: string | null;
+      body: string;
+      headers: Headers;
+    }> = [];
     const http = httpClient({
       fetch: async (url: string, init?: RequestInit) => {
         const u = new URL(url);
@@ -125,6 +134,7 @@ describe("meta site", () => {
           url: u,
           auth: new Headers(init?.headers).get("authorization"),
           body: String(init?.body ?? ""),
+          headers: new Headers(init?.headers),
         });
         const body =
           u.pathname === "/v23.0/111"
@@ -220,6 +230,42 @@ describe("meta site", () => {
     ]);
     expect(video[1]?.auth).toBe("OAuth page-token");
     expect(JSON.parse(video[2]?.body ?? "{}")).toEqual({ upload_phase: "finish", video_id: "77" });
+  });
+
+  it("sends a video file to a resumable container: its bytes from a path, Meta fetches a URL", async () => {
+    const { sites, calls } = facade(null);
+    const dir = mkdtempSync(join(tmpdir(), "reel-"));
+    const file = join(dir, "r.mp4");
+    writeFileSync(file, "12345");
+    try {
+      expect(
+        await sites.call("meta", "POST", "/178/media", { video_file: file, caption: "hi" }),
+      ).toEqual({ id: "9" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const [made, up] = calls.filter((c) => c.method === "POST");
+    expect(made?.url.pathname).toBe("/v23.0/178/media");
+    expect(JSON.parse(made?.body ?? "{}")).toEqual({
+      media_type: "REELS",
+      caption: "hi",
+      upload_type: "resumable",
+    });
+    expect(`${up?.url.host}${up?.url.pathname}`).toBe("rupload.facebook.com/ig-api-upload/v23.0/9");
+    expect(up?.auth).toBe("OAuth user-token");
+    for (const h of ["offset", "file_size", "content-length", "x-entity-length"])
+      expect([h, up?.headers.get(h)]).toEqual([h, h === "offset" ? "0" : "5"]);
+    calls.length = 0;
+    await sites.call("meta", "POST", "/178/media", { video_file: "https://f.test/r.mp4" });
+    const byUrl = calls.filter((c) => c.method === "POST")[1];
+    expect(byUrl?.headers.get("file_url")).toBe("https://f.test/r.mp4");
+    expect(byUrl?.headers.get("file_size")).toBeNull();
+    await expect(
+      sites.call("meta", "POST", "/178/media", {
+        video_file: file,
+        video_url: "https://f.test/r.mp4",
+      }),
+    ).rejects.toThrow(/not both/);
   });
 
   it("reads the account, ad sets, ads and pixels an audit needs, never asking", async () => {
