@@ -63,6 +63,23 @@ const SNAPSHOT_SCRIPT = `(max) => {
   const trim = (s) => (s ? s.replace(/\\s+/g, " ").trim().slice(0, 60) : "");
   const SEL = "a, button, input, select, textarea, [role], summary, [contenteditable]:not([contenteditable=false])";
   const out = [];
+  // State in [..] tokens, last on the row (pageChange keys rows without them). A field's text
+  // never: \`place\` may have typed a secret there; only filled or empty.
+  const TEXTLESS = /^(checkbox|radio|submit|button|reset|image|file|hidden|range|color)$/;
+  const state = (e, tag) => {
+    const s = [];
+    const aria = (n) => e.getAttribute("aria-" + n);
+    if (e.checked === true || aria("checked") === "true") s.push("[checked]");
+    if (e.disabled === true || aria("disabled") === "true") s.push("[disabled]");
+    if (aria("expanded") === "true") s.push("[expanded]");
+    if (aria("selected") === "true" || aria("pressed") === "true") s.push("[selected]");
+    if (tag === "select") {
+      const o = e.selectedOptions && e.selectedOptions[0];
+      if (o) s.push("[value=" + trim(o.textContent).slice(0, 40) + "]");
+    } else if ((tag === "input" && !TEXTLESS.test(e.type)) || tag === "textarea")
+      s.push(e.value ? "[filled]" : "[empty]");
+    return s;
+  };
   const row = (e) => {
     const rect = e.getBoundingClientRect();
     if (!rect.width && !rect.height) return;
@@ -78,6 +95,7 @@ const SNAPSHOT_SCRIPT = `(max) => {
       attr("aria-label") ? "aria=" + trim(attr("aria-label")) : "",
       attr("placeholder") ? "placeholder=" + trim(attr("placeholder")) : "",
       trim(e.textContent) ? "text=" + trim(e.textContent) : "",
+      ...state(e, tag),
     ].filter(Boolean).join(" "));
   };
   const visit = (root) => {

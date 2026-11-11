@@ -85,6 +85,8 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     cmd: z.literal("text"),
     limit: z.number().int().positive().optional(),
     raw: z.boolean().optional(),
+    /** The main article only (Readability), on a news or blog page; else layout text and `why`. */
+    article: z.boolean().optional(),
     layout: z.boolean().optional(),
     coords: z.boolean().optional(),
   }),

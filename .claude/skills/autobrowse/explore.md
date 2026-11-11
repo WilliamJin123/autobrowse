@@ -75,10 +75,10 @@ Targets are `hints`: `{role, name, text, placeholder, id, testId, href, inputTyp
 Any subset; `name` is the accessible name from `aria`. Or `{"mark":n}`: a number from the last `marks` picture.
 
 Look:
-- `{"cmd":"snapshot"}` — interactive elements, one line each. Start here.
+- `{"cmd":"snapshot"}` — interactive elements, one line each, state last (`[checked]`, `[disabled]`, `[expanded]`, `[filled]`/`[empty]`, a select's `[value=…]`). Start here. An act answers `changed` for a row whose state alone moved.
 - `{"cmd":"overlay",…}` — the panel a person watching reads: [overlay.md](overlay.md). Optional; acts never depend on it.
 - `{"cmd":"aria"}` — accessibility tree, masked. `hints` scopes it, `limit` is the answer's size (default 12000; past it, compacted). `extras:true` also lists what the tree misses (controls in closed shadow roots, cards clickable only by script), each with hints to act on. A link's target is its `/url:` line.
-- `{"cmd":"text"}` — the page's words as laid out: side-by-side reads as a row (`Price | $40`), tables across, a sidebar as `[col 1/2]`. Costs what plain text does. `"coords":true` adds `@x,y` per line (+25%); `"layout":false` = DOM order.
+- `{"cmd":"text"}` — the page's words as laid out: side-by-side reads as a row (`Price | $40`), tables across, a sidebar as `[col 1/2]`. Costs what plain text does. `"coords":true` adds `@x,y` per line (+25%); `"layout":false` = DOM order. `"article":true` on a news or blog page: the article alone (title, byline, text); a non-article skips at once and answers layout text with `why`.
 - `{"cmd":"url"}`, `{"cmd":"screenshot"}` (path back), `{"cmd":"count","hints":…}`. Every page picture covers card fields and the payment vendors' card frames (`browser/card-mask.ts`); `os shot` is refused while a card field on the page holds a value.
 - `{"cmd":"marks"}` — a screenshot with a numbered box on each control in view, and the list `{n, tag, role, name}`. For a control the snapshot and `aria` do not name (an icon, a canvas widget). Act with `"hints":{"mark":n}`: the journal keeps the control's own hints, never the point. A mark a re-render took is found again by its own hints when they match one control; otherwise it is stale: take marks again. `scroll` gives the px above and below the view.
 - `network` is on in explore (`AUTOBROWSE_NETWORK=0` turns it off). Before you scrape a list from the DOM, look for the JSON behind it:

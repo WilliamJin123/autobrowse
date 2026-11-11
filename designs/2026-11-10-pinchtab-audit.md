@@ -43,10 +43,10 @@ fewer turns, not a smaller page. The "800 tokens a page" line is not measured an
 | P1 | Navigation guard: http/https only; private, loopback, link-local, CGNAT refused after DNS (`P/internal/netguard/netguard.go:70-100`) | `fp.open`, explore `open` | S | Built: `src/reach/net-guard.ts` |
 | P2 | Page text to the agent: strip bidi, zero-width and control characters (`P/internal/sanitize/text.go`) | `src/agent/digest.ts`, explore reads | S | Built: `src/browser/clean-text.ts` |
 | P3 | `errors` channel: uncaught page errors (`pageerror`) kept per session | explore `{"cmd":"errors"}`, skill line | S | Built: `src/browser/page-errors.ts` |
-| P4 | Sparse stable refs on `snapshot`: `eN` per node, new numbers on a new document; `hints:{ref}` resolves to hints, the journal keeps hints. `marks` already does this for the viewport (`hints:{mark:n}`) | `src/browser/repair.ts`, `src/explore/server.ts` | M | Waits on William |
-| P5 | Page-view budget by tier: controls, then headings, then prose, in page order; skip an oversized row | `aria` via `fitText` (`server.ts`), `compact.ts` | S | Waits on William |
-| P6 | Diff fields: value, checked, disabled changes in `pageChange`. Our rows carry none of these yet, so the rows change first | `server.ts` | S | Waits on William |
-| P7 | `text` article mode (Readability-style main text) beside layout text | `src/browser/layout.ts` | S | Waits on William |
+| P4 | Sparse stable refs on `snapshot`: `eN` per node, new numbers on a new document; `hints:{ref}` resolves to hints, the journal keeps hints. `marks` already does this for the viewport (`hints:{mark:n}`) | `src/browser/repair.ts`, `src/explore/server.ts` | M | Not built: D chosen (count `ambiguous` misses first) |
+| P5 | Page-view budget by tier: controls, then headings, then prose, in page order; skip an oversized row | `aria` via `fitText` (`server.ts`), `compact.ts` | S | Not built: D chosen |
+| P6 | Diff fields: value, checked, disabled changes in `pageChange`. Our rows carry none of these yet, so the rows change first | `server.ts` | S | Built as B: `repair.ts` row state, `changed` in `pageChange` |
+| P7 | `text` article mode (Readability-style main text) beside layout text | `src/browser/layout.ts` | S | Built: `src/browser/article.ts`, `text` `article:true` |
 | P8 | Readiness probe at launch: fail fast as not sent | `openSession` | S | Built: `launch-hygiene.ts` |
 | P9 | Unclean-exit marker: clear Chrome's session-restore files only, never cookies | `session.ts` | S | Built: `launch-hygiene.ts` |
 | P10 | Crash ring: last 20 browser deaths with profile, opener, reason, in `browsers` and `doctor` | `browsers.ts` | S | Built: `launch-hygiene.ts` |
@@ -142,3 +142,7 @@ OpenCLI U1 (`designs/2026-11-09-opencli-audit.md`) asked for a success envelope,
 - 2026-11-11: P1 built: `src/reach/net-guard.ts`, code `url_refused` (403), hooked into the fetch ladder, renderer, settle, watchers and recorder (map card `reach/net-guard`). P2 built: `src/browser/clean-text.ts`, used by explore answers and the digest.
 - 2026-11-11: P4–P6 merged into one decision; option D (no refs, count misses first) added and recommended. A's refs are wiped by any default snapshot in the same page (goldfish F1).
 - 2026-11-11: goldfish review: 32 findings, 21 applied, 11 rejected (F9 fixed in code as `tabs_full`; shapes and tests for P4–P7 wait for William's pick; per-priority tags; sources for the 300 MB figure). Open: P4–P6 (D or A), P7, server, scheduler, JSON vs CLI, the success envelope.
+- 2026-11-11: William picked: P4–P6 D ("D makes sense"); P7 yes, with a deterministic skip on non-articles ("most sites aren't articles"); server as is; scheduler stays the Postgres door; JSON socket; no success envelope (exit code and error JSON suffice).
+- 2026-11-11: D built: a strict-mode error is now a target miss of cause `ambiguous` (`runs/success.ts`, explore's run log), so the success report counts the misses refs would fix. Revisit P4 A when `ambiguous` misses show up there.
+- 2026-11-11: P6 B built: `snapshot` rows end in state tokens (`[checked]`, `[disabled]`, `[expanded]`, `[selected]`, a select's `[value=…]`, `[filled]`/`[empty]`). A text field's value never shows: `place` may have typed a secret there. `pageChange` pairs a gone and an added row alike but for state as `changed`.
+- 2026-11-11: P7 built: `@mozilla/readability` 0.6.0 in Patchright's isolated world; `isProbablyReaderable` skips a non-article before any extraction (20 ms on an app page, 42 ms to extract an article); PinchTab's 25 % fallback to layout text.

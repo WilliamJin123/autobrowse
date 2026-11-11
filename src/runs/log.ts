@@ -38,7 +38,15 @@ export type RunOutcome = "achieved" | "failed" | "saved" | "closed" | "idle";
  * Why a locator timed out, off Playwright's call log: `not-found` means nothing on the page
  * matched (the digest named something that is not there); the rest found it and could not use it.
  */
-export type MissCause = "not-found" | "hidden" | "covered" | "disabled" | "detached" | "unknown";
+/** `ambiguous`: hints matched twin elements (strict mode); the miss refs would fix (PinchTab audit D). */
+export type MissCause =
+  | "not-found"
+  | "ambiguous"
+  | "hidden"
+  | "covered"
+  | "disabled"
+  | "detached"
+  | "unknown";
 
 export type RunRow =
   | {

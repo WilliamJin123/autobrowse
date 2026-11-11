@@ -1074,6 +1074,24 @@ describe("pageChange", () => {
     const many = Array.from({ length: 45 }, (_, i) => `r${i}`);
     expect(pageChange([], many)).toMatchObject({ gone: 0, more: 5 });
   });
+  it("a row whose state alone changed is changed, not added and gone (P6)", () => {
+    const box = "input type=checkbox aria=Remember me";
+    const name = "input type=text placeholder=Name";
+    expect(
+      pageChange(
+        [box, `${name} [empty]`, "button text=Save [disabled]"],
+        [`${box} [checked]`, `${name} [filled]`, "button text=Save", "a text=Next"],
+      ),
+    ).toEqual({
+      added: ["a text=Next"],
+      gone: 0,
+      changed: [
+        `${box}: [] -> [checked]`,
+        `${name}: [empty] -> [filled]`,
+        "button text=Save: [disabled] -> []",
+      ],
+    });
+  });
 });
 
 describe("help without a pause", () => {

@@ -34,7 +34,7 @@ export type CmdFailure =
 
 export function cmdFailure(error: string | null): CmdFailure {
   const e = error ?? "";
-  if (/^locator\.\w+: Timeout/.test(e)) return "target-miss";
+  if (/^locator\.\w+: (Timeout|Error: strict mode violation)/.test(e)) return "target-miss";
   if (/Timeout \d+ms exceeded/.test(e)) return "wait-timeout";
   if (/payment step|gate/i.test(e)) return "gate";
   if (/\bcap\b.*\bused\b|\b429\b/i.test(e)) return "cap";
@@ -46,6 +46,7 @@ export function cmdFailure(error: string | null): CmdFailure {
 
 /** Why a locator timed out (`MissCause`), off Playwright's call log. */
 export function missCause(message: string): MissCause {
+  if (/strict mode violation/.test(message)) return "ambiguous";
   if (/intercepts pointer events/.test(message)) return "covered";
   if (/element is not enabled|element is disabled/.test(message)) return "disabled";
   if (/element is not visible|outside of the viewport/.test(message)) return "hidden";

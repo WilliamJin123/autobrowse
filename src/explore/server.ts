@@ -34,6 +34,7 @@ import { SecretLeak, urlWithoutQuery } from "../auth/guard.js";
 import { credentialFor } from "../auth/login.js";
 import type { SecretValues } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
+import { articleText } from "../browser/article.js";
 import { cardMask, cardShown } from "../browser/card-mask.js";
 import { cleanStrings } from "../browser/clean-text.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
@@ -258,6 +259,8 @@ export interface PageChange {
   added: string[];
   /** How many rows went away. */
   gone: number;
+  /** Rows still there whose state changed (`[checked]`, `[disabled]`, `[filled]`…): `row: [old] -> [new]`. */
+  changed?: string[];
   /** Added rows past the cap. */
   more?: number;
 }
@@ -297,19 +300,39 @@ function leanUrls(answer: unknown): unknown {
 export function pageChange(before: readonly string[], after: readonly string[]): PageChange {
   const left = new Map<string, number>();
   for (const r of before) left.set(r, (left.get(r) ?? 0) + 1);
-  const added: string[] = [];
+  const fresh: string[] = [];
   for (const r of after) {
     const n = left.get(r) ?? 0;
     if (n) left.set(r, n - 1);
-    else added.push(r);
+    else fresh.push(r);
+  }
+  // a gone row and a new row alike but for state: one row that changed
+  const goneBy = new Map<string, string[]>();
+  for (const [r, n] of left)
+    for (let i = 0; i < n; i++) goneBy.set(rowKey(r), [...(goneBy.get(rowKey(r)) ?? []), r]);
+  const added: string[] = [];
+  const changed: string[] = [];
+  for (const r of fresh) {
+    const was = goneBy.get(rowKey(r))?.shift();
+    if (was === undefined) added.push(r);
+    else {
+      left.set(was, (left.get(was) ?? 0) - 1);
+      changed.push(`${rowKey(r)}: ${rowState(was) || "[]"} -> ${rowState(r) || "[]"}`);
+    }
   }
   const gone = [...left.values()].reduce((a, b) => a + b, 0);
   return {
     added: added.slice(0, CHANGED_ROWS),
     gone,
+    ...(changed.length ? { changed: changed.slice(0, CHANGED_ROWS) } : {}),
     ...(added.length > CHANGED_ROWS ? { more: added.length - CHANGED_ROWS } : {}),
   };
 }
+
+const STATE_TAIL = /(?: \[[^\]]*\])+$/;
+/** A snapshot row without its trailing `[state]` tokens. */
+const rowKey = (r: string) => r.replace(STATE_TAIL, "");
+const rowState = (r: string) => (STATE_TAIL.exec(r)?.[0] ?? "").trim();
 
 /** A wall for the agent: a sign-in wall names the site's `<site>-login` tool (the provider's on its products). */
 export function wallAnswer(wall: Wall | null, url: string): (Wall & { signIn?: string }) | null {
@@ -905,7 +928,10 @@ async function serve(
     const ms = now() - t0;
     const host = URL.canParse(page.url()) ? new URL(page.url()).host : "";
     const missed =
-      error !== null && "hints" in c && c.hints && /^locator\.\w+: Timeout/.test(error)
+      error !== null &&
+      "hints" in c &&
+      c.hints &&
+      /^locator\.\w+: (Timeout|Error: strict mode violation)/.test(error)
         ? { target: redactText(targetOf(c.hints)), miss: missCause(detail ?? error) }
         : {};
     const cap = capture;
@@ -2398,6 +2424,32 @@ async function serve(
             .join("\n"),
         };
       case "text": {
+        if (c.article) {
+          const a = await articleText(page);
+          if (a.article) {
+            const fit = fitText(shotsDir, "text", out(a.text, c.raw), c.limit ?? 4_000);
+            return {
+              article: true,
+              title: a.title,
+              byline: a.byline,
+              site: a.site,
+              text: fit.text,
+              ...(fit.whole ? { whole: fit.whole } : {}),
+            };
+          }
+          const fit = fitText(
+            shotsDir,
+            "text",
+            out(await layoutText(page, WHOLE_TEXT, { coords: false }), c.raw),
+            c.limit ?? 4_000,
+          );
+          return {
+            article: false,
+            why: a.why,
+            text: fit.text,
+            ...(fit.whole ? { whole: fit.whole } : {}),
+          };
+        }
         const all = out(
           c.layout === false
             ? await bodyText(page, WHOLE_TEXT)

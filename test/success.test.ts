@@ -82,6 +82,10 @@ describe("site call ledger", () => {
 describe("failure kinds", () => {
   it("names why an explore command failed", () => {
     expect(cmdFailure("locator.click: Timeout 10000ms exceeded.")).toBe("target-miss");
+    const twins =
+      "locator.click: Error: strict mode violation: getByRole('button', { name: 'Save' }) resolved to 2 elements";
+    expect(cmdFailure(twins)).toBe("target-miss");
+    expect(missCause(twins)).toBe("ambiguous");
     expect(
       cmdFailure(
         'page.waitForEvent: Timeout 10000ms exceeded while waiting for event "filechooser"',
