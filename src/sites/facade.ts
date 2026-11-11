@@ -24,7 +24,7 @@ import {
 } from "../browser/attempt.js";
 import { profileBusyOf } from "../browser/browsers.js";
 import type { BrowserFlow, HeldTab } from "../browser/flow.js";
-import { lastingRefusal } from "../clients/http.js";
+import { HttpError, lastingRefusal } from "../clients/http.js";
 import { jsonSchemaOf } from "../engine/inputs.js";
 import { envSource, ringCount } from "../reach/key-ring.js";
 import { keyCall } from "../reach/key-source.js";
@@ -152,6 +152,10 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
   };
   /** Kept names whose bearer the probe passed, till when: a scope 401 asks it once per window. */
   const probedOk = new Map<string, number>();
+  /** Kept names whose app quota a 429 spent, till UTC midnight: a route with a browser leg skips the API till then. */
+  const quotaSpent = new Map<string, number>();
+  const spentNow = (kept: string | null) =>
+    kept !== null && (quotaSpent.get(kept) ?? 0) > (deps.now ?? Date.now)();
   /**
    * A refusal on `path` means a dead bearer: on the probe itself, or when the probe with the same
    * bearer is refused too. A probe that answers says the route refused, not the token.
@@ -518,6 +522,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
           tokenAs = null;
           token = await tokenOf(null);
         }
+        // The app's day is spent: the paced browser leg till it resets.
+        if (token !== null && r.browser && spentNow(keptName(by, tokenAs))) token = null;
       }
       const byBrowser = !(r.api && token !== null) && Boolean(r.browser);
       const lim = limitsOf(s);
@@ -691,16 +697,32 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
             ...(deps.render ? { render: deps.render } : {}),
           });
           let out: unknown;
+          let overQuota = false;
           markLeg("api", r.path);
           try {
             out = await r.api(parsed.data as never, leg(token));
           } catch (e) {
             if (kept && tokenRefusal(e) && (await deadBearer(by, r.path, leg(token), kept)))
               throw new TokenRefused(kept, e.message, { site: by.site, account: tokenAs });
-            throw e;
+            // LinkedIn's app quota resets at UTC midnight; a read refused before it ran takes the browser
+            if (!(e instanceof HttpError && e.status === 429)) throw e;
+            if (kept) quotaSpent.set(kept, nextUtcMidnight((deps.now ?? Date.now)()));
+            if (method !== "GET" || !r.browser) throw e;
+            overQuota = true;
           }
-          if (kept) deps.worked?.(kept);
-          return checkResponse(r, out);
+          if (!overQuota) {
+            if (kept) deps.worked?.(kept);
+            return checkResponse(r, out);
+          }
+          // Not paced on the way in (it was an API call): take the browser's slot now.
+          const late =
+            lim.pace && deps.caps ? deps.caps.slot(s.site, chosen ?? s.site, lim.pace) : null;
+          if (late && !late.ok)
+            throw new SiteError(
+              429,
+              `${s.site} pace for ${chosen ?? "the default account"}: the API's day is spent and the browser is busy; retry after ${late.retryAfter}s`,
+              late.retryAfter,
+            );
         }
         if (r.browser) {
           // The same account the API leg would have used: its profile, so a browser
@@ -883,3 +905,9 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
     },
   };
 }
+
+/** The next 00:00 UTC after `now`, in ms. */
+const nextUtcMidnight = (now: number): number => {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+};
