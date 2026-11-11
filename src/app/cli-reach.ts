@@ -27,6 +27,9 @@ import { bold, columns, dim, good, warn } from "../style.js";
 import type { LocalBackend } from "./backend.js";
 import { checkRow } from "./cli-site.js";
 
+/** A probe that fails for want of any leg: the site was never set up. */
+const NEVER_CONNECTED = /not recorded|^waiting on|probe has no api leg/;
+
 const order = (via: string | undefined) => via?.split(",").map((v) => v.trim());
 
 export function registerReachCommands(
@@ -81,19 +84,22 @@ export function registerReachCommands(
         : [];
       for (const c of checks) {
         rows.push([bold("site"), ...checkRow(c)]);
-        if (!c.ok && c.why !== "no probe")
+        // Never connected (no leg at all) is not an issue; a lost token shows as `refused`.
+        if (!c.ok && c.why !== "no probe" && !NEVER_CONNECTED.test(c.why ?? ""))
           issues.push({ kind: "site", name: c.site, why: c.why ?? "check failed" });
       }
       for (const r of (await sites?.refused?.()) ?? [])
         issues.push({ kind: "token", name: r.site, why: refusedLine(r) });
-      // A profile used in the last two weeks that lost its sign-in (U18).
+      // A profile used in the last two weeks, seen signed in before, now signed out (U18).
       const { sessionStatuses } = await import("../auth/session-status.js");
       const sessions = sessionStatuses(
         profilesDir,
         (s) => SITE_LOGINS.find((l) => l.site === s)?.home,
       );
       const recent = new Date(Date.now() - 14 * 86_400_000).toISOString();
-      const lost = sessions.filter((x) => x.state === "signed_out" && (x.touched ?? "") >= recent);
+      const lost = sessions.filter(
+        (x) => x.state === "signed_out" && x.lastSignedIn && (x.touched ?? "") >= recent,
+      );
       rows.push([
         bold("sign-ins"),
         `${sessions.filter((x) => x.state === "signed_in").length} signed in · ${sessions.filter((x) => x.state === "signed_out").length} signed out${lost.length ? ` · ${warn(`lost: ${lost.map((x) => x.profile).join(" ")}`)}` : ""}`,

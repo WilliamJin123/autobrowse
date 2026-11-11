@@ -4,7 +4,16 @@
  * A site with known session cookies answers `signed_in` or `signed_out`; any other site
  * answers `maybe` (a live auth-like cookie) or `unknown`.
  */
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -36,7 +45,12 @@ export interface SessionStatus {
   expires?: string | null;
   /** When the profile's cookies were last written. */
   touched?: string;
+  /** When a status read last saw it signed in (`SEEN_FILE`); absent: never seen signed in. */
+  lastSignedIn?: string;
 }
+
+/** Per profile: the last time a status read saw it signed in. Tells a lost sign-in from one never made. */
+export const SEEN_FILE = ".signed-in-at";
 
 export interface CookieRow {
   host: string;
@@ -135,13 +149,35 @@ export function sessionStatuses(
       out.push({ profile, site, host, state: "unknown" });
       continue;
     }
+    const st = sessionOf(rows, SESSION_COOKIES[site], o.now);
+    const lastSignedIn = seenSignedIn(join(profilesDir, profile), st.state, o.now);
     out.push({
       profile,
       site,
       host,
-      ...sessionOf(rows, SESSION_COOKIES[site], o.now),
+      ...st,
       touched: statSync(file).mtime.toISOString(),
+      ...(lastSignedIn ? { lastSignedIn } : {}),
     });
   }
   return out;
+}
+
+/** Writes the marker when signed in; reads it otherwise. A failed write never fails the read. */
+function seenSignedIn(dir: string, state: SessionState, now = Date.now()): string | undefined {
+  const f = join(dir, SEEN_FILE);
+  if (state === "signed_in") {
+    const at = new Date(now).toISOString();
+    try {
+      writeFileSync(f, at, { mode: 0o600 });
+    } catch {
+      // read-only profile dir
+    }
+    return at;
+  }
+  try {
+    return readFileSync(f, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }

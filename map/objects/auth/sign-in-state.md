@@ -19,7 +19,7 @@ Two reads that make no call (OpenCLI audit U18). A Chrome profile's sign-in, fro
 
 - `SESSION_COOKIES` (checked on real profiles 2026-11-10) — `src/auth/session-status.ts:13`; `readCookies` (copy, read-only, big ints) — `:67`; `sessionOf` — `:94`; `sessionStatuses` — `:113`
 - `routeState` (missing leg → refused token → account hold → newest call; a 400/404 is the caller's) — `src/sites/route-state.ts:33`; `lastCalls` — `:22`; `siteHeldS` (only `ACCOUNT_HOLD`: a route row does not name its buckets) — `:65`
-- CLI: `auth status` — `src/app/cli-auth.ts:961`; `site status` — `src/app/cli-site.ts:252`; `doctor --json` gives `issues[]`, exits 1 on any — `src/app/cli-reach.ts:54`
+- CLI: `auth status` — `src/app/cli-auth.ts:961`; `site status` — `src/app/cli-site.ts:252`; `doctor --json` gives `issues[]`, exits 1 on any — `src/app/cli-reach.ts:54`. An issue is a sign-in seen before and now gone (marker `.signed-in-at` in the profile, written by each status read), or a site that once had a leg. A profile never signed in, or a site never connected, is not one.
 
 ## Connected to
 

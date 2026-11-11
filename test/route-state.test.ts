@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterAll, describe, expect, it } from "vitest";
-import { baseDomain, sessionOf, sessionStatuses } from "../src/auth/session-status.js";
+import { baseDomain, SEEN_FILE, sessionOf, sessionStatuses } from "../src/auth/session-status.js";
 import type { SiteCallRow } from "../src/runs/calls.js";
 import { lastCalls, routeState, siteHeldS } from "../src/sites/route-state.js";
 
@@ -117,5 +117,9 @@ describe("session status (U18)", () => {
     ]);
     expect(rows[1]?.expires).toBe(new Date(now + 1e9).toISOString());
     expect(sessionOf([], ["x"]).state).toBe("no_cookies");
+    // Marker: signed in writes it; a signed-out profile never seen signed in has none.
+    expect(rows[1]?.lastSignedIn).toBe(new Date(now).toISOString());
+    expect(rows[2]?.lastSignedIn).toBeUndefined();
+    expect(existsSync(join(dir, "github", SEEN_FILE))).toBe(true);
   });
 });
