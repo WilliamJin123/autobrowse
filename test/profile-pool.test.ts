@@ -21,9 +21,15 @@ describe("ProfileGate", () => {
     const r1 = await g.acquire("p", "read");
     const r2 = await g.acquire("p", "read");
     const got: string[] = [];
-    const w = g.acquire("p", "write").then((f) => (got.push("w"), f));
+    const w = g.acquire("p", "write").then((f) => {
+      got.push("w");
+      return f;
+    });
     // A read after a queued write waits behind it: writes never starve.
-    const r3 = g.acquire("p", "read").then((f) => (got.push("r3"), f));
+    const r3 = g.acquire("p", "read").then((f) => {
+      got.push("r3");
+      return f;
+    });
     await tick();
     expect(got).toEqual([]);
     expect(g.state("p")).toEqual({ readers: 2, writer: false, waiting: 2 });
