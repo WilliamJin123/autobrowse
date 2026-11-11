@@ -6,6 +6,7 @@
  */
 import { execFileSync } from "node:child_process";
 import type { Command } from "commander";
+import { WouldReplace } from "credvault";
 import { awsCliLoginChore } from "../chores/aws-login.js";
 import { gcloudLoginChore } from "../chores/gcloud-login.js";
 import { wranglerLoginChore } from "../chores/wrangler-login.js";
@@ -49,8 +50,16 @@ export function registerAwsCommands(
         return;
       }
       // Tokens minted while the session was out stayed on this machine: send them now.
-      const sent = await sinkFor(settings).share?.();
-      if (sent?.length) console.log(`shared ${sent.length} kept here: ${sent.join(", ")}`);
+      // A refused one is a warning: the sign-in worked, the rest were sent.
+      try {
+        const sent = await sinkFor(settings).share?.();
+        if (sent?.length) console.log(`shared ${sent.length} kept here: ${sent.join(", ")}`);
+      } catch (err) {
+        if (!(err instanceof WouldReplace)) throw err;
+        console.log(
+          `not shared: ${err.key} changed in the shared store while the session was out (the rest were sent). Kept here; the next refresh of it writes both. This machine's copy wins: autobrowse env push ${err.key} --confirm`,
+        );
+      }
     });
 
   program
