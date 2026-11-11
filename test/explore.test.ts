@@ -541,7 +541,11 @@ describe("explore mode", () => {
     expect(both.status).toBe(200);
     expect(both.body.done).toHaveLength(2);
     expect(both.body.failed).toMatchObject({ at: 2, cmd: "click" });
-    expect(both.body.changed).toEqual({ added: ["button text=Confirm Ada"], gone: 0 });
+    expect(both.body.changed).toEqual({
+      added: ["button text=Confirm Ada"],
+      gone: 0,
+      changed: ["input id=q placeholder=Name: [empty] -> [filled]"],
+    });
 
     const bad = await send({ cmd: "batch", cmds: [{ cmd: "url" }, { cmd: "close" }] });
     expect(bad.body.error).toMatch(/batch\[1\]: close cannot be batched/);

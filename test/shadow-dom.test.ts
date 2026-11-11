@@ -24,7 +24,7 @@ describe("shadow roots and editable divs", () => {
       expect(rows).toEqual([
         "button text=Light",
         "button text=Shadow Save",
-        "input placeholder=Shadow field",
+        "input placeholder=Shadow field [empty]",
         "div editable role=textbox aria=Composer",
       ]);
     } finally {
