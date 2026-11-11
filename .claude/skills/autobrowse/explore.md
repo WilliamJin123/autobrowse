@@ -205,3 +205,10 @@ autobrowse repair <failure.json>       # an agent picks up where a flow stopped
 
 A flow that breaks gets fixed in the flow (a fallback path, a remap), not
 handed to William. Failure files: `~/.config/autobrowse/artifacts/`.
+
+Repair rules (a heal runs them too):
+- Classify first. Only a control or extractor that no longer fits the page gets a patch.
+- Empty is not broken. A read that ran and found nothing: check the page by hand, change no code.
+- A sign-in, ban, captcha or 429: a person or a wait. Never patch around it.
+- Never loosen a fixture (`expect.json`). Fix the flow until its output holds to it.
+- 3 rounds at most on one flow. Then report what you found.

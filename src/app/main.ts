@@ -112,12 +112,11 @@ if (!approverFor(settings, gmailFor(settings))) {
   log.warn("no channel a person can answer on: payment steps will be refused");
 }
 if (settings.autoHeal && backend.heal) {
-  const { healLine } = await import("../agent/heal.js");
+  const { healLine, HEAL_ROUNDS } = await import("../agent/heal.js");
   const heal = backend.heal;
   // One heal per flow at a time. A failure while it runs (its proof broke at
   // the next op) waits and heals after: one op per heal, a few in a row at most.
   const healing = new Map<string, { next: FailureRecord | null }>();
-  const HEALS_IN_A_ROW = 5;
   const start = (record: FailureRecord, file: string, rounds: number) => {
     const key = `${record.site}/${record.flow}`;
     healing.set(key, { next: null });
@@ -130,7 +129,7 @@ if (settings.autoHeal && backend.heal) {
       .finally(() => {
         const next = healing.get(key)?.next ?? null;
         healing.delete(key);
-        if (next && rounds + 1 < HEALS_IN_A_ROW) start(next, file, rounds + 1);
+        if (next && rounds + 1 < HEAL_ROUNDS) start(next, file, rounds + 1);
       });
   };
   app.onFailure = (record, file) => {

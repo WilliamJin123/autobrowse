@@ -15,8 +15,9 @@
  * reported, not touched. Off unless AUTO_HEAL is set; `autobrowse heal
  * <failure>` runs one by hand.
  */
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { banHit } from "../browser/ban-signals.js";
 import { type Fix, type Fixes, flowKey } from "../browser/fixes.js";
 import type { FailureRecord } from "../browser/session.js";
 import { MODULE_FILE } from "../compiler/finish.js";
@@ -32,6 +33,7 @@ import { brokenOp, replaceOp } from "../compiler/patch.js";
 import { structure } from "../compiler/structure.js";
 import { redactText } from "../recorder/redact.js";
 import { loadRecording } from "../recorder/store.js";
+import { EXPECT_FILE } from "../workflows/expect.js";
 import { type AgentSessions, SETTLED, type SessionView, type StartRequest } from "./sessions.js";
 
 export interface HealOptions {
@@ -52,7 +54,7 @@ export interface HealOptions {
 }
 
 export interface HealOutcome {
-  status: "healed" | "proof-failed" | "needs-human" | "failed" | "no-workflow";
+  status: "healed" | "proof-failed" | "needs-human" | "failed" | "no-workflow" | "skipped";
   workflow: string | null;
   step: string | null;
   session: string | null;
@@ -67,6 +69,52 @@ export interface Located {
   /** The op that broke; null when the record does not say which. */
   opIndex: number | null;
 }
+
+/** Heals in a row per flow: a third broken op in a row is a redesign, not a patch. */
+export const HEAL_ROUNDS = 3;
+
+/**
+ * What kind of failure this is, before any heal (OpenCLI autofix's rules, U20). Only a
+ * page that changed shape heals; the rest are not the flow's fault.
+ * - `locator`: the control or the extractor no longer fits the page. Heals.
+ * - `empty`: the read ran and the page had nothing. Empty is not broken.
+ * - `wall`: signed out, a ban, a captcha, a rate limit. A person or a wait, not a patch.
+ * - `transient`: the network or the browser died. A retry, not a patch.
+ * - `person`: a person's step.
+ */
+export type FailureClass = "locator" | "empty" | "wall" | "transient" | "person";
+
+export function classifyFailure(
+  r: Pick<FailureRecord, "site" | "url" | "error" | "kind">,
+): FailureClass {
+  if (r.kind === "human") return "person";
+  const e = r.error;
+  // the extractor misses on most rows: the page has data, the read is wrong
+  if (/required field .*empty|most rows/i.test(e)) return "locator";
+  if (
+    banHit(r.site, r.url, e) ||
+    /sign(ed)? ?(in|out)|log ?in|captcha|suspend|restrict|unusual activity|checkpoint|\b429\b|rate.?limit|too many requests/i.test(
+      e,
+    )
+  )
+    return "wall";
+  if (
+    r.kind === "interrupted" ||
+    /net::ERR|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up|Target (page, context or browser )?(has been )?closed|browser has disconnected/i.test(
+      e,
+    )
+  )
+    return "transient";
+  if (/^no rows\b|\b0 rows\b|no results|nothing found|\bis empty\b/i.test(e)) return "empty";
+  return "locator";
+}
+
+const SKIP_WHY: Record<Exclude<FailureClass, "locator">, string> = {
+  empty: "the read ran and found nothing; empty is not broken, so nothing was rewritten",
+  wall: "a sign-in, ban, captcha or rate limit stopped it; that needs a person or a wait, not a patch",
+  transient: "the network or the browser failed; a retry, not a patch",
+  person: "a person's step; it stays theirs",
+};
 
 /** Which compiled workflow owns the flow that failed: the step is named after it. */
 export async function locateFailure(
@@ -132,6 +180,15 @@ async function settle(o: HealOptions, id: string): Promise<SessionView> {
 }
 
 export async function healFailure(record: FailureRecord, o: HealOptions): Promise<HealOutcome> {
+  const kind = classifyFailure(record);
+  if (kind !== "locator")
+    return {
+      status: "skipped",
+      workflow: null,
+      step: record.flow,
+      session: null,
+      summary: `${kind}: ${SKIP_WHY[kind]}`,
+    };
   const found = await locateFailure(o.compiledDir, record);
   if (!found) {
     return {
@@ -185,6 +242,9 @@ export async function healFailure(record: FailureRecord, o: HealOptions): Promis
     fields: healed.fields,
     secrets: healed.secrets,
   });
+  // Never loosen a fixture: whatever the rewrite or the model's finish does, expect.json stays.
+  const expectFile = join(found.dir, EXPECT_FILE);
+  const fixture = await readFile(expectFile, "utf8").catch(() => null);
   const what = `op ${opIndex + 1} of "${record.flow}" ("${op.goal}") replaced by ${ops.length} op${ops.length === 1 ? "" : "s"}`;
   let how: string | null = null;
   if (mended.source !== null && before !== null) {
@@ -208,6 +268,12 @@ export async function healFailure(record: FailureRecord, o: HealOptions): Promis
         }))
       : null;
     how = `re-rendered${finished ? `, ${finished.status === "finished" ? "finished" : finished.status} by the model` : ""}`;
+  }
+  const now = await readFile(expectFile, "utf8").catch(() => null);
+  if (now !== fixture) {
+    if (fixture === null) await rm(expectFile, { force: true });
+    else await writeFile(expectFile, fixture);
+    how += "; expect.json put back (a heal never changes the fixture)";
   }
   const rewritten = `${what}; ${how}`;
   if (!o.prove) return { ...base, status: "healed", summary: `${rewritten}; not yet proven` };
@@ -233,6 +299,8 @@ export function healLine(out: HealOutcome): string {
       return `autobrowse could not heal \`${out.workflow}\`: ${out.summary}`;
     case "no-workflow":
       return `autobrowse: ${out.summary}`;
+    case "skipped":
+      return `autobrowse did not heal ${out.step}: ${out.summary}`;
   }
 }
 

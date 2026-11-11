@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyFixes, healFailure, healLine, locateFailure } from "../src/agent/heal.js";
+import {
+  applyFixes,
+  classifyFailure,
+  healFailure,
+  healLine,
+  locateFailure,
+} from "../src/agent/heal.js";
 import type { SessionView } from "../src/agent/sessions.js";
 import { memoryFixes } from "../src/browser/fixes.js";
 import type { FailureRecord } from "../src/browser/session.js";
@@ -180,6 +186,46 @@ describe("heal", () => {
     expect(finished).toEqual(["set-thing/save-thing"]);
     expect(out.summary).toMatch(/re-rendered, finished by the model; not yet proven/);
     expect(existsSync(join(root, "set-thing", "index.ts"))).toBe(true);
+  });
+
+  it("classifies first: only a page that changed shape heals (U20)", async () => {
+    const c = (error: string, kind: FailureRecord["kind"] = "failed") =>
+      classifyFailure({ ...record, error, kind });
+    expect(c("no element matched")).toBe("locator");
+    expect(c("required field title empty on most rows")).toBe("locator");
+    expect(c("no rows")).toBe("empty");
+    expect(c("please sign in to continue")).toBe("wall");
+    expect(c("HTTP 429 Too Many Requests")).toBe("wall");
+    expect(c("net::ERR_CONNECTION_RESET")).toBe("transient");
+    expect(c("anything", "interrupted")).toBe("transient");
+    expect(c("anything", "human")).toBe("person");
+    const goals: string[] = [];
+    const out = await healFailure(
+      { ...record, error: "no rows" },
+      { agent: agentFor(goals), compiledDir: compiledDir(), recordingsDir: "", lib: "x" },
+    );
+    expect(out.status).toBe("skipped");
+    expect(out.summary).toMatch(/empty is not broken/);
+    expect(goals).toEqual([]);
+  });
+
+  it("never loosens a fixture: expect.json the finish changed is put back", async () => {
+    const root = compiledDir();
+    const file = join(root, "set-thing", "expect.json");
+    writeFileSync(file, '{"strict":true}');
+    const out = await healFailure(record, {
+      agent: agentFor([]),
+      compiledDir: root,
+      recordingsDir: saveChanges(),
+      lib: "../../index.js",
+      check: async () => {
+        writeFileSync(file, '{"strict":false}');
+        return null;
+      },
+      sleep: async () => undefined,
+    });
+    expect(readFileSync(file, "utf8")).toBe('{"strict":true}');
+    expect(out.summary).toMatch(/expect\.json put back/);
   });
 
   it("rewrites nothing when the record can't say which act broke", async () => {
