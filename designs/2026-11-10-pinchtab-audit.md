@@ -69,3 +69,4 @@ fewer turns, not a smaller page. The "800 tokens a page" line is not measured an
 - 2026-11-10: Refs resolve to hints before the journal: compiled flows stay hint-based (my call).
 - 2026-11-10: No per-run domain allowlist yet: explore crosses sites by design (sign-in providers, OAuth). The scheme and private-IP guard ships first (my call).
 - 2026-11-10: William: "Pinchtab we should discuss first get the opencli stuff done prior". Nothing here is built until that talk.
+- 2026-11-11: P3 reads errors through the recorder's observer (a main-world `error` and `unhandledrejection` listener over the binding), not Playwright's `pageerror`: Patchright keeps CDP Runtime off, so `pageerror`, `console` and `Log.entryAdded` never fire. Turning Runtime on is a known bot signal. Built: `src/browser/page-errors.ts`, `pageErrors` on act answers, `{"cmd":"errors"}`.

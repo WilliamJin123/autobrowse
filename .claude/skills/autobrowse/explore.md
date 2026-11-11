@@ -108,6 +108,7 @@ Act (journaled):
 - Any command takes an `"id"` (1-80 of letters, digits, `. : _ -`). A resend with the same id gets the first answer (`repeat: true`) and never acts twice. Give a submit or a pay click an id. An answer with `outcome: "unknown"` means the act may have run: resend the same id, or look first.
 - `{"cmd":"wait","text":"Saved"}`: waits for one thing, then answers. Also `gone` (text leaves), `url` (URL holds it), `hints` (+`hidden`), `idle`, `download`; `timeout` ms (15 s, max 60 s). Not journaled. A click that starts a download returns `downloads` with the saved file.
 - `{"cmd":"dialog"}` — the native dialogs seen (confirm, prompt, alert, leave page). Default: yes to alert and leave page, no to confirm and prompt. `{"cmd":"dialog","accept":true,"text":"…"}` answers the next confirm or prompt only; send it before the act. An act that opened one returns `dialogs`.
+- `{"cmd":"errors"}` — what the pages threw that nothing caught, every tab (`last`, `clear`). An act during which the page threw returns `pageErrors`: read it when a click seems to do nothing.
 - `{"cmd":"note","text":"…"}` — a comment in the journal.
 - `{"cmd":"eval","js":"…"}` — last resort; not journaled as a click, so the recording misses it.
 - `{"cmd":"batch","cmds":[{…},{…}]}` — up to 30 commands in order, one answer, one `changed`. No `close`, `pause`, `resume`, `save`, `flow`, `code` or nested batch.

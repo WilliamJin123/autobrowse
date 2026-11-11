@@ -10,6 +10,11 @@ const PAGE = `<button>Light</button><x-card></x-card>
   this.attachShadow({ mode: 'open' }).innerHTML = '<button>Shadow Save</button><input placeholder="Shadow field">'; } });</script>`;
 
 describe("shadow roots and editable divs", () => {
+  // a string-escape slip fails silently in the page: nothing is journaled
+  it("the observer script parses", () => {
+    expect(() => new Function(OBSERVER_SCRIPT)).not.toThrow();
+  });
+
   it("are in the snapshot, in page order", async () => {
     const browser = await chromium.launch();
     try {

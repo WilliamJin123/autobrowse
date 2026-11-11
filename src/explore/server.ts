@@ -79,6 +79,7 @@ import {
   redactUrl,
   shapes,
 } from "../browser/network.js";
+import { pageErrorLog } from "../browser/page-errors.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/records.js";
 import { snapshotPage } from "../browser/repair.js";
 import { lookAt, type PageLook, urlShape } from "../browser/screens.js";
@@ -692,6 +693,8 @@ async function serve(
   // Popups share the context: one watcher sees every tab's dialogs.
   const dialogs = dialogsOf(fp.page) ?? watchDialogs(fp.page.context());
   const downloads = watchDownloads(fp.page.context(), join(shotsDir, "downloads"));
+  // uncaught errors in every tab, from the observer: `errors`, and new throws on an act
+  const pageErrors = pageErrorLog();
   // A film stays clean: its rows go to the pane json.
   const overlay = overlayFor(
     opts.overlay ?? (opts.browser.headless === false && !opts.browser.film),
@@ -1107,7 +1110,8 @@ async function serve(
   // commands. Un-paused, commands journal themselves and the DOM is quiet.
   await page
     .context()
-    .exposeBinding(BINDING, (_src, raw: RawAction) => {
+    .exposeBinding(BINDING, (src, raw: RawAction) => {
+      if (raw.kind === "pageerror") return pageErrors.push(raw, src.page.url());
       if (!byHand()) return;
       if (paused) handActs++;
       else helpedActs++;
@@ -1577,6 +1581,7 @@ async function serve(
     "journal",
     "url",
     "pages",
+    "errors",
     "close",
     "goal",
     // Drawing is no page work: it never waits behind an act or opens a run.
@@ -1751,6 +1756,7 @@ async function serve(
     const before = await rows();
     const seen = dialogs.count();
     const files = downloads.count();
+    const errs = pageErrors.count();
     const out = await act(c, wait).finally(() => overlay.after(fp.page));
     page = fp.page;
     const after = await rows();
@@ -1760,11 +1766,14 @@ async function serve(
     if (downloads.count() > files)
       await Promise.race([downloads.settled(), new Promise((r) => setTimeout(r, 30_000))]);
     const got = downloads.since(files);
+    // the page threw during the act: the reason a click seems to do nothing
+    const thrown = pageErrors.since(errs);
     return {
       answer: {
         ...(out as object),
         changed,
         ...(opened.length ? { dialogs: opened } : {}),
+        ...(thrown.length ? { pageErrors: thrown.slice(-5).map((e) => e.message) } : {}),
         ...(got.length ? { downloads: got } : {}),
       },
       rows: after,
@@ -2399,6 +2408,12 @@ async function serve(
       }
       case "url":
         return { url: page.url() };
+      case "errors": {
+        const errors = pageErrors.log.slice(-(c.last ?? 30));
+        const total = pageErrors.count();
+        if (c.clear) pageErrors.clear();
+        return { errors, total };
+      }
       case "wait":
         return waitFor(c);
       case "dialog": {

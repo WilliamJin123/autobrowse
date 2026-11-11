@@ -59,10 +59,12 @@ export type RawAction =
   | { kind: "input"; target: LocatorHints; value: string }
   | { kind: "select"; target: LocatorHints; value: string; options?: string[] }
   | { kind: "press"; target: LocatorHints; key: string }
-  | { kind: "submit"; target: LocatorHints };
+  | { kind: "submit"; target: LocatorHints }
+  /** The page threw and nothing caught it: never journaled (`browser/page-errors`). */
+  | { kind: "pageerror"; message: string; stack: string };
 
 /** A typed secret never reaches the journal: the field or the value gives it away. */
-export function redactRaw(raw: RawAction): ActionBody {
+export function redactRaw(raw: Exclude<RawAction, { kind: "pageerror" }>): ActionBody {
   if (raw.kind !== "input") return raw;
   const secret = looksLikeSecretField(raw.target) || looksLikeSecretValue(raw.value);
   // Held, so the trace scrub masks it too (designs/2026-10-24-trace-secrets.md).
@@ -138,6 +140,7 @@ export async function startBrowserRecording(opts: {
     .catch(() => false);
 
   await session.context.exposeBinding(BINDING, async (_src, raw: RawAction) => {
+    if (raw.kind === "pageerror") return;
     await markers();
     if (control.paused) return;
     await push(redactRaw(raw));

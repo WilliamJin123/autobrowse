@@ -753,6 +753,22 @@ describe("explore mode", () => {
     expect(log.map((d) => d.answered)).toEqual([false, true]);
   });
 
+  it("P3: a throw during an act comes back as pageErrors; errors lists and clears", async () => {
+    const page = `data:text/html,${encodeURIComponent(
+      `<button onclick="throw new TypeError('boom')">Break</button>`,
+    )}`;
+    await send({ cmd: "open", url: page });
+    const out = await send({ cmd: "click", hints: { role: "button", name: "Break" } });
+    expect(out.body.pageErrors).toEqual(["TypeError: boom"]);
+    const log = (await send({ cmd: "errors", clear: true })).body as {
+      errors: { message: string }[];
+      total: number;
+    };
+    expect(log.errors.map((e) => e.message)).toEqual(["TypeError: boom"]);
+    expect(log.total).toBe(1);
+    expect((await send({ cmd: "errors" })).body.errors).toEqual([]);
+  });
+
   it("U14: wait barriers, a download a click starts is saved, a re-rendered mark is found again", async () => {
     // A real origin: headless Chrome starts no download from a data: page.
     const srv = createServer((req, res) => {

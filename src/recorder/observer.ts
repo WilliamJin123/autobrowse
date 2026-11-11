@@ -106,5 +106,14 @@ export const OBSERVER_SCRIPT = `
     if (!(el instanceof Element)) return;
     send({ kind: 'submit', target: hints(el) });
   }, true);
+  // Uncaught errors (bubble phase: script errors only, not failed images). Patchright keeps
+  // CDP Runtime off, so Playwright's pageerror never fires; a listener is invisible to the page.
+  const thrown = (message, stack) =>
+    send({ kind: 'pageerror', message: String(message).slice(0, 500), stack: String(stack || '').split('\\n').slice(1, 5).map((l) => l.trim()).join('\\n') });
+  window.addEventListener('error', (e) => thrown(e.error ? (e.error.name + ': ' + e.error.message) : e.message, e.error && e.error.stack));
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    thrown('unhandled rejection: ' + (r && r.message ? (r.name + ': ' + r.message) : String(r)), r && r.stack);
+  });
 })();
 `;

@@ -89,6 +89,12 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     coords: z.boolean().optional(),
   }),
   z.object({ cmd: z.literal("url") }),
+  /** What the pages threw that nothing caught, every tab, newest last; `clear` empties the log. */
+  z.object({
+    cmd: z.literal("errors"),
+    last: z.number().int().positive().optional(),
+    clear: z.boolean().optional(),
+  }),
   /** Every open page (an OAuth popup beside the main one); `page` switches to one by index, "main" returns. */
   z.object({ cmd: z.literal("pages") }),
   z.object({
