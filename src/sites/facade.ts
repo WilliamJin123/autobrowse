@@ -16,7 +16,6 @@ import { randomUUID } from "node:crypto";
 import type { Page } from "playwright";
 import {
   currentCall,
-  type DoneActs,
   markLeg,
   markReached,
   markSubmitted,
@@ -24,49 +23,28 @@ import {
   withReach,
 } from "../browser/attempt.js";
 import { profileBusyOf } from "../browser/browsers.js";
-import type { BrowserFlow, FlowRunner, HeldTab } from "../browser/flow.js";
-import type { Strategy } from "../browser/ladder.js";
-import type { Render } from "../browser/render.js";
-import { type AccessCode, AccessRefused, NeedsHuman } from "../browser/session.js";
-import { type HttpClient, lastingRefusal } from "../clients/http.js";
-import type { SecretSink } from "../deps/sink.js";
-import { type JsonSchema, jsonSchemaOf } from "../engine/inputs.js";
-import type { AnyWorkflow } from "../engine/workflow.js";
-import type { Approver } from "../gates/payment.js";
-import { envSource, ringCount, type SpentKeys } from "../reach/key-ring.js";
-import { type KeysDep, keyCall } from "../reach/key-source.js";
-import type { Proof, RunAs } from "../workflows/proof.js";
-import {
-  ACCOUNT_HOLD,
-  type DailyCaps,
-  HOLD_STEPS_MS,
-  type Hold,
-  type MeteredCall,
-  RETRY_BUFFER,
-} from "./caps.js";
-import { type Effective, effective, type LimitStore, type SiteLimits } from "./limits.js";
+import type { BrowserFlow, HeldTab } from "../browser/flow.js";
+import { lastingRefusal } from "../clients/http.js";
+import { jsonSchemaOf } from "../engine/inputs.js";
+import { envSource, ringCount } from "../reach/key-ring.js";
+import { keyCall } from "../reach/key-source.js";
+import { ACCOUNT_HOLD, HOLD_STEPS_MS, type MeteredCall, RETRY_BUFFER } from "./caps.js";
+import { type Effective, effective } from "./limits.js";
 import {
   accessTokens,
   accountEnv,
-  type MintedTokens,
   pointedAt,
   pointTo,
   revokeGrant,
   runConsent,
   TokenRefused,
 } from "./oauth.js";
-import type { RefusedToken } from "./refused.js";
-import type { UploadSessions } from "./uploads.js";
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 import { runLeg } from "../engine/leg.js";
-import { errorOf } from "../errors.js";
-import type { ErrorCode } from "../ui/http.js";
-import type { RenewReport } from "./renew.js";
 import { standingOf } from "./standing.js";
 import {
-  type Access,
   type ApiLeg,
   accessOf,
   type Leg,
@@ -80,193 +58,26 @@ import {
   type SiteApi,
   SiteError,
   type SiteRoute,
-  type Standing,
   siteEnv,
 } from "./types.js";
 import { withLocalFile } from "./upload-file.js";
 import type { NoVerify, RouteVerify } from "./verdict.js";
 import { tokenRefusal } from "./why.js";
 
-const CODE_STATUS: Record<AccessCode, number> = {
-  need_login: 401,
-  platform_blocked: 403,
-  rate_limited: 429,
-  upstream_broken: 502,
-};
+export * from "./facade-api.js";
 
-/**
- * The answer against the route's `response` (U2), returned as sent. A read whose shape broke
- * fails, so a changed site shows as `upstream_broken`, not as empty rows; a write went through,
- * so it keeps its answer and says what drifted.
- */
-export function checkResponse(
-  r: Pick<SiteRoute, "response" | "method" | "path" | "access">,
-  out: unknown,
-): unknown {
-  if (!r.response) return out;
-  const got = r.response.safeParse(out);
-  if (got.success) return out;
-  const why = got.error.issues
-    .slice(0, 3)
-    .map((i) => `${i.path.join(".") || "answer"}: ${i.message}`)
-    .join("; ");
-  if (accessOf(r) === "read")
-    throw new SiteError(
-      502,
-      `${r.method} ${r.path}: the answer changed shape (${why})`,
-      undefined,
-      "upstream_broken",
-    );
-  return out && typeof out === "object" && !Array.isArray(out) ? { ...out, shapeDrift: why } : out;
-}
+import type {
+  Armed,
+  RouteRow,
+  SendSpec,
+  SetupRow,
+  SiteFacade,
+  SiteFacadeDeps,
+  SiteRow,
+} from "./facade-api.js";
+import { accessError, checkResponse, matchPath, resolveInput } from "./facade-checks.js";
 
-/**
- * A browser leg's failure on a read, as a coded SiteError: a flow's `AccessRefused`, or a wall
- * the runner met (login → `need_login`, a captcha left → `platform_blocked`). Lasting, so terminal:
- * Restate would retry it for hours. Anything else stays as it was.
- */
-export function accessError(err: unknown): SiteError | null {
-  if (err instanceof AccessRefused)
-    return new SiteError(CODE_STATUS[err.code], err.message, undefined, err.code);
-  if (err instanceof NeedsHuman && err.wall) {
-    const code = err.wall === "captcha" ? "platform_blocked" : "need_login";
-    return new SiteError(CODE_STATUS[code], err.message, undefined, code);
-  }
-  return null;
-}
-
-export interface SiteFacadeDeps {
-  http: HttpClient;
-  /** Where keys and tokens are read from (process.env on the box, the .env locally). */
-  env: (name: string) => string | undefined;
-  /** Where setup puts what it made. */
-  sink: SecretSink;
-  /** Access tokens minted by any process on this machine, reused instead of minted again. */
-  minted?: MintedTokens;
-  runner: FlowRunner;
-  flow(name: string): BrowserFlow<never, unknown> | null;
-  /** Compiled workflows by name, run in-process with gates approved (the caller gated the route). */
-  compiled?: {
-    get(name: string): Promise<AnyWorkflow | null>;
-    run(workflow: AnyWorkflow, plan: Record<string, unknown>, as?: RunAs): Promise<CompiledRun>;
-  };
-  /** Loopback port for OAuth redirects. */
-  oauthPort?: number;
-  /**
-   * The browser profile that holds an account of a site (`google@will` for
-   * will@x.dev), so its consent runs signed in as it; the flow's own site
-   * when absent (the chooser then picks).
-   */
-  profileFor?: (site: string, account: string) => Promise<string | null>;
-  /**
-   * The identity provider a site's accounts sign in at (`google` for a site
-   * whose consent is Google's); null when its accounts are its own (LinkedIn).
-   */
-  providerOf?: (site: SiteApi) => string | null;
-  /**
-   * The account a call or setup step is for when the caller names none: the
-   * person's account for the site's (or step's) purpose at the provider the
-   * consent signs in with; null means the site's own token and profile.
-   */
-  accountFor?: (site: SiteApi, step?: SetupStep) => Promise<string | null>;
-  now?: () => number;
-  /**
-   * Who says yes to a route that commits money (the spend policy, then the
-   * person). Absent: every such call is refused, as the browser's gate is
-   * without a channel.
-   */
-  approve?: Approver | null;
-  /** Counts routes' `meter` against the site's `caps`, per account per day, and books `pace` slots; absent: nothing is capped. */
-  caps?: DailyCaps;
-  /** The operator's limits over each site's `caps`, `accountCaps` and `pace` (`limits.json`); absent: the defaults. */
-  limits?: LimitStore;
-  /** Paid keys out of credit (`reach/key-ring.ts`), for `capsPerKey` and api legs that rotate keys. */
-  spent?: SpentKeys;
-  /** The vault's keys and their audit (`reach/key-source.ts`); absent, paid keys are the env names and no use is audited. */
-  keys?: KeysDep;
-  /** Resumable upload sessions by durable call, so a rerun call resumes its bytes. */
-  uploads?: UploadSessions;
-  /** A page in a stealth browser, for the fetch ladder's render and exit rungs (`browser/render.ts`). */
-  render?: Render;
-  /** Irreversible API calls already started, by durable call: a rerun of one is refused. */
-  started?: DoneActs;
-  /** How a paced call waits for its slot (tests pass a fake). */
-  sleep?: (ms: number) => Promise<void>;
-  /**
-   * The username behind a credential name the caller used for an account
-   * (`linkedin@research`, or `linkedin` for the site's own): null when the
-   * name is not one, and the account is taken as an address.
-   */
-  accountOf?: (site: string, name: string) => Promise<string | null>;
-  /** An API leg answered with the token kept under `name`: a refusal of it is over. */
-  worked?: (name: string) => void;
-  /** The site's words when the value kept under `name` was refused; null when it may be called. */
-  held?: (name: string) => string | null;
-}
-
-export type CompiledRun = Pick<Proof, "status" | "steps" | "output">;
-
-export interface RouteRow {
-  method: Method;
-  path: string;
-  summary: string;
-  /** How it answers right now: the API, the browser, or nothing yet (`missing` says what). */
-  via: "api" | "browser" | "none";
-  missing?: string;
-  /** Why this leg: for good, or what it waits on (`sites/standing.ts`). Absent: the API, nothing gated. */
-  standing?: Standing;
-  /** `read` or `write` (`accessOf`). */
-  access: Access;
-  /** A laddered browser leg's ways, in order (`browser/ladder`). */
-  strategies?: readonly Strategy[];
-  /** Ported from OpenCLI: `clis/<site>/<file>@<sha>`. */
-  ported?: string;
-  irreversible: boolean;
-  /** Can commit money: gated on the person before the API leg. */
-  spends: boolean;
-  /** What the request takes, as JSON Schema: body for writes, query + path params for reads. */
-  request: JsonSchema;
-}
-
-export interface SetupRow extends Pick<SetupStep, "name" | "makes" | "needs" | "summary"> {
-  done: boolean;
-  /** Needs not yet present. */
-  blockedOn: string[];
-  /** The flow this step runs, when nobody has recorded it yet. */
-  unrecorded?: string;
-  /** What the step's flow is handed; `--input` overrides any key. */
-  input?: Record<string, unknown>;
-}
-
-export interface SiteRow {
-  site: string;
-  origin: string;
-  /** A bearer can be minted now. */
-  authed: boolean;
-  routes: RouteRow[];
-  /** What its routes wait on, by id. */
-  blockers?: NonNullable<SiteApi["blockers"]>;
-  setup: SetupRow[];
-  probe?: SiteApi["probe"];
-  /** Its tokens the platform refused, open incidents (`refused.ts`); absent when none are kept. */
-  refused?: RefusedToken[];
-}
-
-/** Who is calling, for the caps ledger: `caller` as the caller names itself, `invocation` its Restate id. */
-export interface CallFrom {
-  caller?: string | null;
-  invocation?: string;
-  /** Run the browser leg up to its last safe step and answer `{armed}`; nothing is sent. */
-  arm?: boolean;
-  /** An earlier `arm`'s id: run the leg in its tab. Without it, the newest arm on the same path. */
-  armId?: string;
-}
-
-/** What `arm` answers: an id for the call to carry, or null when there is nothing to warm. */
-export interface Armed {
-  armed: string | null;
-  until?: string;
-}
+export { accessError, checkResponse, checkSite, matchPath } from "./facade-checks.js";
 
 /** An armed tab lives this long; a profile holds at most `ARMS_PER_PROFILE` (the oldest goes). */
 export const ARM_MS = 20 * 60_000;
@@ -289,179 +100,6 @@ const armKey = (input: unknown) =>
 type Runnable = ((input: unknown, on?: { page: Page }) => Promise<unknown>) & {
   flow?: BrowserFlow<unknown, unknown>;
 };
-
-export interface CapsReport {
-  day: string;
-  /** By `site|account|bucket`; today's only (a past day keeps its calls, not its counts). */
-  used: Record<string, number>;
-  /** Tries by the same key: `used` plus the failures that reached the site. */
-  tried: Record<string, number>;
-  /** Buckets held now (the site undid an act): when each hold ends and its step. */
-  held: Record<string, Hold>;
-  calls: MeteredCall[];
-}
-
-/**
- * What a keyed write needs from its route to settle (`service.ts`, `send-journal.ts`): whether it
- * publishes, how a verify read proves it, and the id and link of what it made.
- */
-export interface SendSpec {
-  irreversible: boolean;
-  /** Absent: the route declares nothing, so an unclear end stays `unknown`. */
-  verify?: RouteVerify<unknown> | NoVerify;
-  sentAs?: (output: unknown) => { id: string | null; url: string | null };
-  /** The route's own input for this request: path params and query folded in, defaults applied. */
-  parse(path: string, input: Record<string, unknown>): unknown;
-}
-
-export interface LimitsRow extends Effective {
-  site: string;
-  set: SiteLimits;
-}
-
-export interface SiteFacade {
-  list(): Promise<SiteRow[]>;
-  status(site: string): Promise<SiteRow>;
-  /** One call as the official API takes it: path params in the path, query for reads, body for writes. */
-  call(
-    site: string,
-    method: Method,
-    path: string,
-    input: Record<string, unknown>,
-    account?: string | null,
-    from?: CallFrom,
-  ): Promise<unknown>;
-  /**
-   * The route a write would hit, as a keyed call settles it. Throws `SiteError` 404 for a path
-   * that is no route. Absent on a stand-in: the call then has no verify read.
-   */
-  sendSpec?(site: string, method: Method, path: string): SendSpec;
-  /** A day's capped reads (today when absent): what each bucket used and every metered call, who asked. */
-  caps(day?: string, site?: string): CapsReport;
-  /** Each capped or paced site's limits now (`effective`), and what `limits.json` sets of them (`set`). */
-  limits(site?: string): LimitsRow[];
-  /** Change one site's limits in `limits.json` (`LimitStore.edit`); 404 for an unknown site. */
-  editLimits(
-    site: string,
-    fn: (l: SiteLimits) => SiteLimits,
-  ): { before: SiteLimits; after: SiteLimits; path: string };
-  /** Run one setup step; what it makes lands in the sink (under the account's name, with one). */
-  setup(
-    site: string,
-    step: string,
-    account?: string | null,
-    /** Force the browser profile the step runs in (a second profile for the same account). */
-    profile?: string | null,
-    /** Over the step's own input, key by key: a token's name, scopes, expiry for this run. */
-    input?: Record<string, unknown>,
-    /** `replace`: yes to the question a step asks when a name it makes holds a value. */
-    o?: { replace?: boolean },
-  ): Promise<{ made: readonly string[] }>;
-  /**
-   * Make again every kept token that lapses within the renew window, by the
-   * setup step and account that made it; `dry` only says which. Absent when
-   * nothing lists what is kept.
-   */
-  renew?(o?: { dry?: boolean; names?: readonly string[] }): Promise<RenewReport>;
-  /**
-   * End the grant behind a site's token at the site (`OAuthSpec.revoke`): the only way our code
-   * revokes. Answers the kept names it covered, now dead; the caller makes them again.
-   */
-  revoke?(site: string, account?: string | null): Promise<{ revoked: string[] }>;
-  /**
-   * Open refused-token incidents, oldest first. Async like every other method: a facade behind
-   * `holding` answers each call through a hold, so a sync answer would arrive as a Promise.
-   */
-  refused?(): Promise<RefusedToken[]>;
-  /** Incidents no re-make was queued for yet, now marked queued: each one once. */
-  claimRefused?(): Promise<RefusedToken[]>;
-}
-
-export interface CheckRow {
-  site: string;
-  ok: boolean;
-  ms?: number;
-  /** Why not: no probe, no token, or the API's answer. */
-  why?: string;
-  /** The error contract's code when the call threw (the probe's state). */
-  code?: ErrorCode;
-}
-
-/** One who-am-I call on the API leg: proves the token works, not just that one is kept. */
-export async function checkSite(
-  f: Pick<SiteFacade, "call">,
-  row: SiteRow,
-  account: string | null = null,
-  now: () => number = Date.now,
-): Promise<CheckRow> {
-  const probe = row.probe;
-  if (!probe) return { site: row.site, ok: false, why: "no probe" };
-  const r = row.routes.find((x) => x.method === "GET" && matchPath(x.path, probe.path));
-  // The row's `via` is the site's plain token; an account's token is only found by calling as it.
-  if (!account && r?.via !== "api")
-    return { site: row.site, ok: false, why: r?.missing ?? "probe has no api leg" };
-  const t = now();
-  try {
-    await f.call(row.site, "GET", probe.path, probe.input ?? {}, account);
-    return { site: row.site, ok: true, ms: now() - t };
-  } catch (e) {
-    const status = e instanceof SiteError ? `${e.status} ` : "";
-    const msg = e instanceof Error ? e.message : String(e);
-    return {
-      site: row.site,
-      ok: false,
-      ms: now() - t,
-      code: errorOf(e).code,
-      why: `${status}${msg}`.replace(/\s+/g, " ").slice(0, 100),
-    };
-  }
-}
-
-/** `/rest/socialActions/{urn}/comments` against `/rest/socialActions/urn:li:share:1/comments`. */
-export function matchPath(pattern: string, path: string): Record<string, string> | null {
-  const p = pattern.split("/");
-  const a = path.split("?")[0]?.split("/") ?? [];
-  if (p.length !== a.length) return null;
-  const params: Record<string, string> = {};
-  for (let i = 0; i < p.length; i++) {
-    const seg = p[i] as string;
-    const got = a[i] as string;
-    const m = /^([^{}]*)\{([^{}]+)\}([^{}]*)$/.exec(seg);
-    if (m) {
-      // `{urn}`, or a segment with a fixed prefix/suffix around it (`act_{adAccountId}`).
-      const [, before = "", name = "", after = ""] = m;
-      if (!got.startsWith(before) || !got.endsWith(after)) return null;
-      const inner = got.slice(before.length, got.length - after.length);
-      if (!inner) return null;
-      params[name] = decodeURIComponent(inner);
-    } else if (seg !== got) return null;
-  }
-  return params;
-}
-
-/** `{ env: "X" }` → the env store's value of X (its absence was caught by `needs`); anything else is itself. */
-function resolveInput(v: unknown, env: SiteFacadeDeps["env"], account: string | null): unknown {
-  if (
-    v &&
-    typeof v === "object" &&
-    "account" in v &&
-    (v as { account: unknown }).account === true
-  ) {
-    if (!account)
-      throw new SiteError(
-        409,
-        "setup needs an account: --account <address>, or autobrowse accounts",
-      );
-    return account;
-  }
-  if (v && typeof v === "object" && "env" in v && typeof (v as { env: unknown }).env === "string") {
-    const name = (v as { env: string }).env;
-    const got = env(name);
-    if (got === undefined) throw new SiteError(409, `setup needs ${name} first`);
-    return got;
-  }
-  return v;
-}
 
 export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): SiteFacade {
   const limitsOf = (s: SiteApi) => effective(s, deps.limits?.read() ?? {});
