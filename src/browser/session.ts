@@ -21,6 +21,7 @@ import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import type { Hints } from "./locate.js";
 import { guardMemory, treeOf } from "./memory-guard.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
+import { addTab, backgroundTab, dropTab, ownTabsFile, reapTabs } from "./own-tabs.js";
 import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { listProcs, reapOrphans, reapTempDirs } from "./reap.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
@@ -282,7 +283,16 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
     });
   const context = browser.contexts()[0] ?? (await browser.newContext());
   boundRequests(context);
-  const page = await context.newPage();
+  const ledger = ownTabsFile();
+  const cdp = await browser.newBrowserCDPSession();
+  await reapTabs(cdp, ledger, own.dataDir).catch(() => []);
+  const { page, targetId } = await backgroundTab(context, cdp);
+  addTab(ledger, {
+    pid: process.pid,
+    targetId,
+    browser: own.dataDir,
+    at: new Date().toISOString(),
+  });
   return {
     context,
     page,
@@ -293,6 +303,7 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
     passkeys: { export: async () => [] },
     async close() {
       await page.close().catch(() => undefined);
+      dropTab(ledger, targetId);
       await browser.close().catch(() => undefined); // disconnects; the browser stays open
     },
   };

@@ -8,8 +8,9 @@
  * The person turns on "Allow remote debugging" once at
  * `<scheme>://inspect/#remote-debugging`; the browser then writes its
  * endpoint to `DevToolsActivePort` in its data dir, and asks them to allow
- * each connection. autobrowse works in a new tab of its own and closes only
- * that tab: no trace, no passkey stand-in, nothing on their other tabs.
+ * each connection. autobrowse works in a tab of its own, in a background window
+ * (`own-tabs.ts`), and closes only that tab; a tab left by a dead process is
+ * closed at the next attach. No trace, no passkey stand-in, nothing on their tabs.
  *
  * Chromium browsers only. Safari has no remote debugging: its WebDriver
  * sessions are fresh (none of the person's logins), and Apple Events only
