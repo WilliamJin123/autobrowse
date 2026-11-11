@@ -24,6 +24,15 @@ describe("explore code version", () => {
     writeFileSync(join(npm, "package.json"), '{"version":"1.2.3"}');
     expect(codeVersion(npm)).toBe("v1.2.3");
     expect(codeVersion(PACKAGE_ROOT)).toMatch(/^[0-9a-f]{12}$/);
+    // a worktree: `.git` is a file; HEAD in its gitdir, branch refs in the shared dir
+    const main = checkout({ loose: A });
+    const wt = mkdtempSync(join(tmpdir(), "cv-wt-"));
+    const gd = join(main, ".git", "worktrees", "w");
+    mkdirSync(gd, { recursive: true });
+    writeFileSync(join(gd, "HEAD"), "ref: refs/heads/main\n");
+    writeFileSync(join(gd, "commondir"), "../..\n");
+    writeFileSync(join(wt, ".git"), `gitdir: ${gd}\n`);
+    expect(codeVersion(wt)).toBe("a".repeat(12));
   });
 
   it("warns once the checkout moves past the session's code, checked at most each minute", () => {
