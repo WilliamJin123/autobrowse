@@ -134,6 +134,11 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     diff: z.boolean().optional(),
     limit: z.number().int().positive().optional(),
   }),
+  /**
+   * This site's calls from all earlier sessions (`endpoints.json`, `field-map.json`): the newest
+   * calls with their keys, or with `find` the calls and fields whose name holds it. Keys only.
+   */
+  z.object({ cmd: z.literal("memory"), find: z.string().min(2).optional() }),
   /** Save the page's HTML (scripts emptied, redacted); `diff` = lines added and removed since the last save of this URL shape. */
   z.object({ cmd: z.literal("html"), diff: z.boolean().optional() }),
   /** With `hints`, `js` is a function of that element, run in its frame (`el => el.className`). */

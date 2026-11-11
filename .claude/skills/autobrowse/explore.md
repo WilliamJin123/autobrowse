@@ -85,6 +85,7 @@ Look:
   - `{"cmd":"network"}`: JSON calls grouped by URL and GraphQL query name, with ids, count, status and data keys. `all` adds pages and non-JSON.
   - `{"cmd":"network","find":"<text on the page>"}`: the calls whose body holds that text, with the key path to it.
   - `{"cmd":"network","id":12,"pick":"data.user.edges[0].node"}`: one part of one body.
+  - `{"cmd":"memory","find":"followers"}`: this site's calls and fields from all earlier sessions. Look here first: the call you need may be known.
   - A flow reads that JSON with `pageJson`/`pagedJson` (cookie rung) or `captureJson` (intercept rung), in `ladder` rungs (`src/browser/ladder.ts`).
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
 

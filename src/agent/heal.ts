@@ -110,7 +110,8 @@ export function healRequest(
     goal:
       `Do only this one act of the flow "${record.flow}": "${op.goal}". ` +
       `Its locator no longer finds the control; the flow stopped here with: ${redactText(record.error)}. ` +
-      "Stop as soon as that act is done: the flow does the rest.",
+      "Stop as soon as that act is done: the flow does the rest. " +
+      'The site\'s known calls and fields from earlier sessions: {"cmd":"memory"}.',
   };
 }
 

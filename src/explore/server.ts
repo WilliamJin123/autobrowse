@@ -88,6 +88,7 @@ import {
   NeedsHuman,
   type Wall,
 } from "../browser/session.js";
+import { memoryDir, readMemory, recall, rememberCalls } from "../browser/site-memory.js";
 import type { KeyKeeper } from "../deps/keys.js";
 import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
 import { macDesktop } from "../desktop/mac.js";
@@ -2398,6 +2399,12 @@ async function serve(
         return takeMarks();
       case "network":
         return network(c);
+      case "memory":
+        return {
+          ...recall(readMemory(opts.site), c.find),
+          dir: memoryDir(opts.site),
+          ...(fp.network?.personal ? { personal: "this profile adds nothing to it" } : {}),
+        };
       case "html":
         return html(c);
       case "eval": {
@@ -2869,6 +2876,7 @@ async function serve(
     if (idleCheck) clearInterval(idleCheck);
     try {
       writeNet();
+      if (fp.network && !fp.network.personal) rememberCalls(opts.site, fp.network.rows());
     } catch {
       // A full disk loses the log, never the close.
     }
