@@ -137,6 +137,8 @@ const comments = z.object({
   urn,
   count: z.coerce.number().int().min(1).max(100).default(10),
   start: z.coerce.number().int().min(0).default(0),
+  /** The page leg only: `recent` sorts newest first. */
+  sort: z.enum(["relevant", "recent"]).optional(),
 });
 const initUpload = z.object({
   action: z.literal("initializeUpload").default("initializeUpload"),
@@ -154,6 +156,17 @@ const FEED = "https://www.linkedin.com/feed/update/";
 const PROFILE = "https://www.linkedin.com/in/";
 
 /** The post a comment URN sits on: `urn:li:comment:(urn:li:activity:1,2)` is on `urn:li:activity:1`. */
+/**
+ * A comment read that holds every comment: the page leg says so (`more: false`); the API's
+ * first page holds `paging.total` of them.
+ */
+export function wholeRead(r: unknown): boolean {
+  const o = rec(r);
+  if (typeof o.more === "boolean") return !o.more;
+  const total = rec(o.paging).total;
+  return typeof total === "number" && rec(o.paging).start === 0 && arr(o.elements).length >= total;
+}
+
 const postOf = (urn: string): string =>
   /^urn:li:comment:\((urn:li:[a-zA-Z]+:\d+),\d+\)$/.exec(urn)?.[1] ?? urn;
 
@@ -619,7 +632,7 @@ export const linkedin: SiteApi = {
           const parent = b.parentComment ?? (b.urn.startsWith("urn:li:comment:") ? b.urn : null);
           const r = await get(
             `/rest/socialActions/${encodeURIComponent(b.object ?? postOf(b.urn))}/comments`,
-            { count: 100 },
+            { count: 100, sort: "recent" },
           );
           // A member's comment names its author by a profile link, so the name says whose it is.
           // The browser read names the viewer off the same load; the API needs userinfo.
@@ -640,9 +653,9 @@ export const linkedin: SiteApi = {
                 mine: by && (str(c.parentComment) ?? null) === parent,
               };
             }),
-            // LinkedIn orders them its own way, and the read stops at a count.
+            // Replies sit under their comment, so never strictly newest: only a whole read proves absent.
             order: "ranked",
-            complete: false,
+            complete: wholeRead(r),
           };
         },
       },

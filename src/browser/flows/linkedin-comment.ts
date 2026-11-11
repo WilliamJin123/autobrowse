@@ -98,17 +98,51 @@ async function typed(fp: FlowPage, nth: number): Promise<string | null> {
 /** Every comment on the page, and its author link: run in the page. */
 const COMMENTS = '[id^="replaceableComment_urn:li:comment:("]';
 
-/** Scroll to the last comment so the lazy list loads the next ones. */
+/** The list's own "load more" button; replies' buttons excluded. */
+const LOAD_MORE = /^\s*(?:load|show|see) (?:more|previous) comments\s*$/i;
+
+/** Scroll to the last comment so the lazy list loads the next ones; press its "load more" too. */
 async function more(fp: FlowPage): Promise<void> {
   try {
     await fp.page.evaluate(`(() => {
       const all = document.querySelectorAll(${JSON.stringify(COMMENTS)});
       if (all.length) all[all.length - 1].scrollIntoView({ block: "end" });
+      const load = [...document.querySelectorAll("button")].find((b) => ${LOAD_MORE}.test(b.textContent || ""));
+      if (load) load.click();
     })()`);
   } catch {
     // A page without the list (a fake) has nothing more to load.
   }
   await fp.wait(2 * SETTLE_MS);
+}
+
+/** The sort menu's button, its label the current sort. */
+const SORT_BUTTON = /^\s*most (?:relevant|recent)\b/i;
+
+/**
+ * Sort the list "Most recent": a fresh comment loads first. True only when the button reads so
+ * after; no menu (few comments) or a miss keeps LinkedIn's rank.
+ */
+async function sortRecent(fp: FlowPage): Promise<boolean> {
+  const button = fp.page.locator("button").filter({ hasText: SORT_BUTTON }).first();
+  try {
+    if (!(await button.count())) return false;
+    if (/most recent/i.test(await button.innerText({ timeout: 2_000 }))) return true;
+    await button.click({ timeout: 5_000 });
+    await fp.page
+      .getByRole("menuitem", { name: /most recent/i })
+      .or(
+        fp.page
+          .locator('[role="menu"] li, [role="listbox"] li, .artdeco-dropdown__item')
+          .filter({ hasText: /most recent/i }),
+      )
+      .first()
+      .click({ timeout: 5_000 });
+    await fp.wait(2 * SETTLE_MS);
+    return /most recent/i.test(await button.innerText({ timeout: 2_000 }));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -308,22 +342,38 @@ export interface PostCommentsInput {
   start: number;
   /** Page handles to their ids (`acme` → `123456`), so a Page's comments name its URN. */
   pages?: Record<string, string>;
+  /** `recent`: sort the list newest first before the read (a send's verify). */
+  sort?: "relevant" | "recent";
 }
 
 export const linkedinPostComments = defineFlow<
   PostCommentsInput,
-  | { elements: CommentElement[]; paging: { start: number; count: number }; viewer?: string }
+  | {
+      elements: CommentElement[];
+      paging: { start: number; count: number; total?: number };
+      /** False only when the list ran out and the page shows every comment its counts name. */
+      more: boolean;
+      sort: "relevant" | "recent";
+      viewer?: string;
+    }
   | { found: false; reason: string }
 >({
   site: "linkedin",
   name: "post-comments",
   strategies: ["intercept"],
-  async run(fp, { urn, count, start, pages }) {
+  async run(fp, { urn, count, start, pages, sort }) {
+    let sorted = false;
+    let ranOut = false;
     const read = async () => {
       const no = await ready(fp, postUrl(urn), urn);
       if (no) return no;
+      if (sort === "recent") sorted = await sortRecent(fp);
       let raw = await rawComments(fp);
-      for (let still = 0; raw.length < start + count && still < 2; ) {
+      for (let still = 0; raw.length < start + count; ) {
+        if (still >= 2) {
+          ranOut = true;
+          break;
+        }
         await more(fp);
         const next = await rawComments(fp);
         still = next.length > raw.length ? 0 : still + 1;
@@ -337,9 +387,13 @@ export const linkedinPostComments = defineFlow<
     if (counts) seen.set(urn, { counts, at: Date.now() });
     // Who we are, off the same load: a send's verify needs no second read.
     const viewer = await viewerName(fp);
+    // A stalled list is no proof of its end (a button we missed, replies folded): the count is.
+    const whole = ranOut && counts !== null && raw.length >= counts.comments;
     return {
       elements: commentElements(raw, pages).slice(start, start + count),
-      paging: { start, count },
+      paging: { start, count, ...(counts ? { total: counts.comments } : {}) },
+      more: !whole,
+      sort: sorted ? "recent" : "relevant",
       ...(viewer ? { viewer } : {}),
     };
   },

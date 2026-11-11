@@ -12,12 +12,18 @@
 import { already } from "../attempt.js";
 import { defineFlow } from "../flow.js";
 import type { Hints } from "../locate.js";
-import { firstShown, RENDER_MS, SETTLE_MS } from "./kit.js";
+import { actAndProve, firstShown, stateOf } from "./kit.js";
 import { go } from "./linkedin-reach.js";
 
 const WEB = "https://www.linkedin.com";
 
 const MISSING = /this page doesn.t exist|page not found|this post (?:cannot|can.t) be displayed/i;
+
+/**
+ * The act's own calls (voyager, any non-GET): reactions, and following states for follows. Not
+ * mapped live; a miss costs one reload, the proof then.
+ */
+const ACT_CALL = /linkedin\.com\/voyager\/api\/\S*(reaction|followingstate|follow)/i;
 
 const unreacted: Hints = { role: "button", name: "/^reaction button state: no reaction$/i" };
 const reacted: Hints = {
@@ -45,11 +51,17 @@ export const linkedinLike = defineFlow<
     if (state === null) return fp.human(`no Like on post ${urn} (${fp.url()})`);
     const liked = state === 0;
     if (liked === !undo) return already({ urn, liked, already: true });
-    await fp.act({ kind: "click" }, undo ? reacted : unreacted, {
-      goal: `${undo ? "take back the like on" : "like"} post ${urn}`,
+    const url = `${WEB}/feed/update/${urn}/`;
+    await actAndProve(fp, {
+      click: () =>
+        fp.act({ kind: "click" }, undo ? reacted : unreacted, {
+          goal: `${undo ? "take back the like on" : "like"} post ${urn}`,
+        }),
+      call: ACT_CALL,
+      what: `${undo ? "unlike" : "like"} on ${urn}`,
+      reload: { open: () => go(fp, url), state: stateOf(fp, reacted, unreacted, MISSING) },
+      want: !undo,
     });
-    if (!(await fp.has(undo ? unreacted : reacted, RENDER_MS)))
-      return fp.human(`LinkedIn did not take the ${undo ? "unlike" : "like"} on ${urn}`);
     return { urn, liked: !undo };
   },
 });
@@ -89,33 +101,38 @@ export const linkedinFollow = defineFlow<
         : null;
     if (!who) throw new Error("linkedin/follow: a vanity or a company");
     await go(fp, `${WEB}${who}`);
-    let state = await firstShown(fp, [on, off, more], MISSING);
-    if (state === "missing") return { found: false, reason: `nothing at ${who}` };
-    if (state === null) return fp.human(`no Follow on ${who} (${fp.url()})`);
-    if (state === 2) {
-      // Follow sits under More for a member whose main button is Connect.
+    // Follow sits under More for a member whose main button is Connect.
+    const inMore = async (): Promise<boolean | null> => {
       await fp.act({ kind: "click" }, more, { goal: "open More on the profile" });
-      state = (await fp.has(unfollowItem, 5_000))
-        ? 0
-        : (await fp.has(followItem, 2_000))
-          ? 1
-          : null;
-      if (state === null) return fp.human(`no Follow under More on ${who}`);
-      const following = state === 0;
-      if (following === !undo) return already({ following, already: true });
-      await fp.act({ kind: "click" }, undo ? unfollowItem : followItem, {
-        goal: `${undo ? "unfollow" : "follow"} ${who}`,
-      });
-    } else {
-      const following = state === 0;
-      if (following === !undo) return already({ following, already: true });
-      await fp.act({ kind: "click" }, undo ? on : off, {
-        goal: `${undo ? "unfollow" : "follow"} ${who}`,
-      });
-    }
-    if (undo && (await fp.has(confirmUnfollow, 3_000)))
-      await fp.act({ kind: "click" }, confirmUnfollow, { goal: "confirm the unfollow" });
-    await fp.wait(SETTLE_MS);
+      if (await fp.has(unfollowItem, 5_000)) return true;
+      return (await fp.has(followItem, 2_000)) ? false : null;
+    };
+    const top = await firstShown(fp, [on, off, more], MISSING);
+    if (top === "missing") return { found: false, reason: `nothing at ${who}` };
+    if (top === null) return fp.human(`no Follow on ${who} (${fp.url()})`);
+    const underMore = top === 2;
+    const following = underMore ? await inMore() : top === 0;
+    const followState = async (): Promise<boolean | null> => {
+      const n = await firstShown(fp, [on, off, more], MISSING);
+      return n === 2 ? inMore() : n === 0 ? true : n === 1 ? false : null;
+    };
+    if (following === null) return fp.human(`no Follow under More on ${who}`);
+    if (following === !undo) return already({ following, already: true });
+    await actAndProve(fp, {
+      click: async () => {
+        await fp.act(
+          { kind: "click" },
+          underMore ? (undo ? unfollowItem : followItem) : undo ? on : off,
+          { goal: `${undo ? "unfollow" : "follow"} ${who}` },
+        );
+        if (undo && (await fp.has(confirmUnfollow, 3_000)))
+          await fp.act({ kind: "click" }, confirmUnfollow, { goal: "confirm the unfollow" });
+      },
+      call: ACT_CALL,
+      what: `${undo ? "unfollow" : "follow"} of ${who}`,
+      reload: { open: () => go(fp, `${WEB}${who}`), state: followState },
+      want: !undo,
+    });
     return { following: !undo };
   },
 });

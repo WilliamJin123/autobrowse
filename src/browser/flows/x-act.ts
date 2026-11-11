@@ -12,7 +12,7 @@
 import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
-import { firstShown, RENDER_MS, SETTLE_MS } from "./kit.js";
+import { actAndProve, firstShown, RENDER_MS, SETTLE_MS, stateOf } from "./kit.js";
 
 const WEB = "https://x.com";
 
@@ -30,6 +30,10 @@ async function openX(fp: FlowPage, url: string): Promise<void> {
   if (SIGNED_OUT.test(fp.url()))
     fp.human("X is signed out on this profile: `autobrowse login x@<account>`");
 }
+
+/** The act's own calls: the like mutations and the follow endpoints. */
+const ACT_CALL =
+  /x\.com\/i\/api\/(graphql\/[^/]+\/(FavoriteTweet|UnfavoriteTweet)\b|1\.1\/friendships\/(create|destroy)\.json)/;
 
 const label = (handle: string) => handle.replace(/"/g, "");
 export const followButton = (handle: string): Hints => ({
@@ -60,13 +64,19 @@ export const xFollow = defineFlow<FollowInput, unknown>({
     const following = state === 0;
     if (following === !undo)
       return already({ data: { following, pending_follow: false, already: true } });
-    if (undo) {
-      await fp.act({ kind: "click" }, on, { goal: `unfollow @${username}` });
-      if (await fp.has(confirm, 5_000))
-        await fp.act({ kind: "click" }, confirm, { goal: "confirm the unfollow" });
-    } else await fp.act({ kind: "click" }, off, { goal: `follow @${username}` });
-    if (!(await fp.has(undo ? off : on, RENDER_MS)))
-      return fp.human(`X did not take the ${undo ? "unfollow" : "follow"} of @${username}`);
+    await actAndProve(fp, {
+      click: async () => {
+        if (undo) {
+          await fp.act({ kind: "click" }, on, { goal: `unfollow @${username}` });
+          if (await fp.has(confirm, 5_000))
+            await fp.act({ kind: "click" }, confirm, { goal: "confirm the unfollow" });
+        } else await fp.act({ kind: "click" }, off, { goal: `follow @${username}` });
+      },
+      call: ACT_CALL,
+      what: `${undo ? "unfollow" : "follow"} of @${username}`,
+      reload: { open: () => openX(fp, `${WEB}/${username}`), state: stateOf(fp, on, off, MISSING) },
+      want: !undo,
+    });
     return { data: { following: !undo, pending_follow: false } };
   },
 });
@@ -94,11 +104,19 @@ export const xLike = defineFlow<LikeInput, unknown>({
     if (state === null) return fp.human(`no Like button on post ${id} (${fp.url()})`);
     const liked = state === 0;
     if (liked === !undo) return already({ data: { liked, already: true } });
-    await fp.act({ kind: "click" }, undo ? on : off, {
-      goal: `${undo ? "unlike" : "like"} post ${id}`,
+    await actAndProve(fp, {
+      click: () =>
+        fp.act({ kind: "click" }, undo ? on : off, {
+          goal: `${undo ? "unlike" : "like"} post ${id}`,
+        }),
+      call: ACT_CALL,
+      what: `${undo ? "unlike" : "like"} on post ${id}`,
+      reload: {
+        open: () => openX(fp, `${WEB}/i/status/${id}`),
+        state: stateOf(fp, on, off, MISSING),
+      },
+      want: !undo,
     });
-    if (!(await fp.has(undo ? off : on, RENDER_MS)))
-      return fp.human(`X did not take the ${undo ? "unlike" : "like"} on post ${id}`);
     return { data: { liked: !undo } };
   },
 });

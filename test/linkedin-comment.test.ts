@@ -16,7 +16,7 @@ import {
 } from "../src/browser/flows/linkedin-comment.js";
 import type { Hints } from "../src/browser/locate.js";
 import { BROWSER_FLOWS } from "../src/engine/browser-service.js";
-import { linkedin } from "../src/sites/linkedin.js";
+import { linkedin, wholeRead } from "../src/sites/linkedin.js";
 import { fakePage } from "./auth-fakes.js";
 
 const PAGE = "urn:li:organization:42";
@@ -283,5 +283,62 @@ describe("linkedin post counts from the page", () => {
     } finally {
       await browser.close();
     }
+  });
+});
+
+describe("linkedin comment read: whole or not", () => {
+  // The menu flips the list newest first; the bar's count says how many exist.
+  const html = (total: number) => `<main>
+    <div contenteditable="true"></div>
+    <button aria-label="Reaction button state: no reaction">1</button><button aria-label="Comment">${total}</button>
+    <button id="sort" onclick="document.getElementById('menu').hidden=false">Most relevant</button>
+    <div role="menu" id="menu" hidden><li role="menuitem" onclick="
+      document.getElementById('sort').textContent='Most recent';
+      const l=document.getElementById('list'); l.prepend(l.lastElementChild);">Most recent</li></div>
+    <div id="list">
+      <article ${onPage("1")}><a href="/in/ana">Ana</a><div data-testid="expandable-text-box">old</div></article>
+      <article ${onPage("2")}><a href="/in/bo">Bo</a><div data-testid="expandable-text-box">new</div></article>
+    </div></main>`;
+
+  async function read(total: number) {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.setContent(html(total));
+      const { fp } = fakePage({
+        text: [""],
+        present: (h: Hints) => h.css === "[contenteditable=true]",
+      });
+      fp.page = page;
+      fp.html = () => page.content();
+      return await linkedinPostComments.run(fp, {
+        urn: POST,
+        count: 100,
+        start: 0,
+        sort: "recent",
+      });
+    } finally {
+      await browser.close();
+    }
+  }
+
+  it("sorts newest first and calls a read whole only when it shows every counted comment", async () => {
+    const whole = await read(2);
+    expect(whole).toMatchObject({ sort: "recent", more: false, paging: { total: 2 } });
+    expect(
+      (whole as { elements: Array<{ message: { text: string } }> }).elements.map(
+        (e) => e.message.text,
+      ),
+    ).toEqual(["new", "old"]);
+    // The bar counts a third the list never loaded: not whole, so no "absent".
+    expect(await read(3)).toMatchObject({ more: true, paging: { total: 3 } });
+  });
+
+  it("proves absent from the page's flag, or the API's first page against its total", () => {
+    expect(wholeRead({ more: false, elements: [] })).toBe(true);
+    expect(wholeRead({ more: true, elements: [] })).toBe(false);
+    expect(wholeRead({ paging: { start: 0, total: 1 }, elements: [{}] })).toBe(true);
+    expect(wholeRead({ paging: { start: 0, total: 2 }, elements: [{}] })).toBe(false);
+    expect(wholeRead({ paging: { start: 0 }, elements: [] })).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import {
   isActCall,
   postCodesOf,
 } from "../src/browser/flows/instagram-act.js";
+import { actAndProve, actAnswerOf } from "../src/browser/flows/kit.js";
 import { linkedinFollow, linkedinLike } from "../src/browser/flows/linkedin-act.js";
 import { postsSearchUrl } from "../src/browser/flows/linkedin-posts.js";
 import {
@@ -331,7 +332,12 @@ describe("linkedin acts", () => {
     const { fp, acts } = fakePage({
       text: [""],
       url: "https://www.linkedin.com/feed/update/urn:li:activity:1/",
-      present: (h) => (/no reaction\$/.test(String(h.name)) ? !done : done),
+      present: (h) =>
+        /reaction button/.test(String(h.name))
+          ? /no reaction\$/.test(String(h.name))
+            ? !done
+            : done
+          : false,
       onAct: () => {
         done = true;
       },
@@ -345,20 +351,108 @@ describe("linkedin acts", () => {
 
   it("finds Follow under More for a Connect-first member", async () => {
     let opened = false;
+    let followed = false;
     const { fp, acts } = fakePage({
       text: [""],
       url: "https://www.linkedin.com/in/someone/",
       present: (h) => {
         const css = String(h.css ?? "");
         if (/aria-label="More"/.test(css)) return true;
-        if (/div\[role=button\]\[aria-label\^="Follow /.test(css)) return opened;
+        if (/div\[role=button\]\[aria-label\^="Follow /.test(css)) return opened && !followed;
+        if (/div\[role=button\]\[aria-label\^="Unfollow /.test(css)) return opened && followed;
         return false;
       },
-      onAct: () => {
-        opened = true;
+      onAct: (n) => {
+        const css = String(acts[n - 1]?.hints.css);
+        if (/aria-label="More"/.test(css)) opened = true;
+        else if (/aria-label\^="Follow /.test(css)) followed = true;
       },
     });
     expect(await linkedinFollow.run(fp, { vanity: "someone" })).toEqual({ following: true });
-    expect(acts).toHaveLength(2);
+    // More, Follow, then More again on the reload that proves it
+    expect(acts).toHaveLength(3);
+  });
+});
+
+describe("act proof", () => {
+  const on: Hints = { css: "#on" };
+  const off: Hints = { css: "#off" };
+  /** A page whose `response` listeners the test fires, as the site would answer the click. */
+  const answering = (
+    reply: { url: string; method: string; status: number; body: string } | null,
+  ) => {
+    let shown = false;
+    const listeners: Array<(r: unknown) => Promise<void>> = [];
+    const made = fakePage({ text: [""], present: (h) => same(h, shown ? on : off) });
+    made.fp.page = {
+      on: (_e: string, f: (r: unknown) => Promise<void>) => listeners.push(f),
+      off() {},
+    } as never;
+    const click = async () => {
+      shown = true;
+      if (reply)
+        for (const f of listeners)
+          await f({
+            url: () => reply.url,
+            status: () => reply.status,
+            text: async () => reply.body,
+            request: () => ({ method: () => reply.method }),
+          });
+    };
+    let opens = 0;
+    made.fp.open = async () => {
+      opens++;
+    };
+    return { ...made, click, opens: () => opens, undo: () => (shown = false) };
+  };
+  const prove = (p: ReturnType<typeof answering>) =>
+    actAndProve(p.fp, {
+      click: p.click,
+      call: /x\.com\/i\/api\/graphql\/\w+\/FavoriteTweet/,
+      what: "like",
+      reload: {
+        open: () => p.fp.open("https://x.com/i/status/1"),
+        state: async () => ((await p.fp.has(on)) ? true : (await p.fp.has(off)) ? false : null),
+      },
+      want: true,
+    });
+
+  it("takes the site's own answer as proof, with no reload", async () => {
+    const p = answering({
+      url: "https://x.com/i/api/graphql/abc/FavoriteTweet",
+      method: "POST",
+      status: 200,
+      body: '{"data":{"favorite_tweet":"Done"}}',
+    });
+    expect(await prove(p)).toBe("answer");
+    expect(p.opens()).toBe(0);
+  });
+
+  it("hands a refused act to a person", async () => {
+    const p = answering({
+      url: "https://x.com/i/api/graphql/abc/FavoriteTweet",
+      method: "POST",
+      status: 200,
+      body: '{"errors":[{"message":"rate limited"}]}',
+    });
+    await expect(prove(p)).rejects.toThrow(/refused the like: rate limited/);
+  });
+
+  it("with no answer seen, reloads and reads the state", async () => {
+    const kept = answering(null);
+    expect(await prove(kept)).toBe("reload");
+    expect(kept.opens()).toBe(1);
+    const lost = answering(null);
+    lost.fp.open = async () => {
+      lost.undo();
+    };
+    await expect(prove(lost)).rejects.toThrow(/did not keep the like/);
+  });
+
+  it("reads 4xx and errors lists as refusals, any other 2xx as kept", () => {
+    expect(actAnswerOf(403, "")).toEqual({ refused: "HTTP 403" });
+    expect(actAnswerOf(200, '{"errors":[{"message":"no"}]}')).toEqual({ refused: "no" });
+    expect(actAnswerOf(200, "")).toEqual({ kept: true });
+    expect(actAnswerOf(201, '{"data":{}}')).toEqual({ kept: true });
   });
 });

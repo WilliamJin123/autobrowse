@@ -422,6 +422,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
       count: z.number(),
       start: z.number(),
       pages: z.record(z.string(), z.string()).optional(),
+      sort: z.union([z.literal("relevant"), z.literal("recent")]).optional(),
     }),
     true,
   ),
