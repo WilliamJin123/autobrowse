@@ -70,3 +70,14 @@ export async function askSecretTwice(
   if (first !== again) throw new Error("the two did not match");
   return first;
 }
+
+/** One visible line from the terminal. */
+export async function askLine(question: string): Promise<string> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}

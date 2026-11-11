@@ -42,7 +42,7 @@ import { CLIPBOARD_MS, macClipboard, pasteboard } from "./cli-env.js";
 import { type KeysCliDeps, registerKeyCommands } from "./cli-keys.js";
 import { credLinkUrl, type Settings } from "./config.js";
 import { headed } from "./display.js";
-import { askSecret, askSecretTwice } from "./prompt.js";
+import { askLine, askSecret, askSecretTwice } from "./prompt.js";
 import {
   auditFor,
   browserFor,
@@ -173,16 +173,18 @@ export function registerAuthCommands(
     .action(async (siteArg: string, o: { username?: string; clipboard?: boolean }) => {
       const site = accountSite(siteArg);
       // A terminal has no JSON to pipe: reading fd 0 there fails with EAGAIN.
-      const raw = o.username
+      // A terminal with no --username: ask it out loud, then the password hidden.
+      const username =
+        o.username ??
+        (process.stdin.isTTY ? (await askLine("username: ")).trim() || undefined : undefined);
+      const raw = username
         ? {
-            username: o.username,
+            username,
             password: o.clipboard ? oneLine(await pasteboard()) : await askSecret("password: "),
           }
         : process.stdin.isTTY
           ? (() => {
-              throw new Error(
-                "pipe JSON in, or give --username (with --clipboard, or type the password hidden)",
-              );
+              throw new Error("no username: give --username, or type one at the prompt");
             })()
           : JSON.parse(readFileSync(0, "utf8"));
       const parsed = credentialSchema.safeParse(raw);
