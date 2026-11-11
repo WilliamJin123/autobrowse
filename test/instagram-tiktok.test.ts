@@ -208,6 +208,7 @@ describe("instagram and tiktok consents and OAuth shapes", () => {
       "chatgpt",
       "gemini",
       "linkedin",
+      "linkedin-pages",
       "youtube",
       "instagram",
       "threads",

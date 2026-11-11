@@ -135,6 +135,8 @@
     "linkedin POST /rest/posts write !",
     "linkedin POST /rest/socialActions/{urn}/comments write !",
     "linkedin POST /upload write",
+    "linkedin-pages GET /rest/networkSizes/{urn} read",
+    "linkedin-pages GET /rest/organizations read",
     "lobsters GET /domains/{domain} read",
     "lobsters GET /stories read",
     "lobsters GET /stories/{id} read",
