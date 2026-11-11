@@ -265,10 +265,10 @@ export interface Scroll {
 
 async function scrollOf(page: Page): Promise<Scroll | undefined> {
   const s = await page
-    .evaluate(() => {
-      const el = document.scrollingElement ?? document.documentElement;
-      return { y: el.scrollTop, h: el.scrollHeight, view: innerHeight };
-    })
+    // in-page source as text: this file has no DOM lib
+    .evaluate<{ y: number; h: number; view: number }>(
+      "(() => { const el = document.scrollingElement ?? document.documentElement; return { y: el.scrollTop, h: el.scrollHeight, view: innerHeight }; })()",
+    )
     .catch(() => null);
   if (!s) return undefined;
   const out = { above: Math.round(s.y), below: Math.max(0, Math.round(s.h - s.y - s.view)) };

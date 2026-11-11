@@ -968,9 +968,11 @@ async function serve(
       if (c.text !== undefined)
         await page.getByText(c.text).first().waitFor({ state: "visible", timeout: ms });
       else if (c.gone !== undefined)
-        await page.waitForFunction((t) => !document.body?.innerText.includes(t), c.gone, {
-          timeout: ms,
-        });
+        await page.waitForFunction(
+          `!document.body?.innerText.includes(${JSON.stringify(c.gone)})`,
+          undefined,
+          { timeout: ms },
+        );
       else if (c.url !== undefined) {
         const part = c.url;
         await page.waitForURL((u) => u.href.includes(part), { timeout: ms });
