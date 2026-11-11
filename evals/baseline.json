@@ -1,0 +1,28 @@
+{
+  "at": "2026-11-11T02:08:44.913Z",
+  "model": "claude-code/sonnet",
+  "split": {
+    "train": {
+      "n": 8,
+      "pass": 8
+    },
+    "test": {
+      "n": 4,
+      "pass": 3
+    }
+  },
+  "tasks": {
+    "quotes-first-author": true,
+    "books-price": true,
+    "hn-top-story": true,
+    "wiki-eiffel-year": true,
+    "example-heading": true,
+    "quotes-top-tag": true,
+    "books-travel-count": true,
+    "wiki-dune-author": true,
+    "books-velvet-rating": true,
+    "quotes-page2-author": false,
+    "wiki-australia-capital": true,
+    "httpbin-html-author": true
+  }
+}
