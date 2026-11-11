@@ -281,6 +281,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
     leg: Leg,
     profile?: string | null,
     at?: string | null,
+    /** A read route's leg: shares the profile's browser with other reads (U15). */
+    reads = false,
   ): Promise<Runnable | null> => {
     if ("flow" in leg) {
       const flow = deps.flow(leg.flow) as BrowserFlow<unknown, unknown> | null;
@@ -288,11 +290,12 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       // Under another profile the same flow signs in as that account. The site's own login
       // runs where its credential's session lives: a provider's profile when it signs in through
       // the provider's button (William's LinkedIn, in `google`), as `browserFor` opens it.
-      const sited = !profile
+      const placed = !profile
         ? flow
         : profile !== flow.site
           ? { ...flow, site: profile }
           : { ...flow, profile: flow.profile ?? ("provider" as const) };
+      const sited = reads ? { ...placed, reads: true as const } : placed;
       return Object.assign(
         (input: unknown, on?: { page: Page }) =>
           runLeg(deps.runner, sited, input, on ? { on } : {}),
@@ -692,7 +695,12 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
               409,
               `${method} ${r.path}: no ${s.site} profile signs in as the chosen account (autobrowse accounts); creds paste ${s.site}@<label> with its username`,
             );
-          const run = await legOf(r.browser, profile, at);
+          const run = await legOf(
+            r.browser,
+            profile,
+            at,
+            accessOf(r) === "read" && !r.irreversible,
+          );
           if (!run)
             throw new SiteError(
               501,

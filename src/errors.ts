@@ -9,6 +9,7 @@ import { z } from "zod";
 import { profileBusyOf } from "./browser/browsers.js";
 import { FlowFailed, FlowInterrupted, isTransientBrowserError } from "./browser/flow.js";
 import { RungBroke } from "./browser/ladder.js";
+import { PoolFull } from "./browser/profile-pool.js";
 import { MAY_HAVE_GONE_THROUGH } from "./browser/profile-wait.js";
 import { AccessRefused, NeedsHuman } from "./browser/session.js";
 import { HttpError } from "./clients/http.js";
@@ -118,7 +119,7 @@ function codeOf(err: unknown): { code: ErrorCode; status?: number; retryAfter?: 
       code: err.wall === "captcha" ? "platform_blocked" : err.wall ? "need_login" : "needs_person",
     };
   if (err instanceof PaymentGate || err instanceof GateOpen) return { code: "gate_refused" };
-  if (profileBusyOf(err)) return { code: "profile_busy" };
+  if (profileBusyOf(err) || err instanceof PoolFull) return { code: "profile_busy" };
   if (err instanceof FlowInterrupted || isTransientBrowserError(err))
     return { code: "browser_down" };
   if (err instanceof FlowFailed || err instanceof RungBroke) return { code: "flow_broken" };

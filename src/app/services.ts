@@ -5,7 +5,7 @@ import type { CredentialStore } from "credvault";
 import type { Logger } from "pino";
 import { fileCodeStores, fileDoneActs } from "../browser/attempt.js";
 import type { FlowRunner } from "../browser/flow.js";
-import { flowRunner } from "../browser/flow.js";
+import { browserPool, flowRunner } from "../browser/flow.js";
 import { handsFor } from "../browser/human/index.js";
 import { SessionPark } from "../browser/park.js";
 import { renderer } from "../browser/render.js";
@@ -272,10 +272,13 @@ export async function buildApp(settings: Settings, log: Logger): Promise<App> {
     ] as const)
       process.once(signal, () => void park.closeAll().finally(() => process.exit(code)));
   const browserOpts = browserOptions(settings, display);
+  // One browser per profile for flows and renders alike: reads share it, writes wait (U15).
+  const pool = browserPool(park);
   const browser = holding(
     idle,
     flowRunner(browserOpts, {
       ...(park ? { park } : {}),
+      pool,
       onFailure: (record, file) => failures.hook?.(record, file),
       pace: paceFor(settings),
       // The worker draws only when asked: its headed runs are real accounts.
@@ -368,6 +371,7 @@ export async function buildApp(settings: Settings, log: Logger): Promise<App> {
       render: renderer({
         opts: browserOpts,
         ...(park ? { park } : {}),
+        pool,
         captcha: { hands: handsFor(paceFor(settings)), ...captchaFor(settings, http) },
       }),
       started: fileDoneActs(join(expandHome(settings.artifactsDir), "started-calls")),

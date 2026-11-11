@@ -89,11 +89,12 @@ export async function reapTabs(
   return closed;
 }
 
-/** A blank tab in a background window of its own, as a Playwright page. */
+/** A blank background tab, as a Playwright page; in a window of its own unless `sameWindow`. */
 export async function backgroundTab(
   context: BrowserContext,
   cdp: Pick<CDPSession, "send">,
   timeoutMs = 15_000,
+  o: { sameWindow?: boolean } = {},
 ): Promise<{ page: Page; targetId: string }> {
   // Only tabs that appear now are checked: the person's tabs get no CDP session of ours.
   const fresh: Page[] = [];
@@ -106,7 +107,7 @@ export async function backgroundTab(
   try {
     const { targetId } = await cdp.send("Target.createTarget", {
       url: "about:blank",
-      newWindow: true,
+      newWindow: !o.sameWindow,
       background: true,
     });
     const end = Date.now() + timeoutMs;

@@ -8,9 +8,9 @@ import type { Fixes } from "./fixes.js";
 import type { Pace } from "./human/index.js";
 import type { Strategy } from "./ladder.js";
 import type { Hints } from "./locate.js";
-import type { KeyedMutex } from "./lock.js";
 import type { NetLog } from "./network.js";
 import type { SessionPark } from "./park.js";
+import type { ProfilePool } from "./profile-pool.js";
 import type { Repairer, RepairReport } from "./repair.js";
 import type { Resumes } from "./resume.js";
 import type { LearnedScreens, ScreenHelp, ScreenReader } from "./screens.js";
@@ -191,6 +191,11 @@ export interface BrowserFlow<I, O> {
    * the one `autobrowse login` keeps warm. The site's own profile otherwise.
    */
   profile?: "provider";
+  /**
+   * Reads only: runs beside other reads on the profile, in its own tab (`ProfilePool`, U15).
+   * Absent: a write, alone on the profile. A route's GET leg gets it from the facade.
+   */
+  reads?: true;
   run(fp: FlowPage, input: I): Promise<O>;
   /**
    * Env names the run makes a new value for and keeps. The runner asks before the first act
@@ -319,7 +324,8 @@ export interface RunnerOptions {
   codeStores?: (call: string, scope: string) => CodeStore;
   /** Every failure record written (kind failed/human/interrupted): what healing starts from. */
   onFailure?: (record: FailureRecord, file: string) => void;
-  locks?: KeyedMutex;
+  /** The profile's one browser, shared with the renderer; built from `park` when absent (U15). */
+  pool?: ProfilePool;
   /**
    * Keep each run's browser for the next run on the same site instead of
    * closing it: a gate or a hand-off between two steps keeps the page.

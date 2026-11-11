@@ -15,8 +15,8 @@ import { htmlText } from "../reach/html.js";
 import { challengeOf, NoExit } from "../reach/ladder.js";
 import { type CaptchaOutcome, type Eyes, findCaptcha, solveCaptcha } from "./captcha/index.js";
 import type { Hands } from "./human/index.js";
-import { KeyedMutex } from "./lock.js";
 import type { SessionPark } from "./park.js";
+import { ProfilePool } from "./profile-pool.js";
 import { type BrowserOptions, openSession } from "./session.js";
 
 export type RenderProfile = "fetch" | "fetch@exit";
@@ -101,60 +101,66 @@ export interface RenderDeps {
   captcha?: RenderCaptcha;
   /** Without a park the browser closes after each render. */
   park?: SessionPark;
-  locks?: KeyedMutex;
+  /** The profile's one browser, shared with the flows (U15); a render is a read. */
+  pool?: ProfilePool;
   sleep?: (ms: number) => Promise<void>;
 }
 
 export function renderer(deps: RenderDeps): Render {
   const { opts, park } = deps;
-  const locks = deps.locks ?? new KeyedMutex();
+  const pool = deps.pool ?? new ProfilePool({ park });
   return async (url, { profile, scheme, probe }) => {
     if (profile === "fetch@exit" && !opts.egress?.exitFor(profile)) throw new NoExit();
     // The same key flows use for a park slot (`browser/flow.ts`).
     const key = (await opts.profileName?.(profile)) ?? profile;
-    return locks.withLock(key, async () => {
-      const session = (await park?.take(key)) ?? (await openSession(profile, opts));
-      // a fetch is a read no person takes over
-      await session.offscreen?.(true);
-      let healthy = false;
-      try {
-        const page = await session.context.newPage();
+    return pool.use(
+      key,
+      "read",
+      () => openSession(profile, opts),
+      async (lease, leave) => {
+        const { session } = lease;
+        // a fetch is a read no person takes over; a joined read leaves the window alone
+        if (lease.owner) await session.offscreen?.(true);
+        let healthy = false;
         try {
-          let last: PwResponse | null = null;
-          page.on("response", (r) => {
-            if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) last = r;
-          });
-          if (scheme) await page.emulateMedia({ colorScheme: scheme });
-          await page.goto(url, { waitUntil: "load", timeout: NAV_MS });
-          const read = async (): Promise<RenderedPage> => ({
-            finalUrl: page.url(),
-            status: last?.status() ?? null,
-            type: last?.headers()["content-type"] ?? null,
-            // A challenge reloads the page under us: wait it out once, then read again.
-            html: await page.content().catch(async () => {
-              await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-              return page.content();
-            }),
-          });
-          let got = await clearChallenge(read, deps.sleep);
-          const c = deps.captcha;
-          if (c?.attempts && looksWalled(got) && (await findCaptcha(page).catch(() => null)))
-            got = await solveWall(
-              got,
-              read,
-              () => solveCaptcha(page, { hands: c.hands, eyes: c.eyes }),
-              c.attempts,
-              deps.sleep,
-            );
-          healthy = true;
-          return probe ? { ...got, probed: await probe(page) } : got;
+          // A joined read already has its own tab; the owner keeps the main page as it was.
+          const page = lease.owner ? await session.context.newPage() : lease.page;
+          try {
+            let last: PwResponse | null = null;
+            page.on("response", (r) => {
+              if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) last = r;
+            });
+            if (scheme) await page.emulateMedia({ colorScheme: scheme });
+            await page.goto(url, { waitUntil: "load", timeout: NAV_MS });
+            const read = async (): Promise<RenderedPage> => ({
+              finalUrl: page.url(),
+              status: last?.status() ?? null,
+              type: last?.headers()["content-type"] ?? null,
+              // A challenge reloads the page under us: wait it out once, then read again.
+              html: await page.content().catch(async () => {
+                await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+                return page.content();
+              }),
+            });
+            let got = await clearChallenge(read, deps.sleep);
+            const c = deps.captcha;
+            if (c?.attempts && looksWalled(got) && (await findCaptcha(page).catch(() => null)))
+              got = await solveWall(
+                got,
+                read,
+                () => solveCaptcha(page, { hands: c.hands, eyes: c.eyes }),
+                c.attempts,
+                deps.sleep,
+              );
+            healthy = true;
+            return probe ? { ...got, probed: await probe(page) } : got;
+          } finally {
+            await page.close().catch(() => undefined);
+          }
         } finally {
-          await page.close().catch(() => undefined);
+          leave({ discard: !healthy });
         }
-      } finally {
-        if (healthy && park) await park.put(key, session);
-        else await session.close().catch(() => undefined);
-      }
-    });
+      },
+    );
   };
 }

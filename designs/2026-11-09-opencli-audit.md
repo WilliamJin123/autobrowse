@@ -379,11 +379,11 @@ Claude open on a sign-in. Those three need accounts: not built.
 | U21 | 52c9b67 | Skill in the package, `skills` command, `llms.txt` |
 | U22 | f3e1fd3, d0ebd42 | `evals/` suite; baseline base1: train 8/8, test 3/4 |
 | U23 | 51778ec | Before/after call hooks; a trusted mod adds sites and hooks |
+| U15 | (this commit) | A pool per profile: reads share one browser in their own tabs, writes alone, bounded queue |
 | Small fixes | 59e26ea, d69bdb6, 354cdd0 | Explore code version and skew warning; `ProfileBusy` op and age; `flow.ts` and `facade.ts` split |
 
 Not built, and why:
-- U9: WA-1148 is parked. William rejected its picks; it waits on a research run and a new design.
-- U15: it exists as `fp.each` (WA-1087, 14666cd).
+- U9: WA-1148 is parked (11-10). Its caps mostly serve wren's warm-up of new accounts for cold outreach, so they go with that wren work. The draft stays: `designs/2026-11-07-warm-up-caps.md`.
 - U19's retention caps: one trace per shape per day and the 14-day sweep exist. A cap that deletes more breaks the keep-data rule.
 - `route()` keeps its type erasure: a typed `SiteRoute<I, O>` in a list fails on variance. The runtime `response` check covers the gap.
 
@@ -392,6 +392,16 @@ Notes:
 - A workflow opts in to the probe with a `.plan.json` beside it. A proof runs every act but the gated ones, and a profile edit is not gated.
 - Installed outside the repo, the packaged skill's `state.sh` prints "none" for sites and workflows.
 - The flow and facade splits keep one entry point each. `flow.ts` re-exports `flow-api.ts`; `facade.ts` re-exports `facade-api.ts`. The runner and facade closures stay whole: they share mutable run state.
+
+### U15 decision (11-10)
+
+| Option | Verdict |
+|---|---|
+| A. A reader-writer pool per profile in the runner: reads share one browser, each in a tab; writes alone; FIFO; bounded queue | **Chosen**. One browser per profile stays true; no new process |
+| B. One browser per read (a profile copy each) | No: a copied profile forks the session cookies; RAM grows by ~300 MB a read |
+| C. Keep one line per profile; parallel only inside a flow (`fp.each`) | No: separate calls on one account still wait for each other |
+
+Rules: a route is a read when its access is `read` and it is not irreversible; a compiled step is one when it has only `read` and `records` ops. A read at a sign-in wall runs again as a write, so one run signs in. A joined read draws no overlay, keeps no trace and leaves the window alone. Limits: 3 reads, 16 waiters (`PoolFull`, `profile_busy`).
 
 ## Plan once William picks
 

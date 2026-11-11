@@ -1,4 +1,4 @@
-import type { BrowserContext, FileChooser, Locator, Page } from "playwright";
+import type { BrowserContext, CDPSession, FileChooser, Locator, Page } from "playwright";
 import type { CaptchaSolve, FlowRunRow } from "../runs/flows.js";
 import { markReached } from "./attempt.js";
 import type { CaptchaOutcome } from "./captcha/index.js";
@@ -13,6 +13,7 @@ import {
 import { type Hands, instantHands, pickOption } from "./human/index.js";
 import { inPage } from "./in-page.js";
 import { type Hints, locate, textOf } from "./locate.js";
+import { backgroundTab } from "./own-tabs.js";
 import { looksLikeWall } from "./session.js";
 
 export const ACT_TIMEOUT_MS = 15_000;
@@ -166,6 +167,24 @@ export async function closeStrayTabs(context: BrowserContext, main: Page): Promi
 }
 
 /**
+ * A background tab beside `from`, matched by target id: another read opening a tab at the
+ * same moment never hands us its page. A context without CDP gets a plain tab, `from` kept in front.
+ */
+export async function backgroundPage(context: BrowserContext, from: Page): Promise<Page> {
+  let cdp: CDPSession | null = null;
+  try {
+    cdp = await context.newCDPSession(from);
+    return (await backgroundTab(context, cdp, SETTLE_MS * 4, { sameWindow: true })).page;
+  } catch {
+    const page = await context.newPage();
+    await from.bringToFront().catch(() => undefined);
+    return page;
+  } finally {
+    await cdp?.detach().catch(() => undefined);
+  }
+}
+
+/**
  * CDP `background: true`: the headed window stays on the main tab.
  * Measured 2026-11-05: lazy rows load in such a tab, headless and headed.
  */
@@ -174,18 +193,7 @@ export async function openReadTab(
   from: Page,
   hands: Hands,
 ): Promise<ReadTab> {
-  const made = context.waitForEvent("page", { timeout: SETTLE_MS * 4 });
-  let page: Page;
-  try {
-    const cdp = await context.newCDPSession(from);
-    await cdp.send("Target.createTarget", { url: "about:blank", background: true });
-    await cdp.detach().catch(() => undefined);
-    page = await made;
-  } catch {
-    made.catch(() => undefined);
-    page = await context.newPage();
-    await from.bringToFront().catch(() => undefined);
-  }
+  const page = await backgroundPage(context, from);
   return {
     page,
     async open(url) {

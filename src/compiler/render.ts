@@ -208,6 +208,12 @@ function renderBrowserStep(o: Outline, step: Extract<OutlineStep, { kind: "brows
   const reads = step.ops.filter(
     (op) => op.kind === "read" || op.kind === "records" || op.kind === "code",
   );
+  // Only reads: it may run beside other reads on the profile (U15). `code` may act, so it is not one.
+  const readOnly =
+    step.ops.length > 0 &&
+    step.ops.every((op) => op.kind === "read" || op.kind === "records") &&
+    !step.irreversible &&
+    !secrets.length;
   const out = step.ops.some((op) => op.kind === "records" || op.kind === "code")
     ? "Record<string, unknown>"
     : "Record<string, string>";
@@ -236,7 +242,7 @@ function renderBrowserStep(o: Outline, step: Extract<OutlineStep, { kind: "brows
 
 const ${id}Flow = defineFlow<${Input}, ${reads.length ? out : "void"}>({
   site: ${q(o.site)},
-  name: ${q(step.name)},
+  name: ${q(step.name)},${readOnly ? "\n  reads: true," : ""}
   async run(fp${inputArgs ? ", input" : ""}) {
 ${flowLines.join("\n") || "    void fp;"}
   },
