@@ -1,0 +1,12 @@
+{"id":"quotes-first-author","split":"train","site":"quotes","url":"https://quotes.toscrape.com/","goal":"Who wrote the first quote on the first page? Answer with the name.","expect":["albert einstein"]}
+{"id":"books-price","split":"train","site":"books","url":"https://books.toscrape.com/","goal":"What is the price of the book 'A Light in the Attic'? Answer with the price as shown.","expect":["51\\.77"]}
+{"id":"hn-top-story","split":"train","site":"hn","url":"https://news.ycombinator.com/","goal":"What is the title of the top story on the Hacker News front page right now?","rubric":"The answer names one story title that a Hacker News front page shows; the steps show the agent read the front page."}
+{"id":"wiki-eiffel-year","split":"train","site":"wikipedia","url":"https://en.wikipedia.org/","goal":"Using Wikipedia, in what year was the Eiffel Tower completed?","expect":["1889"]}
+{"id":"example-heading","split":"train","site":"example","url":"https://example.com/","goal":"What is the main heading on this page?","expect":["example domain"]}
+{"id":"quotes-top-tag","split":"train","site":"quotes","url":"https://quotes.toscrape.com/","goal":"Which tag is listed first in the Top Ten tags box?","expect":["\\blove\\b"]}
+{"id":"books-travel-count","split":"train","site":"books","url":"https://books.toscrape.com/","goal":"How many books are in the Travel category? Answer with the number.","expect":["\\b11\\b"]}
+{"id":"wiki-dune-author","split":"train","site":"wikipedia","url":"https://en.wikipedia.org/","goal":"Using Wikipedia, who wrote the novel Dune (1965)?","expect":["frank herbert"]}
+{"id":"books-velvet-rating","split":"test","site":"books","url":"https://books.toscrape.com/","goal":"What star rating does the book 'Tipping the Velvet' have?","expect":["\\bone\\b","\\b1\\b"]}
+{"id":"quotes-page2-author","split":"test","site":"quotes","url":"https://quotes.toscrape.com/","goal":"Go to the second page of quotes. Who wrote the first quote there?","expect":["marilyn monroe"]}
+{"id":"wiki-australia-capital","split":"test","site":"wikipedia","url":"https://en.wikipedia.org/","goal":"Using Wikipedia, what is the capital city of Australia?","expect":["canberra"]}
+{"id":"httpbin-html-author","split":"test","site":"httpbin","url":"https://httpbin.org/html","goal":"This page shows a passage from a novel. Who is its author?","expect":["herman melville","melville"]}
