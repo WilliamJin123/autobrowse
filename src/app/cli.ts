@@ -166,6 +166,7 @@ program
       }
       const { backend } = local();
       const [workflows, proofs] = await Promise.all([workflowsOf(backend), proofsOf(backend)]);
+      const { isProven } = await import("../workflows/proof.js");
       if (name) {
         const { inputLines, inputsOf, templateOf } = await import("../engine/inputs.js");
         const w = workflows.find((x) => x.name === name);
@@ -188,9 +189,9 @@ program
       const state = (name: string) => {
         const proof = proofs[name];
         if (proof)
-          return proof.status === "done"
+          return isProven(proof)
             ? good(`proven ${proof.at.slice(0, 10)}`)
-            : bad(`proof ${proof.status}`);
+            : bad(proof.status === "done" ? "proof off its fixture" : `proof ${proof.status}`);
         return name in proofs ? warn("draft") : "hand-written";
       };
       for (const line of columns(
@@ -212,7 +213,7 @@ program
     const { find, findable, sitesTree, toolsOf } = await import("../workflows/toolkit.js");
     const { legName } = await import("../engine/leg.js");
     const { SITES } = await import("../sites/index.js");
-    const { proofLine } = await import("../workflows/proof.js");
+    const { isProven, proofLine } = await import("../workflows/proof.js");
     const { backend } = local();
     const [workflows, proofs] = await Promise.all([workflowsOf(backend), proofsOf(backend)]);
     const tools = toolsOf(workflows);
@@ -231,7 +232,7 @@ program
     };
     const proofOf = (name: string) => {
       const proof = proofs[name];
-      if (proof) return proof.status === "done" ? good(proofLine(proof)) : bad(proofLine(proof));
+      if (proof) return isProven(proof) ? good(proofLine(proof)) : bad(proofLine(proof));
       return name in proofs ? warn("draft, never run") : "";
     };
     if (!site && !o.find) {
@@ -473,7 +474,9 @@ program
         const proof = await backend.prove(name, raw);
         for (const line of stepLines(proof.steps)) console.log(line);
         console.log(proof.status);
-        if (proof.status !== "done") process.exitCode = 1;
+        for (const miss of proof.expect?.failed ?? []) console.log(`  expect.json: ${miss}`);
+        const { isProven } = await import("../workflows/proof.js");
+        if (!isProven(proof)) process.exitCode = 1;
         return;
       }
       const out = await runFlow(

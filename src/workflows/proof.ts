@@ -24,7 +24,12 @@ export interface Proof {
   steps: Array<{ name: string; status: string; detail: string }>;
   /** What was read, when the flow reads anything. */
   output: Record<string, string> | null;
+  /** Checked against `expect.json`: `failed` names what the output missed. Absent: no fixture yet. */
+  expect?: { ok: boolean; failed: string[] };
 }
+
+/** Ran to the end and its output holds to its fixture. */
+export const isProven = (p: Proof) => p.status === "done" && p.expect?.ok !== false;
 
 /** Run the workflow once in this process on its own plan defaults; gates are declined (a proof never buys). */
 /**
@@ -115,6 +120,8 @@ export async function readProof(dir: string): Promise<Proof | null> {
 
 /** One line for a message or a log. */
 export function proofLine(proof: Proof): string {
+  if (proof.status === "done" && proof.expect?.ok === false)
+    return `proof off its fixture (expect.json): ${proof.expect.failed.slice(0, 3).join("; ")}`;
   if (proof.status === "done") {
     const out = proof.output ? ` → ${JSON.stringify(proof.output)}` : "";
     return `proven ${proof.at.slice(0, 16)}${out}`;

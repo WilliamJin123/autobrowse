@@ -62,10 +62,11 @@ import { fileLimits } from "../sites/limits.js";
 import { type EventBus, eventBus } from "../ui/bus.js";
 import type { Jobs } from "../ui/jobs.js";
 import { type CompiledCatalog, compiledCatalog } from "../workflows/compiled.js";
+import { checkExpect, readExpect, seedExpect, writeExpect } from "../workflows/expect.js";
 import { withLegs, workflowCatalog } from "../workflows/legs.js";
 import { filePlans, type PlanStore, withDefaults } from "../workflows/plans.js";
 import type { Proof } from "../workflows/proof.js";
-import { proofLine, proveWorkflow, writeProof } from "../workflows/proof.js";
+import { isProven, proofLine, proveWorkflow, writeProof } from "../workflows/proof.js";
 import { linkOnce, SHIPPED_DIR, shippedRoots } from "../workflows/roots.js";
 import type { Ingress } from "./client.js";
 import type { Settings } from "./config.js";
@@ -190,8 +191,15 @@ export async function proveCompiled(
   const found = await catalog.get(name);
   if (!found) throw new Error(`compiled workflow ${name} did not load`);
   const proof = await proveWorkflow(found.workflow, browser, plan ? { plan } : {});
+  if (proof.status === "done") {
+    const fixture = await readExpect(found.dir);
+    if (fixture) {
+      const failed = checkExpect(fixture, proof.output);
+      proof.expect = { ok: failed.length === 0, failed };
+    } else if (proof.output) await writeExpect(found.dir, seedExpect(proof.output, proof.at));
+  }
   await writeProof(found.dir, proof);
-  if (proof.status === "done") await shareFlow(found.dir, proof, plan);
+  if (isProven(proof)) await shareFlow(found.dir, proof, plan);
   return proof;
 }
 

@@ -13,11 +13,12 @@ One in-process run of a compiled workflow on its plan defaults, kept as `proof.j
 
 ## Why this shape
 
-A proof never buys: gates are declined. The same runner with gates approved is how the site facade and `do` run a compiled workflow the caller already gated (`runCompiled`, `src/workflows/proof.ts:49-78`). The catalog shows the last proof so a draft nobody ran is visible.
+A proof never buys: gates are declined. A run that "worked" on a sign-in wall or an empty list is not proven: its output must hold its fixture (`expect.json`). The same runner with gates approved is how the site facade and `do` run a compiled workflow the caller already gated (`runCompiled`, `src/workflows/proof.ts:49-78`). The catalog shows the last proof so a draft nobody ran is visible.
 
 ## Shape
 
 - `Proof { at, status, steps[{name, status, detail}], output }` — `src/workflows/proof.ts:18-25`; `PROOF_FILE` — `:16`; `RunAs { site, profile }` and `runnerAs` (a second account at the provider) — `:35-47`
+- `Proof.expect`: misses against `expect.json` (`src/workflows/expect.ts`: `seedExpect` from the first good proof, `checkExpect` after; never rewritten by code); `isProven` = done and no misses
 - `writeProof`, `readProof`, `proofLine` — `:89-104`; `proveCompiled` — `src/app/backend.ts:156`; jobs run it (`src/ui/jobs.ts:30`)
 
 ## Connected to
