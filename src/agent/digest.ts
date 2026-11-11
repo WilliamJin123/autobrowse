@@ -14,6 +14,7 @@
  * Containers are `role "name":` with children indented one space.
  */
 
+import { cleanText } from "../browser/clean-text.js";
 import type { Extra } from "../browser/extras.js";
 import { frameOfSection } from "../browser/frames.js";
 import type { Hints } from "../browser/locate.js";
@@ -415,7 +416,8 @@ export function digest(aria: string, o: DigestOptions = {}): Digest {
   });
   if (extras.length) lines.push("not in the tree:", ...pack(extras, width - 1).map((l) => ` ${l}`));
   if (hiddenRefs) lines.push(`(+${hiddenRefs} more controls below; scroll or narrow the goal)`);
-  return { text: lines.join("\n"), refs };
+  // refs keep the exact names; only the shown text is cleaned
+  return { text: cleanText(lines.join("\n")), refs };
 }
 
 /** Hints that find the ref'd element again, in the recorder's vocabulary. */

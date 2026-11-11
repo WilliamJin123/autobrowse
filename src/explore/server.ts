@@ -35,6 +35,7 @@ import { credentialFor } from "../auth/login.js";
 import type { SecretValues } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { cardMask, cardShown } from "../browser/card-mask.js";
+import { cleanStrings } from "../browser/clean-text.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
 import { dialogsOf, watchDialogs } from "../browser/dialogs.js";
 import { fetchFile } from "../browser/download.js";
@@ -2871,7 +2872,8 @@ async function serve(
       };
       try {
         const answer = await run(parsed, wait);
-        const body = JSON.stringify(parsed.cmd === "url" ? answer : leanUrls(answer));
+        // page text to the agent: no bidi, zero-width or tag characters
+        const body = JSON.stringify(parsed.cmd === "url" ? answer : leanUrls(answer), cleanStrings);
         counted(parsed, t, null, body, undefined, session);
         reply(body);
       } catch (err) {
@@ -2886,19 +2888,22 @@ async function serve(
         const e = errorOf(err);
         // The browser went mid-act: the click or submit may have landed.
         const outcome = e.outcome ?? (LOOKS.has(parsed.cmd) && browserGone(err) ? "unknown" : null);
-        const body = JSON.stringify({
-          error,
-          code: e.code,
-          retryable: e.retryable,
-          ...(outcome ? { outcome } : {}),
-          url: shortUrl(page.url()),
-          ...(err instanceof PaymentGate ? { gate: err.gate, reason: err.reason } : {}),
-          ...(shot
-            ? { marks: shot, hint: 'act on a mark: "hints":{"mark":n}' }
-            : e.code !== "failed"
-              ? { hint: e.hint }
-              : {}),
-        });
+        const body = JSON.stringify(
+          {
+            error,
+            code: e.code,
+            retryable: e.retryable,
+            ...(outcome ? { outcome } : {}),
+            url: shortUrl(page.url()),
+            ...(err instanceof PaymentGate ? { gate: err.gate, reason: err.reason } : {}),
+            ...(shot
+              ? { marks: shot, hint: 'act on a mark: "hints":{"mark":n}' }
+              : e.code !== "failed"
+                ? { hint: e.hint }
+                : {}),
+          },
+          cleanStrings,
+        );
         counted(parsed, t, error ?? "", body, detail, session);
         reply(body);
       }
