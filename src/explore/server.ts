@@ -38,6 +38,7 @@ import { cardMask, cardShown } from "../browser/card-mask.js";
 import { CodeFailed, type CodeStore, planScope, runCode } from "../browser/code.js";
 import { dialogsOf, watchDialogs } from "../browser/dialogs.js";
 import { fetchFile } from "../browser/download.js";
+import { watchDownloads } from "../browser/downloads.js";
 import { collectWhenIdle, holdCollect } from "../browser/driver-memory.js";
 import { extrasOf } from "../browser/extras.js";
 import { filmLog } from "../browser/film.js";
@@ -684,6 +685,7 @@ async function serve(
   let page: Page = fp.page;
   // Popups share the context: one watcher sees every tab's dialogs.
   const dialogs = dialogsOf(fp.page) ?? watchDialogs(fp.page.context());
+  const downloads = watchDownloads(fp.page.context(), join(shotsDir, "downloads"));
   // A film stays clean: its rows go to the pane json.
   const overlay = overlayFor(
     opts.overlay ?? (opts.browser.headless === false && !opts.browser.film),
@@ -949,6 +951,47 @@ async function serve(
       .sort()
       .at(-1);
     return prev ? parseRows(readFileSync(join(shotsDir, prev), "utf8")) : null;
+  };
+  const waitFor = async (c: Extract<Command, { cmd: "wait" }>) => {
+    const asked = (["text", "gone", "url", "hints", "idle", "download"] as const).filter(
+      (k) => c[k] !== undefined,
+    );
+    if (asked.length !== 1)
+      throw new Error("wait: give one of text, gone, url, hints, idle, download");
+    const ms = c.timeout ?? 15_000;
+    const t0 = Date.now();
+    const n = downloads.count();
+    try {
+      if (c.text !== undefined)
+        await page.getByText(c.text).first().waitFor({ state: "visible", timeout: ms });
+      else if (c.gone !== undefined)
+        await page.waitForFunction((t) => !document.body?.innerText.includes(t), c.gone, {
+          timeout: ms,
+        });
+      else if (c.url !== undefined) {
+        const part = c.url;
+        await page.waitForURL((u) => u.href.includes(part), { timeout: ms });
+      } else if (c.hints)
+        await locate(page, c.hints).waitFor({
+          state: c.hidden ? "hidden" : "visible",
+          timeout: ms,
+        });
+      else if (c.idle) await page.waitForLoadState("networkidle", { timeout: ms });
+      else {
+        while (downloads.count() === n) {
+          if (Date.now() - t0 > ms)
+            throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        await downloads.settled();
+        return { waited: Date.now() - t0, download: downloads.since(n)[0] };
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "TimeoutError")
+        throw new Error(`wait: ${asked[0]} not met after ${Math.round(ms / 1000)} s`);
+      throw err;
+    }
+    return { waited: Date.now() - t0, url: page.url() };
   };
   const network = (c: Extract<Command, { cmd: "network" }>) => {
     const log = fp.network;
@@ -1694,14 +1737,23 @@ async function serve(
     if (!LOOKS.has(c.cmd)) return { answer: await act(c, wait), rows: null };
     const before = await rows();
     const seen = dialogs.count();
+    const files = downloads.count();
     const out = await act(c, wait).finally(() => overlay.after(fp.page));
     page = fp.page;
     const after = await rows();
     const changed = pageChange(before, after);
     lastChanged = changed.added.length + changed.gone + (changed.more ?? 0) > 0;
     const opened = dialogs.since(seen);
+    if (downloads.count() > files)
+      await Promise.race([downloads.settled(), new Promise((r) => setTimeout(r, 30_000))]);
+    const got = downloads.since(files);
     return {
-      answer: { ...(out as object), changed, ...(opened.length ? { dialogs: opened } : {}) },
+      answer: {
+        ...(out as object),
+        changed,
+        ...(opened.length ? { dialogs: opened } : {}),
+        ...(got.length ? { downloads: got } : {}),
+      },
       rows: after,
     };
   };
@@ -2334,6 +2386,8 @@ async function serve(
       }
       case "url":
         return { url: page.url() };
+      case "wait":
+        return waitFor(c);
       case "dialog": {
         if (c.accept === undefined) return { dialogs: dialogs.log.slice(-20) };
         dialogs.answerNext({ accept: c.accept, ...(c.text !== undefined ? { text: c.text } : {}) });

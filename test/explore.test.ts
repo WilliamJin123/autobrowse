@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
@@ -751,6 +752,58 @@ describe("explore mode", () => {
     const log = (await send({ cmd: "dialog" })).body.dialogs as { answered: boolean }[];
     expect(log.map((d) => d.answered)).toEqual([false, true]);
   });
+
+  it("U14: wait barriers, a download a click starts is saved, a re-rendered mark is found again", async () => {
+    // A real origin: headless Chrome starts no download from a data: page.
+    const srv = createServer((req, res) => {
+      if (req.url === "/f") {
+        res.writeHead(200, {
+          "content-type": "text/csv",
+          "content-disposition": 'attachment; filename="report.csv"',
+        });
+        return res.end("hello");
+      }
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(`<button onclick="setTimeout(()=>{s.textContent='Ready'},300)">Load</button><p id="s"></p>
+       <a href="/f">Get file</a>
+       <div id="w"><button onclick="document.title='only'">Only</button></div>
+       <button onclick="w.innerHTML=w.innerHTML">Redraw</button>
+       <div style="height:3000px"></div>`);
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    try {
+      const { port: at } = srv.address() as AddressInfo;
+      await send({ cmd: "open", url: `http://127.0.0.1:${at}/` });
+      await send({ cmd: "click", hints: { role: "button", name: "Load" } });
+      expect((await send({ cmd: "wait", text: "Ready" })).status).toBe(200);
+      const never = await send({ cmd: "wait", text: "Never", timeout: 300 });
+      expect(never.status).toBe(500);
+      expect(never.body.error).toMatch(/text not met/);
+      expect((await send({ cmd: "wait", text: "a", gone: "b" })).body.error).toMatch(/one of/);
+
+      const got = await send({ cmd: "click", hints: { role: "link", name: "Get file" } });
+      const [file] = (got.body.downloads ?? []) as Array<{
+        name: string;
+        state: string;
+        file: string;
+        bytes: number;
+      }>;
+      expect(file).toMatchObject({ name: "report.csv", state: "saved", bytes: 5 });
+      expect(readFileSync(file?.file ?? "", "utf8")).toBe("hello");
+
+      const taken = (await send({ cmd: "marks" })).body as {
+        marks: Array<{ n: number; name: string | null }>;
+        scroll?: { above: number; below: number };
+      };
+      expect(taken.scroll?.below).toBeGreaterThan(1000);
+      const only = taken.marks.find((m) => m.name === "Only") as { n: number };
+      await send({ cmd: "click", hints: { role: "button", name: "Redraw" } });
+      expect((await send({ cmd: "click", hints: { mark: only.n } })).status).toBe(200);
+      expect((await send({ cmd: "eval", js: "document.title" })).body.result).toBe("only");
+    } finally {
+      srv.close();
+    }
+  }, 60_000);
 });
 
 describe("pause: a person's hand acts land in the journal", () => {

@@ -218,6 +218,22 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   /** Solve the captcha on the page: the checkbox by hand, a picture by the runner's eyes. Journaled, so the compiled flow solves it too. */
   z.object({ cmd: z.literal("captcha") }),
   /**
+   * Wait for one thing, up to `timeout` ms (15 s; 60 s at most): `text` shows, `gone` text leaves
+   * the page, the URL holds `url`, the control at `hints` shows (or hides, with `hidden`), the
+   * network goes quiet (`idle`), or the next download is saved (`download`). Not journaled.
+   */
+  z.object({
+    cmd: z.literal("wait"),
+    text: z.string().min(1).optional(),
+    gone: z.string().min(1).optional(),
+    url: z.string().min(1).optional(),
+    hints: hintsSchema.optional(),
+    hidden: z.boolean().optional(),
+    idle: z.literal(true).optional(),
+    download: z.literal(true).optional(),
+    timeout: z.number().int().positive().max(60_000).optional(),
+  }),
+  /**
    * Native dialogs (confirm, prompt, alert, leave page). No `accept`: the log. With it: the answer
    * to the next confirm or prompt only. Default: yes to alert and leave page, no to confirm and prompt.
    */

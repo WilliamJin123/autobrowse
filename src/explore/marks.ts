@@ -257,6 +257,24 @@ async function markIndex(all: Locator, attr: string, n: string): Promise<number>
   return -1;
 }
 
+/** Page px out of view, above and below: only controls in view are marked. */
+export interface Scroll {
+  above: number;
+  below: number;
+}
+
+async function scrollOf(page: Page): Promise<Scroll | undefined> {
+  const s = await page
+    .evaluate(() => {
+      const el = document.scrollingElement ?? document.documentElement;
+      return { y: el.scrollTop, h: el.scrollHeight, view: innerHeight };
+    })
+    .catch(() => null);
+  if (!s) return undefined;
+  const out = { above: Math.round(s.y), below: Math.max(0, Math.round(s.h - s.y - s.view)) };
+  return out.above || out.below ? out : undefined;
+}
+
 /** Matches read for a mark's place; a looser try past this many is no use as `nth`. */
 const MAX_MATCHES = 300;
 
@@ -271,14 +289,16 @@ export function marksFor() {
       shoot: () => Promise<string>,
       /** Before the boxes go on: the clean page, for a run's record. */
       clean?: () => Promise<unknown>,
-    ): Promise<{ file: string; marks: Mark[]; boxes: Box[] }> {
+    ): Promise<{ file: string; marks: Mark[]; boxes: Box[]; scroll?: Scroll }> {
       const found = await findAll(page, attr);
+      const scroll = await scrollOf(page);
       taken = new Map(found.map((f) => [f.n, f.hints]));
       await clean?.();
       await page.evaluate(layerScript(attr, found));
       try {
         return {
           file: await shoot(),
+          ...(scroll ? { scroll } : {}),
           boxes: found.map((f) => f.box),
           marks: found.map(({ n, hints: h }) => ({
             n,
@@ -300,9 +320,18 @@ export function marksFor() {
       const h = taken.get(n);
       if (!h) throw new StaleMark(`no mark ${n}: take marks first ({"cmd":"marks"})`);
       const root = h.frame ? page.frameLocator(h.frame) : page;
-      if (!(await root.locator(`[${attr}="${n}"]`).count()))
-        throw new StaleMark(`mark ${n} is stale (the page changed): take marks again`);
       const { nth: _, ...own } = h;
+      if (!(await root.locator(`[${attr}="${n}"]`).count())) {
+        // A re-render took the tag: the control's own hints, if they still find it alone.
+        if (
+          planLocator(own) &&
+          (await locateAll(page, own)
+            .count()
+            .catch(() => 0)) === 1
+        )
+          return own;
+        throw new StaleMark(`mark ${n} is stale (the page changed): take marks again`);
+      }
       const tries: Hints[] = [own];
       const frame = own.frame ? { frame: own.frame } : {};
       if (own.role) tries.push({ tag: own.tag, role: own.role, ...frame });
