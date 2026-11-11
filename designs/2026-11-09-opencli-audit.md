@@ -359,8 +359,8 @@ Claude open on a sign-in. Those three need accounts: not built.
 
 Social reads (built 11-10): ports of their commands, each mapped live first; routes on the signed-in
 profiles, whole items.
-- X (`x-graph.ts`): thread, followers/following, likes, bookmarks, lists, list posts, trending, off
-  the page's own GraphQL answers (`TweetDetail`, `Followers`, `Bookmarks`, `CombinedLists`, …).
+- X (`x-graph.ts`): thread, followers/following, our own likes (X hides others' likes), bookmarks,
+  lists, list posts, trending (trend cells when no answer carries trends), off the page's own GraphQL answers (`TweetDetail`, `Followers`, `Bookmarks`, `CombinedLists`, …).
 - Instagram (`instagram-people.ts`): profile by the page's `PolarisProfilePageContentQuery`, then
   followers/following by `friendships/<pk>`, explore grid, saved. The username calls answer 404.
 - TikTok (`tiktok-reads.ts`): user from the rehydration data, videos, explore, notifications.

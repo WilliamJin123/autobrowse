@@ -339,12 +339,11 @@ export const x: SiteApi = {
     }),
     route({
       method: "GET",
-      path: "/web/{username}/likes",
+      path: "/web/likes",
       standing: { waits: "x-paid-reads" },
       summary:
-        "Posts an account liked (X shows likes to their owner only), each tweet whole as X's own GraphQL sends it (`tweet_results.result`): `{ items, calls }` (`max`, default 50). Reads only",
+        "Posts the signed-in account liked (X shows likes to their owner only), each tweet whole as X's own GraphQL sends it (`tweet_results.result`): `{ items, calls }` (`max`, default 50). Reads only",
       request: z.object({
-        username: z.string().regex(/^@?\w{1,15}$/, "an X handle"),
         max: z.coerce.number().int().min(1).max(500).optional(),
       }),
       meter: () => ({ likes: 1 }),
@@ -395,7 +394,7 @@ export const x: SiteApi = {
       path: "/web/trending",
       standing: { waits: "x-paid-reads" },
       summary:
-        "What X shows as trending to the signed-in account, each trend whole: `{ items, calls }` (`max`, default 30). Reads only",
+        "What X shows as trending to the signed-in account, each trend whole: `{ items, calls }` (`max`, default 30); no trend in the answers: `cells`, each trend cell's lines. Reads only",
       request: z.object({ max: z.coerce.number().int().min(1).max(100).optional() }),
       meter: () => ({ trending: 1 }),
       browser: { flow: "x/trending" },

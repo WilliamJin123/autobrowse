@@ -53,9 +53,13 @@ export function entitiesOf(
       const l = o.list as Record<string, unknown>;
       put(l.id_str ?? l.id, l);
     }
-    if (kind === "trend" && o.trend && typeof o.trend === "object") {
-      const t = o.trend as Record<string, unknown>;
-      put(t.name, t);
+    if (kind === "trend") {
+      // `TimelineTrend` items carry the name on themselves; older answers nest a `trend`.
+      if (o.__typename === "TimelineTrend") put(o.name, o);
+      else if (o.trend && typeof o.trend === "object") {
+        const t = o.trend as Record<string, unknown>;
+        put(t.name, t);
+      }
     }
     for (const x of Object.values(o)) walk(x);
   };
@@ -144,18 +148,29 @@ export const xPeople = defineFlow<
   },
 });
 
-/** Posts an account liked; X shows likes to their owner only (`Likes`). */
-export const xLikes = defineFlow<{ username: string; max?: number }, Captured>({
+/** The signed-in account's handle, off the side bar's profile link. */
+const OWN_HANDLE = `(() => {
+  const h = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]')?.getAttribute("href");
+  return h ? h.replace(/^\\//, "") : null;
+})()`;
+
+/** Posts the signed-in account liked (`Likes`): X shows likes to their owner only. */
+export const xLikes = defineFlow<{ max?: number }, Captured>({
   site: "x",
   name: "likes",
   strategies: ["intercept"],
-  run: (fp, { username, max }) =>
-    read(fp, {
-      url: `${WEB}/${handle(username)}/likes`,
+  async run(fp, { max }) {
+    await fp.open(`${WEB}/home`);
+    if (SIGNED_OUT.test(fp.url())) return signedOut(fp);
+    const own = (await fp.page.evaluate(OWN_HANDLE).catch(() => null)) as string | null;
+    if (!own) throw new RungBroke("no profile link in the side bar");
+    return read(fp, {
+      url: `${WEB}/${handle(own)}/likes`,
       ops: ["Likes"],
       kind: "tweet",
       max: capOf(max, 50, 500),
-    }),
+    });
+  },
 });
 
 /** Our bookmarks (`Bookmarks`). */
@@ -200,17 +215,29 @@ export const xListPosts = defineFlow<{ id: string; max?: number }, Captured>({
     }),
 });
 
+/** Trend cells' lines (rank and place, name, posts) when no answer carried trends. */
+const TREND_CELLS = `[...document.querySelectorAll('[data-testid="trend"]')].map((c) =>
+  [...c.querySelectorAll('div[dir="ltr"]')].map((d) => d.textContent.trim()).filter(Boolean))`;
+
 /** What is trending for the signed-in account (`ExplorePage`, `GenericTimelineById`). */
-export const xTrending = defineFlow<{ max?: number }, Captured>({
+export const xTrending = defineFlow<{ max?: number }, Captured & { cells?: string[][] }>({
   site: "x",
   name: "trending",
-  strategies: ["intercept"],
-  run: (fp, { max }) =>
-    read(fp, {
+  strategies: ["intercept", "ui"],
+  async run(fp, { max }) {
+    const cap = capOf(max, 30, 100);
+    const got = await read(fp, {
       url: `${WEB}/explore/tabs/trending`,
       ops: ["ExplorePage", "GenericTimelineById"],
       kind: "trend",
-      max: capOf(max, 30, 100),
+      max: cap,
       scroll: false,
-    }),
+    });
+    if (got.items.length) return got;
+    const cells = ((await fp.page.evaluate(TREND_CELLS).catch(() => [])) as string[][]).slice(
+      0,
+      cap,
+    );
+    return { ...got, cells };
+  },
 });

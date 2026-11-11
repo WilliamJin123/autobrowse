@@ -785,9 +785,9 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
   entry(xLike, z.object({ id: z.string(), undo: z.boolean().optional() }), true),
   entry(
     xLikes,
-    z.object({ username: z.string(), max: z.number().optional() }),
+    z.object({ max: z.number().optional() }),
     true,
-    "Posts an account liked; X shows likes to their owner only (`Likes`).",
+    "Posts the signed-in account liked (`Likes`): X shows likes to their owner only.",
   ),
   entry(
     xListPosts,

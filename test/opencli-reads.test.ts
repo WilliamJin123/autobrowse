@@ -59,6 +59,8 @@ describe("x GraphQL entities", () => {
     expect([...entitiesOf(body, "user").keys()]).toEqual(["9"]);
     expect([...entitiesOf({ a: [{ list: { id_str: "L1" } }] }, "list").keys()]).toEqual(["L1"]);
     expect([...entitiesOf({ t: { trend: { name: "#x" } } }, "trend").keys()]).toEqual(["#x"]);
+    const item = { itemContent: { __typename: "TimelineTrend", name: "#y", trend_url: {} } };
+    expect([...entitiesOf([item], "trend").keys()]).toEqual(["#y"]);
   });
 
   it("matches only the named operations", () => {
