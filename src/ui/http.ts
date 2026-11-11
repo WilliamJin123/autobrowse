@@ -36,6 +36,8 @@ export type ErrorCode =
   | "profile_busy"
   /** Chrome or its connection died under the flow: retry with a fresh session. */
   | "browser_down"
+  /** The URL is outside the net rules (private address, scheme, allowlist): nothing was sent. */
+  | "url_refused"
   /** Our flow threw on the page (a selector, a step): the page likely changed. */
   | "flow_broken"
   /** A command failed for a reason its message says (no element matched, no such name). */

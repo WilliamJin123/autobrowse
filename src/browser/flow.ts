@@ -74,6 +74,7 @@ const FLOW_NET_BYTES = 8 * 1024 * 1024;
 
 export * from "./flow-api.js";
 
+import { NetRefused } from "../reach/net-guard.js";
 import {
   type BrowserFlow,
   FlowFailed,
@@ -983,6 +984,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               throw err;
             }
             if (err instanceof AccessRefused) throw err;
+            // the URL broke the net rules: no page changed, nothing to repair
+            if (err instanceof NetRefused) throw err;
             if (kind === "interrupted") {
               broken = true;
               // an irreversible act began: a retry could send twice, so a person checks first

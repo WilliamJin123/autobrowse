@@ -1,4 +1,5 @@
 import type { BrowserContext, CDPSession, FileChooser, Locator, Page } from "playwright";
+import { checkUrl, landedOk } from "../reach/net-guard.js";
 import type { CaptchaSolve, FlowRunRow } from "../runs/flows.js";
 import { markReached } from "./attempt.js";
 import type { CaptchaOutcome } from "./captcha/index.js";
@@ -81,7 +82,9 @@ const NAVIGATE_MS = 90_000;
  * before that would call an unauthenticated page "signed in".
  */
 export async function settle(page: Page, url: string): Promise<void> {
+  await checkUrl(url, { browser: true });
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATE_MS });
+  await landedOk(page);
   // after the load: a goto that fails offline reached nothing
   markReached();
   await page.waitForLoadState("networkidle", { timeout: SETTLE_MS }).catch(() => undefined);

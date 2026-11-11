@@ -13,6 +13,7 @@
 import type { Page, Response as PwResponse } from "playwright";
 import { htmlText } from "../reach/html.js";
 import { challengeOf, NoExit } from "../reach/ladder.js";
+import { checkUrl, landedOk } from "../reach/net-guard.js";
 import { type CaptchaOutcome, type Eyes, findCaptcha, solveCaptcha } from "./captcha/index.js";
 import type { Hands } from "./human/index.js";
 import type { SessionPark } from "./park.js";
@@ -131,7 +132,9 @@ export function renderer(deps: RenderDeps): Render {
               if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) last = r;
             });
             if (scheme) await page.emulateMedia({ colorScheme: scheme });
+            await checkUrl(url, { browser: true });
             await page.goto(url, { waitUntil: "load", timeout: NAV_MS });
+            await landedOk(page);
             const read = async (): Promise<RenderedPage> => ({
               finalUrl: page.url(),
               status: last?.status() ?? null,

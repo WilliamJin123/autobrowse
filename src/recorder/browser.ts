@@ -11,6 +11,7 @@ import { inPage } from "../browser/in-page.js";
 import { secret as holdSecret } from "../browser/secrets.js";
 import type { Session } from "../browser/session.js";
 import { scrubSecretsFile } from "../browser/trace-secrets.js";
+import { checkUrl } from "../reach/net-guard.js";
 import type { DistributiveOmit } from "../types.js";
 import { BINDING, OBSERVER_SCRIPT } from "./observer.js";
 import { looksLikeSecretField, looksLikeSecretValue, REDACTED } from "./redact.js";
@@ -94,6 +95,7 @@ export async function startBrowserRecording(opts: {
   now?: () => number;
 }): Promise<ActiveRecording> {
   const { session, dir, control } = opts;
+  if (opts.startUrl) await checkUrl(opts.startUrl, { browser: true });
   const now = opts.now ?? Date.now;
   const t0 = now();
   const actions: Action[] = [];

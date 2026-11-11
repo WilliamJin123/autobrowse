@@ -11,8 +11,11 @@
  * an answer, not a block. Rungs are injected, so tests use fakes; `realRungs`
  * builds the live ones. Serves `web GET /fetch`.
  */
+
 import type { Render, RenderedPage } from "../browser/render.js";
+import { fetchWithLookup } from "../share/fetch.js";
 import { htmlText, looksLikeJsShell } from "./html.js";
+import { followChecked, guardedLookup, NetRefused } from "./net-guard.js";
 
 /** A desktop browser's name: some sites answer a bare fetch with a bot page. */
 export const UA =
@@ -313,6 +316,15 @@ const gotOf = async (res: {
   html: await res.text(),
 });
 
+/** A refusal stays a refusal (one sits under undici's "fetch failed"); else as `named`. */
+const refusedOrNamed = (e: unknown): never => {
+  for (let c: unknown = e, hops = 0; c && hops < 5; hops++) {
+    if (c instanceof NetRefused) throw c;
+    c = (c as { cause?: unknown }).cause;
+  }
+  return named(e);
+};
+
 /** A transport failure becomes a `Transport`; anything else stays what it was. */
 const named = (e: unknown): never => {
   const kind = transportOf(e);
@@ -323,28 +335,44 @@ const named = (e: unknown): never => {
 };
 
 let impit: Promise<import("impit").Impit> | undefined;
-/** One Chrome-shaped client for the process (its connection pool); loaded on first use, a native module. */
+/**
+ * One Chrome-shaped client for the process (its connection pool); loaded on first use, a native
+ * module. Redirects by hand: each hop passes the net guard first.
+ */
 const chrome = () =>
   (impit ??= import("impit").then(
-    ({ Impit }) => new Impit({ browser: "chrome", timeout: TIMEOUT_MS, followRedirects: true }),
+    ({ Impit }) => new Impit({ browser: "chrome", timeout: TIMEOUT_MS, followRedirects: false }),
   ));
+
+/** The plain rung's fetch: its connect lookup refuses blocked addresses (DNS rebinding). */
+const guardedFetch = fetchWithLookup(guardedLookup());
 
 /** The live rungs. `fetch` is the plain rung's (tests pass a fake); `render` is the api leg's browser. */
 export function realRungs(deps: { fetch?: typeof fetch; render?: Render }): Rungs {
-  const f = deps.fetch ?? fetch;
+  const f = deps.fetch ?? guardedFetch;
   const render = deps.render;
   return {
-    plain: (url) =>
-      f(url, {
-        headers: { "User-Agent": UA, Accept: "text/html,*/*" },
-        redirect: "follow",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      }).then(gotOf, named),
+    plain: async (url) => {
+      try {
+        const res = await followChecked(url, (u) =>
+          f(u, {
+            headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+            redirect: "manual",
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+        );
+        return { ...(await gotOf(res)), finalUrl: res.finalUrl };
+      } catch (e) {
+        return refusedOrNamed(e);
+      }
+    },
     impersonate: async (url) => {
       try {
-        return await gotOf(await (await chrome()).fetch(url));
+        const client = await chrome();
+        const res = await followChecked(url, (u) => client.fetch(u));
+        return { ...(await gotOf(res)), finalUrl: res.finalUrl };
       } catch (e) {
-        return named(e);
+        return refusedOrNamed(e);
       }
     },
     ...(render

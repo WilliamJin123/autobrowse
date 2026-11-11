@@ -15,6 +15,7 @@ import { AccessRefused, NeedsHuman } from "./browser/session.js";
 import { HttpError } from "./clients/http.js";
 import { GateOpen } from "./engine/effects.js";
 import { PaymentGate } from "./gates/payment.js";
+import { NetRefused } from "./reach/net-guard.js";
 import { SiteError } from "./sites/types.js";
 import type { ErrorCode } from "./ui/http.js";
 
@@ -52,6 +53,8 @@ const HINT: Partial<Record<ErrorCode, string>> = {
   gate_refused: "a person said no or has not answered: never work around it",
   profile_busy: "another browser holds the profile: wait, or see `autobrowse browsers`",
   browser_down: "the browser or its connection died: retry the same call",
+  url_refused:
+    "the URL is a private address, a non-http scheme or outside NET_ALLOW_DOMAINS: do not retry",
   not_configured: "a key, token or leg is missing: `autobrowse site status <site>`",
   not_found: "no such route, site or thing: check the name",
   bad_request: "fix the input: read `message`",
@@ -94,6 +97,7 @@ const CODE_STATUS: Partial<Record<ErrorCode, number>> = {
   needs_person: 409,
   gate_refused: 403,
   profile_busy: 409,
+  url_refused: 403,
   browser_down: 503,
   flow_broken: 502,
   internal: 500,
@@ -119,6 +123,7 @@ function codeOf(err: unknown): { code: ErrorCode; status?: number; retryAfter?: 
       code: err.wall === "captcha" ? "platform_blocked" : err.wall ? "need_login" : "needs_person",
     };
   if (err instanceof PaymentGate || err instanceof GateOpen) return { code: "gate_refused" };
+  if (err instanceof NetRefused) return { code: "url_refused" };
   if (profileBusyOf(err) || err instanceof PoolFull) return { code: "profile_busy" };
   if (err instanceof FlowInterrupted || isTransientBrowserError(err))
     return { code: "browser_down" };
@@ -189,6 +194,7 @@ export function exitCodeOf(e: Pick<ErrorContract, "code" | "status" | "outcome">
     case "forbidden":
     case "gate_refused":
     case "needs_person":
+    case "url_refused":
       return 77;
     case "not_configured":
       return 78;

@@ -5,6 +5,7 @@
  * ENOTFOUND the call goes again with the host resolved by public resolvers.
  */
 import { Resolver } from "node:dns/promises";
+import type { LookupFunction } from "node:net";
 import type { Agent } from "undici";
 
 const MISSING = new Set(["ENOTFOUND", "EAI_AGAIN"]);
@@ -49,3 +50,15 @@ export const shareFetch: typeof fetch = async (input, init) => {
     })) as unknown as Response;
   }
 };
+
+/**
+ * Global fetch through an undici agent whose connect lookup is `lookup` (the net guard):
+ * the address dialed is the one checked. Agent made on first call, undici loaded then.
+ */
+export function fetchWithLookup(lookup: LookupFunction): typeof fetch {
+  let made: Promise<Agent> | undefined;
+  return async (input, init) => {
+    made ??= import("undici").then((u) => new u.Agent({ connect: { lookup } }));
+    return fetch(input, { ...init, dispatcher: await made } as unknown as RequestInit);
+  };
+}

@@ -115,6 +115,26 @@ const schema = z.object({
   browserKeepMinutes: z.coerce.number().min(0).default(10),
   /** At most this many browsers kept open at once (~300 MB each). */
   browserKeepMax: z.coerce.number().int().min(1).default(2),
+  /** Fetches and browsers may reach 127/8 and ::1 (local tools); false on a server. */
+  netLoopback: z
+    .string()
+    .default("true")
+    .transform((v) => !/^(false|0|no)$/i.test(v)),
+  /** Fetches and browsers may reach private and link-local addresses (a router page); off by default. */
+  netAllowPrivate: z
+    .string()
+    .default("false")
+    .transform((v) => /^(true|1|yes)$/i.test(v)),
+  /** Comma list of host suffixes fetches and browsers may reach; empty = any public host. */
+  netAllowDomains: z
+    .string()
+    .default("")
+    .transform((v) =>
+      v
+        .split(",")
+        .map((d) => d.trim().toLowerCase().replace(/^\.+/, ""))
+        .filter(Boolean),
+    ),
   /** Most background tabs a `code` run reads in at once (`fp.each`); acts stay on the one main tab. */
   readTabs: z.coerce.number().int().min(1).max(8).default(3),
   /** How the browser acts: `human` (paced like a person; sites watch for the other kind) or `fast` (demos, tests). */
@@ -444,6 +464,9 @@ export const ENV_KEYS = {
   browserKeepMax: "BROWSER_KEEP_MAX",
   pace: "PACE",
   readTabs: "READ_TABS",
+  netLoopback: "NET_LOOPBACK",
+  netAllowPrivate: "NET_ALLOW_PRIVATE",
+  netAllowDomains: "NET_ALLOW_DOMAINS",
   showPointer: "SHOW_POINTER",
   overlay: "AUTOBROWSE_OVERLAY",
   film: "AUTOBROWSE_FILM",

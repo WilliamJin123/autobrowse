@@ -19,6 +19,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Page, Route } from "playwright";
 import { z } from "zod";
+import { checkUrl } from "../reach/net-guard.js";
 import { type ProfileBusy, profileBusyOf } from "./browsers.js";
 import type { FlowRunner, HeldTab } from "./flow.js";
 
@@ -288,6 +289,7 @@ export class Watchers {
         if (l.held !== held) return;
         this.closed(l, "the tab closed");
       });
+      await checkUrl(spec.url, { browser: true });
       await page.goto(spec.url, { waitUntil: "domcontentloaded", timeout: 60_000 });
       l.openedAt = this.now();
       l.backoffMs = 60_000;
