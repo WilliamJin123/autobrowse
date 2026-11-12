@@ -65,3 +65,4 @@ All three sit in `siteFacade.call`, so the CLI, the Hono door and the Restate/de
 - 2026-11-12: Own breaker over cockatiel or opossum: one store with the 429 trip, keys per token.
 - 2026-11-12: Bodies option B: hourly gzip files, S3 after the hour.
 - 2026-11-12: Storage stays local for now (William: "is fine for now"). A Postgres adapter is the open question.
+- 2026-11-12: Storage path agreed: option C when autobrowse runs on a server (William: "C is probably right… when we scale autobrowse and put it on a server machine"). Postgres holds what two processes must agree on: caps and pace slots, 429 and breaker trips, the jobs ledger. The cache stays per process; bodies stay files + S3; profiles stay local. The server takes API legs; browser legs stay on the home IP. Task WA-1337 (parked).
