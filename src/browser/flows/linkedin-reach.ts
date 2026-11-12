@@ -24,8 +24,10 @@ import { apply, type FacetInput } from "../../sites/facets/core.js";
 import { LINKEDIN_JSON, LINKEDIN_PEOPLE } from "../../sites/facets/sets.js";
 import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
+import { ladder, RungBroke } from "../ladder.js";
 import type { Hints } from "../locate.js";
-import { pageFetch } from "../page-json.js";
+import { captureJson, pageFetch, parseJson } from "../page-json.js";
+import { AccessRefused } from "../session.js";
 
 /** The little of the DOM these page scripts touch; the project compiles without lib dom. */
 interface El {
@@ -935,6 +937,80 @@ export interface ConnectionsInput {
 export interface Connection extends Person {
   /** The page's own label: "Connected on October 5, 2026" or "Connected 2 days ago". */
   connected?: string;
+  /** Below: off the connections JSON; absent on the page read. ISO time connected. */
+  connectedAt?: string;
+  /** The element as LinkedIn sent it. */
+  item?: Record<string, unknown>;
+}
+
+/** LinkedIn's older connections list (voyager REST), newest first, `start`/`count` paged. */
+const CONNECTIONS_JSON = "/voyager/api/relationships/connections";
+const CONNECTIONS_PAGE = 40;
+
+/** One element of the connections JSON as a connection; null without a stable handle. */
+export function connectionOfJson(e: unknown): Connection | null {
+  const o = e && typeof e === "object" ? (e as Record<string, unknown>) : null;
+  const mini =
+    o?.miniProfile && typeof o.miniProfile === "object"
+      ? (o.miniProfile as Record<string, unknown>)
+      : null;
+  const vanity = typeof mini?.publicIdentifier === "string" ? mini.publicIdentifier.trim() : "";
+  if (!o || !mini || !vanity || /[\s/?#]/.test(vanity)) return null;
+  const str = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
+  const name = [str(mini.firstName), str(mini.lastName)].filter(Boolean).join(" ") || vanity;
+  const headline = str(mini.occupation);
+  const ms = typeof o.createdAt === "number" ? o.createdAt : 0;
+  return {
+    name,
+    vanity,
+    url: `${WEB}/in/${encodeURIComponent(vanity)}/`,
+    degree: "1st",
+    ...(headline ? { headline } : {}),
+    ...(ms > 0 ? { connectedAt: new Date(ms).toISOString() } : {}),
+    item: o,
+  };
+}
+
+/** The connections JSON with the session's CSRF token: up to `max`, a person's pause between pages. */
+async function connectionsJson(fp: FlowPage, max: number): Promise<Connection[]> {
+  const jsession = (await fp.page.context().cookies(WEB)).find(
+    (c) => c.name === "JSESSIONID",
+  )?.value;
+  if (!jsession) throw new RungBroke("no JSESSIONID cookie");
+  const headers = {
+    "csrf-token": jsession.replace(/^"|"$/g, ""),
+    accept: "application/json",
+    "x-restli-protocol-version": "2.0.0",
+  };
+  const out: Connection[] = [];
+  const seen = new Set<string>();
+  for (let start = 0; out.length < max; ) {
+    const count = Math.min(CONNECTIONS_PAGE, max - out.length);
+    const res = await pageFetch(fp, `${CONNECTIONS_JSON}?start=${start}&count=${count}`, {
+      headers,
+    });
+    if (res.status === 429)
+      throw new AccessRefused("rate_limited", `${CONNECTIONS_JSON}: HTTP 429`);
+    const parsed = parseJson(res.text);
+    // A legacy route may be gone or refuse this session: any other miss falls to the page read.
+    if (res.status !== 200 || !parsed.ok)
+      throw new RungBroke(
+        `${CONNECTIONS_JSON}: HTTP ${res.status}${parsed.ok ? "" : ", not JSON"}`,
+      );
+    const elements = (parsed.json as { elements?: unknown }).elements;
+    if (!Array.isArray(elements)) throw new RungBroke(`${CONNECTIONS_JSON}: no elements`);
+    for (const e of elements) {
+      const c = connectionOfJson(e);
+      if (c && !seen.has(c.vanity) && out.length < max) {
+        seen.add(c.vanity);
+        out.push(c);
+      }
+    }
+    if (elements.length < count) break;
+    start += elements.length;
+    await fp.wait(SETTLE_MS);
+  }
+  return out;
 }
 
 const CONNECTED = /^connected\b.*$/im;
@@ -985,32 +1061,51 @@ const MORE_TRIES = 12;
  * until `max`, the header's count, or two scrolls that load nothing. Cards
  * that read no person are an error, never an empty list.
  */
-export const linkedinConnections = defineFlow<ConnectionsInput, { connections: Connection[] }>({
+export const linkedinConnections = defineFlow<
+  ConnectionsInput,
+  { connections: Connection[]; via?: string; fell?: string[] }
+>({
   site: "linkedin",
   name: "connections",
-  strategies: ["ui"],
+  strategies: ["cookie", "ui"],
   async run(fp, input) {
     const max = input.max ?? 40;
     await go(fp, `${WEB}/mynetwork/invite-connect/connections/`);
-    const read = (p: FlowPage) => rowsOnPage(p, CONNECTION_CARDS);
-    const first = await waitRows(fp, "connections list", NO_CONNECTIONS, read);
-    if (!first.length) return { connections: [] };
-    await fp.wait(SETTLE_MS);
-    let connections = connectionsOf(await read(fp), max);
-    const total = totalOf(await fp.text());
-    const want = Math.min(max, total ?? max);
-    for (let i = 0, idle = 0; i < MORE_TRIES && connections.length < want && idle < 2; i++) {
-      const before = connections.length;
-      await fp.scroll(2_000);
-      await fp.wait(SETTLE_MS);
-      connections = connectionsOf(await read(fp), max);
-      idle = connections.length > before ? 0 : idle + 1;
-    }
-    if (!connections.length)
-      return fp.human(`the connection cards at ${fp.url()} read no person (${first.length} cards)`);
-    return { connections };
+    const climbed = await ladder<{ connections: Connection[] }>([
+      { strategy: "cookie", run: async () => ({ connections: await connectionsJson(fp, max) }) },
+      { strategy: "ui", run: () => connectionsOnPage(fp, max) },
+    ]);
+    return {
+      ...climbed.value,
+      via: climbed.via,
+      ...(climbed.fell.length ? { fell: climbed.fell.map((f) => `${f.strategy}: ${f.why}`) } : {}),
+    };
   },
 });
+
+/** The connection cards off the page: the fallback rung. */
+async function connectionsOnPage(
+  fp: FlowPage,
+  max: number,
+): Promise<{ connections: Connection[] }> {
+  const read = (p: FlowPage) => rowsOnPage(p, CONNECTION_CARDS);
+  const first = await waitRows(fp, "connections list", NO_CONNECTIONS, read);
+  if (!first.length) return { connections: [] };
+  await fp.wait(SETTLE_MS);
+  let connections = connectionsOf(await read(fp), max);
+  const total = totalOf(await fp.text());
+  const want = Math.min(max, total ?? max);
+  for (let i = 0, idle = 0; i < MORE_TRIES && connections.length < want && idle < 2; i++) {
+    const before = connections.length;
+    await fp.scroll(2_000);
+    await fp.wait(SETTLE_MS);
+    connections = connectionsOf(await read(fp), max);
+    idle = connections.length > before ? 0 : idle + 1;
+  }
+  if (!connections.length)
+    return fp.human(`the connection cards at ${fp.url()} read no person (${first.length} cards)`);
+  return { connections };
+}
 
 export interface InboxInput {
   /** How many conversations from the top (default 20). */
@@ -1028,10 +1123,148 @@ export interface Conversation {
   vanity?: string;
   /** The last message's text as the list previews it. */
   preview: string;
-  /** The list's own time label ("2h", "Sep 29"). */
+  /** The list's own time label ("2h", "Sep 29"); the ISO time when read off the JSON. */
   when: string;
   unread: boolean;
+  /** Below: off the page's own `messengerConversations` JSON; absent on the page read. */
+  threadId?: string;
+  /** Last activity, ISO. */
+  at?: string;
+  unreadCount?: number;
+  categories?: string[];
+  /** Everyone but the inbox owner. */
+  participants?: InboxParticipant[];
+  /** The conversation entity as LinkedIn sent it. */
+  item?: Record<string, unknown>;
 }
+
+export interface InboxParticipant {
+  name: string;
+  kind: "member" | "organization" | "agent" | "";
+  vanity: string | null;
+  urn: string | null;
+}
+
+type Obj = Record<string, unknown>;
+const asObj = (v: unknown): Obj | null =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : null;
+const textOf = (v: unknown): string => {
+  const o = asObj(v);
+  const t = o ? o.text : v;
+  return typeof t === "string" ? t.replace(/\s+/g, " ").trim() : "";
+};
+const CONVERSATION = "com.linkedin.messenger.Conversation";
+
+function participantOf(p: Obj): InboxParticipant {
+  const pt = asObj(p.participantType) ?? {};
+  const urn = typeof p.hostIdentityUrn === "string" ? p.hostIdentityUrn : null;
+  const org = asObj(pt.organization);
+  if (org) return { name: textOf(org.name), kind: "organization", vanity: null, urn };
+  const m = asObj(pt.member);
+  if (m) {
+    const name = [textOf(m.firstName), textOf(m.lastName)].filter(Boolean).join(" ");
+    const url = typeof m.profileUrl === "string" ? m.profileUrl : "";
+    return { name, kind: "member", vanity: url ? vanityOf(url) : null, urn };
+  }
+  const agent = asObj(pt.agent);
+  if (agent) return { name: textOf(agent.name), kind: "agent", vanity: null, urn };
+  return { name: "", kind: "", vanity: null, urn };
+}
+
+/**
+ * Conversations in `messengerConversations` answers, newest first, one per thread. Reads both
+ * shapes: normalized (`included[]`, `*` URN refs) and plain GraphQL (nested objects). `owner`,
+ * the mailbox URN, is left out of each conversation's people.
+ */
+export function conversationsOf(bodies: readonly unknown[], owner: string | null): Conversation[] {
+  const byUrn = new Map<string, Obj>();
+  const convs: Obj[] = [];
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+      return;
+    }
+    const o = asObj(v);
+    if (!o) return;
+    if (typeof o.entityUrn === "string") byUrn.set(o.entityUrn, o);
+    if (
+      (o.$type ?? o._type ?? o.__typename) === CONVERSATION ||
+      (typeof o.backendUrn === "string" &&
+        /messagingThread/.test(o.backendUrn) &&
+        ("conversationParticipants" in o || "*conversationParticipants" in o))
+    ) {
+      convs.push(o);
+    }
+    for (const x of Object.values(o)) walk(x);
+  };
+  for (const b of bodies) walk(b);
+  const refs = (o: Obj, key: string): Obj[] => {
+    const nested = o[key];
+    if (Array.isArray(nested)) return nested.map(asObj).filter((x): x is Obj => x !== null);
+    const ids = o[`*${key}`];
+    if (!Array.isArray(ids)) return [];
+    return ids
+      .map((u) => (typeof u === "string" ? byUrn.get(u) : undefined))
+      .filter((x): x is Obj => !!x);
+  };
+  const rows = new Map<string, Conversation & { ms: number }>();
+  for (const c of convs) {
+    const threadId = String(c.backendUrn ?? c.entityUrn ?? "").replace(
+      /^urn:li:(messagingThread|msg_conversation):/,
+      "",
+    );
+    if (!threadId || rows.has(threadId)) continue;
+    const people = refs(c, "conversationParticipants")
+      .filter((p) => !owner || p.hostIdentityUrn !== owner)
+      .map(participantOf)
+      .filter((p) => p.name);
+    const msgs = asObj(c.messages);
+    const last = msgs ? refs(msgs, "elements")[0] : undefined;
+    const ms = Number(c.lastActivityAt ?? 0);
+    const unreadCount = Number(c.unreadCount ?? 0);
+    const at = ms > 0 ? new Date(ms).toISOString() : "";
+    const vanity = people.length === 1 ? people[0]?.vanity : null;
+    rows.set(threadId, {
+      ms,
+      url: `${WEB}/messaging/thread/${threadId}/`,
+      name: textOf(c.title) || people.map((p) => p.name).join(", "),
+      ...(vanity ? { vanity } : {}),
+      preview: (textOf(last?.body) || textOf(c.descriptionText)).slice(0, 300),
+      when: at,
+      unread: unreadCount > 0 || c.read === false,
+      threadId,
+      at,
+      unreadCount,
+      categories: Array.isArray(c.categories)
+        ? c.categories.filter((x): x is string => typeof x === "string")
+        : [],
+      participants: people,
+      item: c,
+    });
+  }
+  return [...rows.values()].sort((a, b) => b.ms - a.ms).map(({ ms: _, ...r }) => r);
+}
+
+const CONVERSATION_CALLS =
+  /\/voyager\/api\/voyagerMessagingGraphQL\/graphql\?.*messengerConversations/;
+
+/** The mailbox URN off the page's own conversations call (the signed-in member). */
+const MAILBOX_SCRIPT = `(() => {
+  const u = performance.getEntriesByType("resource").map((e) => e.name)
+    .find((n) => /messengerConversations/.test(n) && /mailboxUrn/.test(n));
+  const m = u && /mailboxUrn:(urn[^,)&]+)/.exec(u);
+  return m ? decodeURIComponent(m[1]) : null;
+})()`;
+
+/** Scrolls the conversation list to its end, so the page asks for its next page. */
+const INBOX_SCROLL = `(() => {
+  const boxes = Array.from(document.querySelectorAll("main *")).filter(
+    (el) => el.scrollHeight > el.clientHeight + 20 && /auto|scroll/.test(getComputedStyle(el).overflowY)
+      && el.querySelector("a[href*='/messaging/thread/']"),
+  );
+  boxes.forEach((el) => { el.scrollTop = el.scrollHeight; });
+  return boxes.length > 0;
+})()`;
 
 /**
  * The messaging inbox's left list, newest first: who, the preview, whether
@@ -1043,59 +1276,118 @@ export interface Conversation {
  */
 export const linkedinInbox = defineFlow<
   InboxInput,
-  { conversations: Conversation[]; badge: number }
+  { conversations: Conversation[]; badge: number; via?: string; fell?: string[] }
 >({
   site: "linkedin",
   name: "inbox",
-  strategies: ["ui"],
+  strategies: ["intercept", "ui"],
   async run(fp, input) {
     const max = input.max ?? 20;
-    await go(fp, `${WEB}/messaging/${input.unread ? "?filter=unread" : ""}`);
-    if (!(await fp.has({ css: "main" }, RENDER_MS))) return fp.human(`no inbox at ${fp.url()}`);
-    await fp.wait(SETTLE_MS * 2);
-    const got = await fp.page.evaluate(() => {
-      const rows = [...document.querySelectorAll("main li")]
-        .filter((li) => li.querySelector("a[href*='/messaging/thread/']"))
-        .filter((li) => !li.querySelector("li"));
-      const badge = Number(
+    let opened = false;
+    const open = async () => {
+      if (opened) return;
+      opened = true;
+      await go(fp, `${WEB}/messaging/${input.unread ? "?filter=unread" : ""}`);
+      if (!(await fp.has({ css: "main" }, RENDER_MS))) fp.human(`no inbox at ${fp.url()}`);
+    };
+    const climbed = await ladder<Conversation[]>([
+      {
+        strategy: "intercept",
+        run: async () => {
+          const { bodies } = await captureJson(fp, { match: CONVERSATION_CALLS }, async (seen) => {
+            await open();
+            await fp.wait(SETTLE_MS * 2);
+            for (let i = 0, idle = 0; i < 6 && idle < 2; i++) {
+              const before = conversationsOf(seen, null).length;
+              if (before >= max || !before) break;
+              await fp.page.evaluate(INBOX_SCROLL).catch(() => false);
+              await fp.wait(SETTLE_MS);
+              idle = conversationsOf(seen, null).length > before ? 0 : idle + 1;
+            }
+          });
+          const owner = await fp.page.evaluate<string | null>(MAILBOX_SCRIPT).catch(() => null);
+          const rows = conversationsOf(bodies, owner);
+          if (!rows.length)
+            throw new RungBroke(`no conversations in ${bodies.length} messaging answers`);
+          return (input.unread ? rows.filter((r) => r.unread) : rows).slice(0, max);
+        },
+      },
+      {
+        strategy: "ui",
+        run: async () => {
+          await open();
+          return (await inboxOnPage(fp)).conversations.slice(0, max);
+        },
+      },
+    ]);
+    return {
+      conversations: climbed.value,
+      badge: await badgeOf(fp),
+      via: climbed.via,
+      ...(climbed.fell.length ? { fell: climbed.fell.map((f) => `${f.strategy}: ${f.why}`) } : {}),
+    };
+  },
+});
+
+const badgeOf = (fp: FlowPage) =>
+  fp.page
+    .evaluate(() =>
+      Number(
         /\d+/.exec(
           document.querySelector("a[href*='/messaging/'] .notification-badge__count")
             ?.textContent ?? "",
         )?.[0] ?? "0",
-      );
-      return {
-        badge,
-        rows: rows.map((li) => {
-          const a = li.querySelector("a[href*='/messaging/thread/']") as { href: string } | null;
-          const profile = li.querySelector("a[href*='/in/']") as { href: string } | null;
-          const lines =
-            (li as { innerText?: string }).innerText
-              ?.split("\n")
-              .map((l) => l.trim())
-              .filter(Boolean) ?? [];
-          return {
-            url: a?.href ?? "",
-            profile: profile?.href ?? "",
-            lines,
-            unread:
-              /\bunread\b/i.test(li.className) ||
-              Boolean(li.querySelector("[class*='unread'], .notification-badge")),
-          };
-        }),
-      };
-    });
-    const conversations: Conversation[] = got.rows.slice(0, max).map((r) => {
-      const [name = "", ...rest] = r.lines;
-      const when =
-        rest.find((l) => /^(\d+[smhdw]|[A-Z][a-z]{2} \d{1,2}|\d{1,2}:\d{2}\s?(AM|PM)?)$/.test(l)) ??
-        "";
-      const preview = rest
-        .filter((l) => l !== when)
-        .join(" ")
-        .slice(0, 300);
-      const v = r.profile ? vanityOf(r.profile) : null;
-      return { url: r.url, name, ...(v ? { vanity: v } : {}), preview, when, unread: r.unread };
-    });
-    return { conversations, badge: got.badge };
-  },
-});
+      ),
+    )
+    .catch(() => 0);
+
+/** The inbox's left list off the page: the fallback rung. */
+async function inboxOnPage(
+  fp: FlowPage,
+): Promise<{ conversations: Conversation[]; badge: number }> {
+  await fp.wait(SETTLE_MS * 2);
+  const got = await fp.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("main li")]
+      .filter((li) => li.querySelector("a[href*='/messaging/thread/']"))
+      .filter((li) => !li.querySelector("li"));
+    const badge = Number(
+      /\d+/.exec(
+        document.querySelector("a[href*='/messaging/'] .notification-badge__count")?.textContent ??
+          "",
+      )?.[0] ?? "0",
+    );
+    return {
+      badge,
+      rows: rows.map((li) => {
+        const a = li.querySelector("a[href*='/messaging/thread/']") as { href: string } | null;
+        const profile = li.querySelector("a[href*='/in/']") as { href: string } | null;
+        const lines =
+          (li as { innerText?: string }).innerText
+            ?.split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean) ?? [];
+        return {
+          url: a?.href ?? "",
+          profile: profile?.href ?? "",
+          lines,
+          unread:
+            /\bunread\b/i.test(li.className) ||
+            Boolean(li.querySelector("[class*='unread'], .notification-badge")),
+        };
+      }),
+    };
+  });
+  const conversations: Conversation[] = got.rows.map((r) => {
+    const [name = "", ...rest] = r.lines;
+    const when =
+      rest.find((l) => /^(\d+[smhdw]|[A-Z][a-z]{2} \d{1,2}|\d{1,2}:\d{2}\s?(AM|PM)?)$/.test(l)) ??
+      "";
+    const preview = rest
+      .filter((l) => l !== when)
+      .join(" ")
+      .slice(0, 300);
+    const v = r.profile ? vanityOf(r.profile) : null;
+    return { url: r.url, name, ...(v ? { vanity: v } : {}), preview, when, unread: r.unread };
+  });
+  return { conversations, badge: got.badge };
+}

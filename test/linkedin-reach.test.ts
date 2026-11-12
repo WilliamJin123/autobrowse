@@ -8,6 +8,7 @@ import {
   companyIdOf,
   companyOf,
   connectionOf,
+  connectionOfJson,
   connectionsOf,
   jobCardsOf,
   jobsOf,
@@ -587,7 +588,34 @@ describe("linkedin reach: the 2026 connections page", () => {
   it("empty only when the page says zero", async () => {
     const zero = "<main><section><p>0 connections</p></section></main>";
     const { out } = await onPage(zero, (fp) => linkedinConnections.run(fp, {}));
-    expect(out).toEqual({ connections: [] });
+    expect(out).toEqual({
+      connections: [],
+      via: "ui",
+      fell: ["cookie: no JSESSIONID cookie"],
+    });
+  });
+
+  it("the connections JSON: handle, name, headline, time, the raw element; no handle, no row", () => {
+    const e = {
+      createdAt: 1_792_000_000_000,
+      miniProfile: {
+        publicIdentifier: "sam-synth",
+        firstName: "Sam",
+        lastName: " Synth ",
+        occupation: "Founder,  Synth Co",
+      },
+    };
+    expect(connectionOfJson(e)).toEqual({
+      name: "Sam Synth",
+      vanity: "sam-synth",
+      url: "https://www.linkedin.com/in/sam-synth/",
+      degree: "1st",
+      headline: "Founder, Synth Co",
+      connectedAt: new Date(1_792_000_000_000).toISOString(),
+      item: e,
+    });
+    expect(connectionOfJson({ miniProfile: { publicIdentifier: "a b" } })).toBeNull();
+    expect(connectionOfJson({})).toBeNull();
   });
 
   it("a search page with no rows and no 'No results' is an error too", async () => {

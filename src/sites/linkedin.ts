@@ -948,7 +948,7 @@ export const linkedin: SiteApi = {
       path: "/connections",
       standing: { waits: "linkedin-partner" },
       summary:
-        "Recently added connections, newest first (`max`, default 40): name, handle, headline, when they connected",
+        "Recently added connections, newest first (`max`, default 40): name, handle, headline, when they connected (`connectedAt` and the raw `item` off the connections JSON, else the page's label); `via` says which",
       request: newest,
       meter: () => ({ network: 1 }),
       browser: { flow: "linkedin/connections" },
@@ -1012,7 +1012,7 @@ export const linkedin: SiteApi = {
       path: "/messaging",
       standing: { waits: "linkedin-partner" },
       summary:
-        "The inbox's conversations newest first (`max`, `unread=true`): name, handle, preview, unread",
+        "The inbox's conversations newest first (`max`, `unread=true`): name, handle, preview, unread; off the page's own messaging JSON also `threadId`, `at`, `unreadCount`, `categories`, `participants`, raw `item`; `via` says which",
       request: inbox,
       meter: () => ({ inbox: 1 }),
       browser: { flow: "linkedin/inbox" },

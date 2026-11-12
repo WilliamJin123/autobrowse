@@ -4,7 +4,7 @@ import type { CodeKind, SignInContext } from "../src/auth/login.js";
 import { SITE_LOGINS } from "../src/auth/sites.js";
 import { signInToTiktok, TIKTOK_LOGIN_URL } from "../src/auth/tiktok.js";
 import { countOf } from "../src/browser/flows/dialog-following.js";
-import { feedPostsOf, followedOfIg } from "../src/browser/flows/instagram-act.js";
+import { feedPostsOf, followedOfIg, mediaPostOf } from "../src/browser/flows/instagram-act.js";
 import { instagramOauthConsent } from "../src/browser/flows/instagram-oauth-consent.js";
 import { followedOfThreads } from "../src/browser/flows/threads-following.js";
 import { followedOfTiktok } from "../src/browser/flows/tiktok-following.js";
@@ -462,9 +462,83 @@ describe("instagram home feed", () => {
         likes: 12,
         comments: 3,
         timestamp: new Date(1_792_000_000_000).toISOString(),
+        id: null,
+        views: null,
+        kind: null,
+        media: [],
+        coauthors: [],
+        location: null,
       },
       expect.objectContaining({ shortcode: "BBB333", caption: "", likes: null }),
     ]);
+  });
+});
+
+describe("instagram post media record", () => {
+  const record = {
+    pk: "3790000000000000001",
+    code: "CAR111",
+    taken_at: 1_792_000_000,
+    media_type: 8,
+    like_count: 1234,
+    comment_count: 56,
+    play_count: null,
+    view_count: 7890,
+    caption: { text: "two frames" },
+    user: { username: "sam_synth" },
+    coauthor_producers: [{ username: "kim_synth" }],
+    location: { name: "Toronto" },
+    carousel_media: [
+      {
+        image_versions2: {
+          candidates: [
+            { url: "https://cdn.test/a-small.jpg", width: 320, height: 320 },
+            { url: "https://cdn.test/a-big.jpg", width: 1080, height: 1080 },
+          ],
+        },
+      },
+      {
+        video_versions: [{ url: "https://cdn.test/b.mp4", width: 720, height: 1280 }],
+        image_versions2: { candidates: [{ url: "https://cdn.test/b.jpg", width: 720 }] },
+      },
+    ],
+  };
+  const blob = {
+    require: [
+      [
+        {
+          __bbox: {
+            result: { data: { xdt_api__v1__media__shortcode__web_info: { items: [record] } } },
+          },
+        },
+      ],
+    ],
+  };
+
+  it("finds the post by code and keeps exact counts, frames and the raw item", () => {
+    const post = mediaPostOf(blob, "CAR111");
+    expect(post).toMatchObject({
+      shortcode: "CAR111",
+      username: "sam_synth",
+      caption: "two frames",
+      likes: 1234,
+      comments: 56,
+      views: 7890,
+      id: "3790000000000000001",
+      kind: "carousel",
+      coauthors: ["kim_synth"],
+      location: "Toronto",
+      timestamp: new Date(1_792_000_000_000).toISOString(),
+      media: [
+        { kind: "image", url: "https://cdn.test/a-big.jpg", width: 1080, height: 1080 },
+        { kind: "video", url: "https://cdn.test/b.mp4", width: 720, height: 1280 },
+      ],
+    });
+    expect(post?.item).toBe(record);
+  });
+
+  it("skips other posts' records", () => {
+    expect(mediaPostOf(blob, "OTHER9")).toBeNull();
   });
 });
 

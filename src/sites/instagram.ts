@@ -487,7 +487,7 @@ export const instagram: SiteApi = {
           "no API reads a post by its shortcode. First pass by API where the account is known: business_discovery lists its posts",
       },
       summary:
-        "Any public post: owner `username`, caption, likes, comments, timestamp (the page's own tags)",
+        "Any public post off its page's media record: owner `username`, caption, exact likes, comments, views, timestamp, `id`, `kind`, `media` frames, `coauthors`, `location`, raw `item`; rounded counts from the meta tags when the record is missing",
       request: z.object({ shortcode }),
       meter: () => ({ post: 1 }),
       browser: { flow: "instagram/post" },

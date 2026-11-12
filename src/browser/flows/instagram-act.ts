@@ -259,6 +259,23 @@ export interface IgPost {
   likes: number | null;
   comments: number | null;
   timestamp: string | null;
+  /** Below: from the page's media record; absent when only the meta tags read. */
+  id?: string | null;
+  views?: number | null;
+  kind?: "image" | "video" | "carousel" | null;
+  /** Each frame, carousel items in order: the largest image, the first video. */
+  media?: IgMedia[];
+  coauthors?: string[];
+  location?: string | null;
+  /** The whole media record as Instagram sent it (single post read only). */
+  item?: Record<string, unknown>;
+}
+
+export interface IgMedia {
+  kind: "image" | "video";
+  url: string;
+  width: number | null;
+  height: number | null;
 }
 
 const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
@@ -315,15 +332,31 @@ export function igPostOf(html: string, shortcode: string): IgPost | null {
   };
 }
 
+/** Prefetch blobs holding the post's media record (`xdt_api__v1__media__shortcode__web_info`). */
+const MEDIA_BLOBS = `Array.from(document.querySelectorAll("script[data-sjs]"))
+  .map((s) => s.textContent || "")
+  .filter((t) => t.includes("shortcode__web_info"))`;
+
+/**
+ * A post by its code. The page embeds its media record (exact counts, views, frames, coauthors);
+ * the meta tags are the fallback (rounded counts). Mapped live 2026-11-12 on `/p/<code>/`; a
+ * `/reel/<code>/` URL lands on the Reels tab instead.
+ */
 export const instagramPost = defineFlow<PostInput, IgPost | { found: false; reason: string }>({
   site: "instagram",
   name: "post",
-  strategies: ["ui"],
+  strategies: ["intercept", "ui"],
   async run(fp, { shortcode }) {
     await openIg(fp, postUrl(shortcode));
     for (let i = 0; i < RENDER_MS / SETTLE_MS; i++) {
+      const blobs = await fp.page.evaluate<string[]>(MEDIA_BLOBS).catch(() => [] as string[]);
+      for (const b of blobs)
+        for (const j of jsonsOf(b)) {
+          const full = mediaPostOf(j, shortcode);
+          if (full) return full;
+        }
       const post = igPostOf(await fp.html(), shortcode);
-      if (post?.username) return post;
+      if (post?.username && i >= 1) return post;
       if (MISSING.test(await fp.text()))
         return { found: false, reason: `no Instagram post ${shortcode}` };
       await fp.wait(SETTLE_MS);
@@ -462,15 +495,100 @@ function jsonsOf(text: string): unknown[] {
 }
 
 interface Media {
+  pk?: unknown;
+  id?: unknown;
   code?: unknown;
   taken_at?: unknown;
   like_count?: unknown;
   comment_count?: unknown;
+  play_count?: unknown;
+  ig_play_count?: unknown;
+  view_count?: unknown;
+  media_type?: unknown;
   caption?: { text?: unknown } | null;
   user?: { username?: unknown; friendship_status?: { following?: unknown } } | null;
+  image_versions2?: { candidates?: unknown } | null;
+  video_versions?: unknown;
+  carousel_media?: unknown;
+  coauthor_producers?: unknown;
+  location?: { name?: unknown } | null;
 }
 
 const countOrNull = (n: unknown) => (typeof n === "number" ? n : null);
+const KIND: Record<number, IgPost["kind"]> = { 1: "image", 2: "video", 8: "carousel" };
+
+/** The largest candidate of a version list: `{url, width, height}` rows. */
+function biggest(
+  list: unknown,
+): { url: string; width: number | null; height: number | null } | null {
+  if (!Array.isArray(list)) return null;
+  let best: { url: string; width: number | null; height: number | null } | null = null;
+  for (const c of list as Array<Record<string, unknown>>) {
+    if (typeof c?.url !== "string") continue;
+    const row = { url: c.url, width: countOrNull(c.width), height: countOrNull(c.height) };
+    if (!best || (row.width ?? 0) > (best.width ?? 0)) best = row;
+  }
+  return best;
+}
+
+/** One frame: its video when it has one, else its largest image. */
+function frameOf(m: Media): IgMedia | null {
+  const video = biggest(m.video_versions);
+  if (video) return { kind: "video", ...video };
+  const image = biggest(m.image_versions2?.candidates);
+  return image ? { kind: "image", ...image } : null;
+}
+
+/** A media record as a post; null when it lacks a code, a time or an owner. */
+export function postOfMedia(m: Media): IgPost | null {
+  const username = m.user?.username;
+  if (typeof m.code !== "string" || typeof m.taken_at !== "number" || typeof username !== "string")
+    return null;
+  const items = Array.isArray(m.carousel_media) ? (m.carousel_media as Media[]) : [m];
+  const pk = m.pk ?? m.id;
+  return {
+    shortcode: m.code,
+    url: postUrl(m.code),
+    username,
+    caption: typeof m.caption?.text === "string" ? m.caption.text : "",
+    likes: countOrNull(m.like_count),
+    comments: countOrNull(m.comment_count),
+    timestamp: new Date(m.taken_at * 1000).toISOString(),
+    id: typeof pk === "string" || typeof pk === "number" ? String(pk) : null,
+    views: countOrNull(m.play_count) ?? countOrNull(m.ig_play_count) ?? countOrNull(m.view_count),
+    kind: KIND[Number(m.media_type)] ?? null,
+    media: items.map(frameOf).filter((f): f is IgMedia => f !== null),
+    coauthors: Array.isArray(m.coauthor_producers)
+      ? (m.coauthor_producers as Array<{ username?: unknown }>)
+          .map((c) => c?.username)
+          .filter((u): u is string => typeof u === "string")
+      : [],
+    location: typeof m.location?.name === "string" ? m.location.name : null,
+  };
+}
+
+/** The media record for one code anywhere in a JSON value, as a post with its raw `item`. */
+export function mediaPostOf(body: unknown, shortcode: string): IgPost | null {
+  let found: IgPost | null = null;
+  const walk = (v: unknown): void => {
+    if (found || !v || typeof v !== "object") return;
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+      return;
+    }
+    const o = v as Record<string, unknown>;
+    if (o.code === shortcode) {
+      const post = postOfMedia(o as Media);
+      if (post) {
+        found = { ...post, item: o };
+        return;
+      }
+    }
+    for (const x of Object.values(o)) walk(x);
+  };
+  walk(body);
+  return found;
+}
 
 /**
  * Every post in a timeline answer, found by shape (a `code`, a `taken_at` and a `user`), so the
@@ -491,25 +609,13 @@ export function feedPostsOf(body: unknown, left?: Set<string>): IgPost[] {
       return;
     }
     const m = o as Media;
-    const username = m.user?.username;
-    if (
-      typeof m.code === "string" &&
-      typeof m.taken_at === "number" &&
-      typeof username === "string"
-    ) {
+    const post = postOfMedia(m);
+    if (post) {
       if (m.user?.friendship_status?.following === false) {
-        left?.add(m.code);
+        left?.add(post.shortcode);
         return;
       }
-      out.push({
-        shortcode: m.code,
-        url: postUrl(m.code),
-        username,
-        caption: typeof m.caption?.text === "string" ? m.caption.text : "",
-        likes: countOrNull(m.like_count),
-        comments: countOrNull(m.comment_count),
-        timestamp: new Date(m.taken_at * 1000).toISOString(),
-      });
+      out.push(post);
       return;
     }
     for (const x of Object.values(o)) walk(x);
