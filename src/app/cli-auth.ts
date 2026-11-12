@@ -1,5 +1,5 @@
 /**
- * `autobrowse creds …`, `autobrowse login <site>`, `autobrowse enroll-totp
+ * `autobrowse creds …`, `autobrowse login <site>`, `autobrowse mfa totp
  * <site>`: the credential ladder from the terminal. Values arrive on
  * stdin, never as arguments (argv is visible to every process).
  */
@@ -39,6 +39,7 @@ const LINK_TTL_S = 15 * 60;
 import { runLeg } from "../engine/leg.js";
 import { accent, bad, columns, dim, good } from "../style.js";
 import { CLIPBOARD_MS, macClipboard, pasteboard } from "./cli-env.js";
+import { group } from "./cli-groups.js";
 import { type KeysCliDeps, registerKeyCommands } from "./cli-keys.js";
 import { credLinkUrl, type Settings } from "./config.js";
 import { headed } from "./display.js";
@@ -699,7 +700,7 @@ export function registerAuthCommands(
           continue;
         }
         if (!cred.totpSecret && !o.withoutAuthenticator) {
-          console.log(`${site}: skipped, no authenticator yet (autobrowse enroll-totp ${site})`);
+          console.log(`${site}: skipped, no authenticator yet (autobrowse mfa totp ${site})`);
           continue;
         }
         const provider = site.split("@")[0] ?? site;
@@ -863,7 +864,7 @@ export function registerAuthCommands(
       if (bad) process.exitCode = 1;
     });
 
-  program
+  group(program, "stats")
     .command("steps")
     .description(
       "The agent step ledger: every step of every session (UI, `agent`, repair) with its model spend and time; never a page or a value",
@@ -1051,8 +1052,8 @@ export function registerAuthCommands(
       if (failed) process.exitCode = 1;
     });
 
-  program
-    .command("workspace-logo <file>")
+  group(program, "workspace")
+    .command("logo <file>")
     .description("Set the Google Workspace logo (admin console; 320×132 PNG under 30 KB)")
     .option("--headed", "show the browser")
     .action(async (file: string, o: { headed?: boolean }) => {
@@ -1064,8 +1065,8 @@ export function registerAuthCommands(
       console.log(await runLeg(runner, googleWorkspaceLogo, { file: resolve(file) }));
     });
 
-  program
-    .command("profile-photo <file>")
+  group(program, "google")
+    .command("photo <file>")
     .description(
       "Set a Google account's profile picture (the round one beside its name in Gmail); a GIF stays animated",
     )
@@ -1090,8 +1091,8 @@ export function registerAuthCommands(
       );
     });
 
-  program
-    .command("enroll-passkey <site>")
+  group(program, "mfa")
+    .command("passkey <site>")
     .description(
       "Create a passkey on the site with our own authenticator and keep it; sign-ins then need no password or code",
     )
@@ -1106,8 +1107,8 @@ export function registerAuthCommands(
       console.log(await runner.run(enrollPasskeyFlow(login, credentialsFor(settings)), undefined));
     });
 
-  program
-    .command("recovery-codes <site>")
+  group(program, "mfa")
+    .command("codes <site>")
     .description(
       "Read the account's recovery codes off the site's recovery page and seal them with the credential; prints only how many",
     )
@@ -1124,8 +1125,8 @@ export function registerAuthCommands(
       );
     });
 
-  program
-    .command("enroll-totp <sites...>")
+  group(program, "mfa")
+    .command("totp <sites...>")
     .description(
       "Turn on an authenticator for the site ourselves: read the seed off its setup page, store it sealed, confirm with a generated code",
     )

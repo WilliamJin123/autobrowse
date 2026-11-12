@@ -1,7 +1,7 @@
 /**
  * Free accounts any sending inbox can hold, so the inbox gets the ordinary
  * mail and use a real person's does: one list, run per inbox by
- * `autobrowse inbox-accounts <inbox>`. Each entry is made by email (the
+ * `autobrowse workspace inbox accounts <inbox>`. Each entry is made by email (the
  * signup agent, codes read from the inbox) or through Google (the inbox's
  * own Google login presses "Continue with Google"). The inbox-activity
  * workflow opens the verify mail of every sender here.

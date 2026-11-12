@@ -154,7 +154,7 @@ export function reportLines(now: EvalSummary, base: EvalSummary | null): string[
     const was = base ? `  (baseline ${pct(base.split[k])})` : "";
     return `${k.padEnd(5)} ${pct(now.split[k])}${was}`;
   });
-  if (!base) return [...lines, "no baseline yet: `autobrowse evals baseline <run>`"];
+  if (!base) return [...lines, "no baseline yet: `autobrowse stats evals baseline <run>`"];
   for (const [id, pass] of Object.entries(now.tasks)) {
     const was = base.tasks[id];
     if (was === undefined) lines.push(`  new       ${id}: ${pass ? "pass" : "fail"}`);

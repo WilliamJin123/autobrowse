@@ -1,8 +1,8 @@
 /**
  * Where usage stats land when a caller names no place: model calls (`llm/`),
  * flow runs (`flows/`) and in-process engine runs (`engine/`) under
- * `~/.config/autobrowse`, the folder the CLI reads (`autobrowse tokens`,
- * `autobrowse success`). On by default, so a
+ * `~/.config/autobrowse`, the folder the CLI reads (`autobrowse stats tokens`,
+ * `autobrowse stats success`). On by default, so a
  * library caller gets token and failure history with no setup.
  * `AUTOBROWSE_STATS=off` turns it off; `AUTOBROWSE_STATS_DIR` moves it.
  */

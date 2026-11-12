@@ -9,7 +9,7 @@ entity: src/runs/calls.ts
 
 # Site call ledger
 
-Every try at a `sites`/`desk` call, one JSON line each, kept for good: `SiteCallRow` in `src/runs/calls.ts`, monthly files `calls/calls-YYYY-MM.jsonl` beside the credentials file. `autobrowse success` reads it with explore runs, agent steps and model calls.
+Every try at a `sites`/`desk` call, one JSON line each, kept for good: `SiteCallRow` in `src/runs/calls.ts`, monthly files `calls/calls-YYYY-MM.jsonl` beside the credentials file. `autobrowse stats success` reads it with explore runs, agent steps and model calls.
 
 ## Why this shape
 
@@ -30,7 +30,7 @@ Restate keeps a finished invocation about a day and `caps` only metered reads fo
 
 ## If you change this
 
-- **Hits:** `src/runs/success.ts`, `src/runs/import.ts`, `src/app/cli-runs.ts` (`success`, `success import`).
+- **Hits:** `src/runs/success.ts`, `src/runs/import.ts`, `src/app/cli-runs.ts` (`stats success`, `stats success import`).
 - **Does not hit:** the facade, caps, pacing.
 
 - `artifact`: a failed browser leg's `.failure.json`, from `failureOf` (`src/errors.ts`, walks `cause`); `errorOf` gives the same path to every caller (U19).
@@ -40,7 +40,7 @@ Restate keeps a finished invocation about a day and `caps` only metered reads fo
 | Surface | Role |
 |---|---|
 | Restate `sites`, `desk` | write |
-| `autobrowse success`, `success import` | read, backfill |
+| `autobrowse stats success`, `stats success import` | read, backfill |
 
 ## See
 

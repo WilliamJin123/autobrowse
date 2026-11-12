@@ -1,5 +1,5 @@
 /**
- * `autobrowse wrangler-login`: renew wrangler's Cloudflare OAuth token
+ * `autobrowse cli-login wrangler`: renew wrangler's Cloudflare OAuth token
  * without hands, like `aws-login` for the AWS CLI. `wrangler login
  * --browser=false` prints an authorize URL and waits on localhost:8976; the
  * Cloudflare browser session authorizes it and the CLI keeps its token.

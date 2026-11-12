@@ -28,7 +28,7 @@ The journal is resume state and goes on `close`; history has to outlive it so wa
 ## Connected to
 
 - **owned-by:** [[explore-session]]
-- **joins:** [[walk-spec]] (built from runs), [[llm-call]] (the token report reads both), [[site-call-ledger]] (`autobrowse success` reads verdicts and failed commands with it), [[agent-session]] (an agent run's driver is `agent:<model>`), [[screen]] (`PageLook`)
+- **joins:** [[walk-spec]] (built from runs), [[llm-call]] (the token report reads both), [[site-call-ledger]] (`autobrowse stats success` reads verdicts and failed commands with it), [[agent-session]] (an agent run's driver is `agent:<model>`), [[screen]] (`PageLook`)
 - **looks-like-but-is-not:** an engine run ([[run-object]], [[runs-registry]]); the explore journal; a [[recording]]
 
 ## If you change this
@@ -41,7 +41,7 @@ The journal is resume state and goes on `close`; history has to outlive it so wa
 | Surface | Role |
 |---|---|
 | explore server | writes |
-| `autobrowse explored`, `walks build`, `tokens`, `success` | read |
+| `autobrowse history explore`, `walks build`, `stats tokens`, `stats success` | read |
 
 ## See
 

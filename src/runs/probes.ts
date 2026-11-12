@@ -2,7 +2,7 @@
  * The probe (OpenCLI audit U17): a weekly pass that proves what still works with no caller
  * waiting. Each site's who-am-I call (`checkSite`), and a re-proof of each compiled workflow
  * that opted in with a `.plan.json` (gates declined). One row each, typed, in
- * `probes/probes-YYYY-MM.jsonl`; `autobrowse success` shows the newest per name.
+ * `probes/probes-YYYY-MM.jsonl`; `autobrowse stats success` shows the newest per name.
  * Opt-in for workflows: a proof runs every act but the gated ones, and a profile edit or a
  * sign-up is not gated.
  */

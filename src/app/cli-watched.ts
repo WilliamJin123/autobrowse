@@ -1,5 +1,5 @@
 /**
- * `autobrowse watched [run]`: what a watched flow did, step by step (see
+ * `autobrowse history run [run]`: what a watched flow did, step by step (see
  * `browser/watch`). No run = the newest; a run is its folder or a name
  * fragment ("cloudflare-login"). Each line: step, outcome, time, goal, url,
  * and the shot to open. The trace replays it: `npx playwright show-trace`.
@@ -11,11 +11,12 @@ import { fileFixes } from "../browser/fixes.js";
 import { fileScreens } from "../browser/screens.js";
 import { readSteps, watchedRuns } from "../browser/watch.js";
 import { expandHome } from "../google/auth.js";
+import { group } from "./cli-groups.js";
 import type { Settings } from "./config.js";
 
 export function registerWatchedCommands(program: Command, settings: Settings): void {
-  program
-    .command("watched [run]")
+  group(program, "history")
+    .command("run [run]")
     .description(
       "What a watched flow did, step by step (WATCH_FLOWS=<site|site/flow|all>); newest run by default",
     )
@@ -56,12 +57,12 @@ export function registerWatchedCommands(program: Command, settings: Settings): v
 }
 
 /**
- * `autobrowse repairs [flow]`: every locator a flow's source has wrong and
+ * `autobrowse history repairs [flow]`: every locator a flow's source has wrong and
  * what worked instead, the to-do list for fixing the source. Runs already
  * use these (no wait, no model); `--forget` once the source says the same.
  */
 export function registerRepairsCommands(program: Command, settings: Settings): void {
-  program
+  group(program, "history")
     .command("repairs [flow]")
     .description(
       "Locators a flow's source has wrong and what works instead (runs use the fix already); --forget once the source is changed",
@@ -109,13 +110,13 @@ export function registerRepairsCommands(program: Command, settings: Settings): v
 }
 
 /**
- * `autobrowse screens [site]`: pages a site showed that no flow knew, and
+ * `autobrowse history screens [site]`: pages a site showed that no flow knew, and
  * what worked on them (kept from a model's one answer; runs use them with
  * no model since). Each row is a screen to write into the source, then
  * `--forget`.
  */
 export function registerScreensCommands(program: Command, settings: Settings): void {
-  program
+  group(program, "history")
     .command("screens [site]")
     .description(
       "Pages learned on each site and what gets past them (runs use them already); --forget once the source knows the screen",

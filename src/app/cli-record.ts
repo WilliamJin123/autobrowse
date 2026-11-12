@@ -13,6 +13,7 @@ import type { Explorer } from "../explore/server.js";
 import { expandHome, shortHome } from "../google/auth.js";
 import type { LlmUsage } from "../llm/types.js";
 import { explorerOpener, type LocalBackend } from "./backend.js";
+import { group } from "./cli-groups.js";
 import type { Settings } from "./config.js";
 import { headed } from "./display.js";
 import { browserOptions, COMPILED_DIR, llmFor } from "./services.js";
@@ -456,8 +457,8 @@ export function registerRecordCommands(
       },
     );
 
-  program
-    .command("inbox-accounts <inbox>")
+  group(group(program, "workspace"), "inbox")
+    .command("accounts <inbox>")
     .description(
       "Give a sending inbox the free accounts in FREE_ACCOUNTS (src/auth/free-accounts.ts): email ones by `signup`, Google ones by `login` through the inbox's own Google; skips what it already holds",
     )

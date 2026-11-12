@@ -55,8 +55,8 @@ of the site's own is ever stored.
 ## Passkeys and TOTP
 
 ```sh
-pnpm autobrowse enroll-totp cloudflare --url https://dash.cloudflare.com/profile/authentication
-pnpm autobrowse enroll-passkey cloudflare
+pnpm autobrowse mfa totp cloudflare --url https://dash.cloudflare.com/profile/authentication
+pnpm autobrowse mfa passkey cloudflare
 ```
 
 `enroll-totp` reads the seed off the setup page, stores it sealed, confirms

@@ -25,7 +25,7 @@ autobrowse creds link <site[:account]>... [--keys A,B] [--open] [--ttl 24h]  # o
 autobrowse creds paste <site>@<label>      # William's `email password [key]` from the clipboard
 autobrowse creds push <site> | --all       # to SSM, so the box signs in too; `pull` the other way
 autobrowse creds history <site>            # versions kept; `restore <site> <version>`
-autobrowse enroll-totp <site>              # reads the seed, stores it, confirms
+autobrowse mfa totp <site>              # reads the seed, stores it, confirms
 ```
 
 Never `creds rotate` or `creds password`: those change a password, and that is

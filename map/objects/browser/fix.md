@@ -30,7 +30,7 @@ The runner repairs one act at a time through a model (`llmRepairer`). Keeping wh
 
 ## If you change this
 
-- **Hits:** `src/browser/flow.ts` (act path), `src/browser/repair.ts`, `src/agent/heal.ts:253`, `src/compiler/patch.ts`, `autobrowse repairs` (`src/app/cli-record.ts`).
+- **Hits:** `src/browser/flow.ts` (act path), `src/browser/repair.ts`, `src/agent/heal.ts:253`, `src/compiler/patch.ts`, `autobrowse history repairs` (`src/app/cli-record.ts`).
 - **Does not hit:** screens; the agent's own act loop (it does not use the repairer).
 
 ## Surfaces
@@ -38,7 +38,7 @@ The runner repairs one act at a time through a model (`llmRepairer`). Keeping wh
 | Surface | Role |
 |---|---|
 | runner | find, learn, used |
-| `autobrowse repairs --apply` | patch source, drop |
+| `autobrowse history repairs --apply` | patch source, drop |
 
 ## See
 

@@ -349,7 +349,7 @@ export interface RunnerOptions {
   /**
    * One line per run, success or not (`runs/flows`): outcome, time, acts,
    * captcha tries, model tokens. Absent = the stats dir (`deps/stats`,
-   * `~/.config/autobrowse/flows`, read by `autobrowse success`); null = none.
+   * `~/.config/autobrowse/flows`, read by `autobrowse stats success`); null = none.
    */
   runs?: FlowRuns | null;
   /**

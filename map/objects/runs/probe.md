@@ -24,7 +24,7 @@ A route or flow breaks between calls; the first caller should not be the one who
 
 ## Connected to
 
-- **joins:** [[proof]], [[flow-pack]] (registry issues), [[site-call-ledger]] (`autobrowse success`)
+- **joins:** [[proof]], [[flow-pack]] (registry issues), [[site-call-ledger]] (`autobrowse stats success`)
 - **looks-like-but-is-not:** `site check` (prints, keeps nothing)
 
 ## Surfaces
@@ -32,4 +32,4 @@ A route or flow breaks between calls; the first caller should not be the one who
 | Surface | Role |
 |---|---|
 | desk timer, `autobrowse probe` | write |
-| `autobrowse success` | read |
+| `autobrowse stats success` | read |

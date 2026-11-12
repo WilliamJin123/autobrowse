@@ -37,7 +37,7 @@ Each word below has one meaning. A thing that used to share a word has its own w
 | flow | one browser leg | `BrowserFlow` |
 | walk | a screens loop inside a sign-in; a built walk ([[walk-spec]]) is that loop as data, run as flow `<site>/walk-<name>` | `src/walks` |
 | run | one engine run ([[run-object]], `autobrowse runs`) | |
-| exploration | the history of one explore session ([[explore-run]], `autobrowse explored`) | |
+| exploration | the history of one explore session ([[explore-run]], `autobrowse history explore`) | |
 | recording | one saved journal | `recordings/` |
 | plan | a workflow's input; the saved default plan (`<plansDir>/<workflow>.json`) is the operator's values, merged under every start | `PlanStore` (`src/workflows/plans.ts`) |
 | step | one unit of a sequence, in the layer that holds it | `StepDef` (engine), outline step (compiler), `Step` (`browser/watch`), `StepRecord` (agent) |

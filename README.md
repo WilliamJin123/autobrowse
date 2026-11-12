@@ -93,7 +93,7 @@ a captcha the solver cannot read (`src/browser/captcha`: checkboxes by a
 human click, squares, letters and sliders by the configured model when it
 sees, or by a panel of models that votes (`EYES_PANEL`); `CAPTCHA_ATTEMPTS`
 tries, default 3, before it is yours). Each solve, with every model's
-answer, goes in the run's row; `autobrowse success` shows each wall and
+answer, goes in the run's row; `autobrowse stats success` shows each wall and
 whether the run then passed.
 
 **The bar for asking.** Try it first. `NEEDS-WILLIAM.md` and the `needs`
@@ -337,7 +337,7 @@ a row; it is work.
   no screen knows goes down one ladder: learned screens (data) → a model
   that only picks from the walk's own list, or one non-committing click →
   a person. The pick is kept once it worked, so it costs a model once per
-  new variant. `autobrowse screens [site]` lists what was learned
+  new variant. `autobrowse history screens [site]` lists what was learned
   (`SCREENS_FILE`); `--forget` once the source knows the screen.
   `autobrowse login --all` signs in to every stored account; run it
   before a batch that must not stop.
@@ -438,14 +438,14 @@ pnpm ui:dev                     # SPA with hot reload on :5173, proxied to :9080
 
 pnpm autobrowse setup --all                    # the operator roster: every known site in turn (hidden input, sealed store)
 pnpm autobrowse login cloudflare               # signs in by itself: password or the Google button, TOTP/email/SMS code
-pnpm autobrowse workspace-logo logo.png   # the org logo across Gmail/Calendar/Drive (320×132 PNG < 30 KB)
-pnpm autobrowse profile-photo pfp.gif --as google@wren   # an account's round picture in Gmail; a GIF stays animated
-pnpm autobrowse enroll-totp cloudflare --url https://dash.cloudflare.com/profile/authentication  # reads the seed, stores it, confirms
-pnpm autobrowse enroll-totp will@a.com william@a.com  # several Google accounts, one after another
+pnpm autobrowse workspace logo logo.png   # the org logo across Gmail/Calendar/Drive (320×132 PNG < 30 KB)
+pnpm autobrowse google photo pfp.gif --as google@wren   # an account's round picture in Gmail; a GIF stays animated
+pnpm autobrowse mfa totp cloudflare --url https://dash.cloudflare.com/profile/authentication  # reads the seed, stores it, confirms
+pnpm autobrowse mfa totp will@a.com william@a.com  # several Google accounts, one after another
 pnpm autobrowse creds to-passwords will@a.com         # login + authenticator into Apple Passwords, sorted (all your devices)
 pnpm autobrowse creds to-bitwarden                   # every account into Bitwarden, the break-glass copy outside AWS (bw logged in once)
-pnpm autobrowse inbox-name will@a.com will jin        # fix a Workspace inbox's display name (admin API)
-pnpm autobrowse inbox-photo will@a.com pfp.png        # a Workspace inbox's picture, no sign-in (admin API; still, 96 px)
+pnpm autobrowse workspace inbox name will@a.com will jin        # fix a Workspace inbox's display name (admin API)
+pnpm autobrowse workspace inbox photo will@a.com pfp.png        # a Workspace inbox's picture, no sign-in (admin API; still, 96 px)
 pnpm autobrowse run bootstrap cloudflare --plan '{"provider":"cloudflare"}'   # mints CLOUDFLARE_ACCOUNT_ID + API token into .env (--plan: JSON, a file, or -)
 # map a page by hand or by model: one open browser, one command at a time (token printed at start)
 pnpm autobrowse explore cloudflare --url https://dash.cloudflare.com/profile/api-tokens
@@ -480,7 +480,7 @@ pnpm autobrowse creds push linkedin               # that stored credential into 
 pnpm autobrowse creds push --all                  # every stored site (canaries never travel)
 pnpm autobrowse creds pull [sites...]             # the other way, on a second laptop; --overwrite to replace what is here
 pnpm autobrowse signup instagram --email hello@wrenautomation.com --name "Wren Automation" --handle wrenautomation --headed
-pnpm autobrowse inbox-accounts will@new.com       # the free accounts in src/auth/free-accounts.ts for one inbox (email signups + Google logins); skips what it holds
+pnpm autobrowse workspace inbox accounts will@new.com       # the free accounts in src/auth/free-accounts.ts for one inbox (email signups + Google logins); skips what it holds
 pnpm autobrowse record buy-domain --site cloudflare --url https://dash.cloudflare.com/ --terminal
 pnpm autobrowse compile buy-domain             # → src/workflows/buy-domain/ in a clone, ~/.config/autobrowse/workflows/buy-domain/ in an install (AUTOBROWSE_WORKFLOWS moves it); on the Runs page at once
 pnpm autobrowse try google-name                # run a compiled workflow here, no Restate: the proof it is deterministic
@@ -493,8 +493,8 @@ pnpm autobrowse domains wren automation --max 15   # sending-domain ideas: ours 
 pnpm autobrowse domain wren-six.com --inbox will:William:Jin --inbox hello:William:Jin --dry-run
 pnpm autobrowse domain wren-six.com --inbox will:William:Jin --inbox hello:William:Jin
 pnpm autobrowse try domain --plan plan.json --ask     # same workflow in-process, no Restate (more inboxes on a live domain too)
-pnpm autobrowse inbox will@wren-six.com Will Jin      # one inbox, ready: user, sign-in, signature, Gmail consent, accounts row
-pnpm autobrowse warmup-match will@wren-six.com --dry-run   # which Instantly inboxes differ from that one's warmup settings; drop --dry-run to copy them
+pnpm autobrowse workspace inbox add will@wren-six.com Will Jin      # one inbox, ready: user, sign-in, signature, Gmail consent, accounts row
+pnpm autobrowse warmup copy will@wren-six.com --dry-run   # which Instantly inboxes differ from that one's warmup settings; drop --dry-run to copy them
 pnpm autobrowse workflows                      # what this worker can run
 pnpm autobrowse tools reddit                    # every workflow and leg on a site: the routes on each, proof, then walks
 pnpm autobrowse workflows bootstrap            # its steps (! = irreversible) and every input: type, default, what it is
@@ -502,7 +502,7 @@ pnpm autobrowse workflows bootstrap --template > plan.json   # fill in, then: ru
 pnpm autobrowse job start desk call '{"site":"…","method":"GET","path":"/…"}' --why "…"   # a worker call by key: prints {id} at once
 pnpm autobrowse job wait <id...> --timeout 600    # collect; peek <id> never waits; list shows the ledger
 pnpm autobrowse runs --limit 20                # the registry, newest first (--before <cursor> pages)
-pnpm autobrowse explored google                # explore runs kept for good: driver, goal, outcome, answer tokens (show <run>: its shape, no values)
+pnpm autobrowse history explore google                # explore runs kept for good: driver, goal, outcome, answer tokens (show <run>: its shape, no values)
 pnpm autobrowse walks build google admin-sso --goal-like "sso"   # runs that reached a goal → a walk, run as google/walk-admin-sso
 pnpm autobrowse teach scratch join-list --url http://127.0.0.1:8765/   # do it by hand, type done; review the guesses (--yes takes them), --mod <dir> packs it
 pnpm autobrowse film demo.tape.json --out takes/demo   # type a tape in a filmed terminal; each browser it opens films too (needs ffmpeg, ttyd)
@@ -511,9 +511,9 @@ pnpm autobrowse mods pack scratch --out ./mod   # your walks, screens, fixes, --
 pnpm autobrowse mods search [words]             # npm mods: sites, domains, gates, code or data
 pnpm autobrowse mods add <npm-name|dir|tgz>     # checks hashes, domains, gates, asks yes; code needs --trust; mods list, mods remove
                                                   # (the UI Mods page lists, searches, adds data mods, removes; sample: walkthrough/mods/)
-pnpm autobrowse tokens --days 30               # model calls by purpose, explore answers vs whole-page reads, the verdict
-pnpm autobrowse success --days 30 [--site x]   # success rates: explore verdicts, failed commands by kind, site calls by route
-pnpm autobrowse success import                 # backfill site calls from Restate (~1 day) and the caps ledger (14 days)
+pnpm autobrowse stats tokens --days 30               # model calls by purpose, explore answers vs whole-page reads, the verdict
+pnpm autobrowse stats success --days 30 [--site x]   # success rates: explore verdicts, failed commands by kind, site calls by route
+pnpm autobrowse stats success import                 # backfill site calls from Restate (~1 day) and the caps ledger (14 days)
 pnpm autobrowse status domain wren-six.com     # every run is <workflow> <key>
 pnpm autobrowse approve domain wren-six.com purchase
 pnpm autobrowse approve domain wren-six.com human     # after doing what the email asked
@@ -629,7 +629,7 @@ Agent sessions are runs too: rows in the Runs registry and on the live
 feed under workflow `agent` (started, one `step` per agent step, finished;
 a session that dies with the worker is finished as failed on the next
 start). Every step is also a row of the hash-chained step ledger
-(`pnpm autobrowse steps --last 50 [--session id]`): model, tokens, act,
+(`pnpm autobrowse stats steps --last 50 [--session id]`): model, tokens, act,
 outcome, time, host; never a page, a prompt or a value. With
 `OTEL_EXPORTER_OTLP_ENDPOINT` (+ `OTEL_EXPORTER_OTLP_HEADERS` for the
 vendor's auth, `OTEL_SERVICE_NAME`) every model call is a span over
@@ -847,8 +847,8 @@ has no `List-Unsubscribe`); nothing leaves without `--yes`. The list is
 `src/chores/unsubscribe.ts`.
 
 ```sh
-pnpm autobrowse aws-login --user william              # renew the Mac's AWS CLI session: `aws login --remote` answered from the aws profile
-pnpm autobrowse aws-login --user william --overwrite  # …even when the profile holds another identity's (root) session
+pnpm autobrowse cli-login aws --user william              # renew the Mac's AWS CLI session: `aws login --remote` answered from the aws profile
+pnpm autobrowse cli-login aws --user william --overwrite  # …even when the profile holds another identity's (root) session
 ```
 
 `aws login --remote` prints an authorize URL and waits for a verification
@@ -859,8 +859,8 @@ CLI then refreshes its own credentials until the console session expires.
 `src/chores/aws-login.ts`, flow `src/browser/flows/aws-cli-login.ts`.
 
 ```sh
-pnpm autobrowse wrangler-login --cwd ../lander   # renew wrangler's Cloudflare OAuth token
-pnpm autobrowse cloudflare-token wren-workers --env WREN_CLOUDFLARE_WORKERS_TOKEN --perm "Account:Workers Scripts:Edit" "Zone:DNS:Edit"   # a scoped API token, minted + verified + stored under its own key
+pnpm autobrowse cli-login wrangler --cwd ../lander   # renew wrangler's Cloudflare OAuth token
+pnpm autobrowse cloudflare token wren-workers --env WREN_CLOUDFLARE_WORKERS_TOKEN --perm "Account:Workers Scripts:Edit" "Zone:DNS:Edit"   # a scoped API token, minted + verified + stored under its own key
 ```
 
 `wrangler login --browser=false` prints an authorize URL and waits on
@@ -870,8 +870,8 @@ token. Run it on the machine the browser runs on. `--scopes` narrows the
 grant. `src/chores/wrangler-login.ts`, flow `src/browser/flows/wrangler-login.ts`.
 
 ```sh
-pnpm autobrowse gcloud-login                       # renew gcloud's credentials as its active account
-pnpm autobrowse gcloud-login william@wrenautomation.com
+pnpm autobrowse cli-login gcloud                       # renew gcloud's credentials as its active account
+pnpm autobrowse cli-login gcloud william@wrenautomation.com
 ```
 
 `gcloud auth login --no-launch-browser` prints a Google authorize URL and
@@ -930,8 +930,8 @@ import { fileStore, memoryFiles } from "autobrowse/files";   // the sealed file 
 
 **Usage stats, on by default.** `makeLlm` counts every model call and
 `flowRunner` writes one row per run (outcome, time, failing step, captcha
-tries, tokens) under `~/.config/autobrowse`. `autobrowse tokens` and
-`autobrowse success` read them.
+tries, tokens) under `~/.config/autobrowse`. `autobrowse stats tokens` and
+`autobrowse stats success` read them.
 
 ```ts
 import { readFlowRuns, flowRunReport, readLlmCalls, llmCallReport, statsDir } from "autobrowse";

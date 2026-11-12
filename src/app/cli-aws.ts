@@ -1,8 +1,8 @@
 /**
- * CLI logins renewed by a browser session: `autobrowse aws-login` (the
- * `aws` profile), `autobrowse wrangler-login` (Cloudflare's session) and
- * `autobrowse gcloud-login` (the Google session);
- * `autobrowse cloudflare-token` mints a scoped API token for unattended deploys.
+ * CLI logins renewed by a browser session: `autobrowse cli-login aws` (the
+ * `aws` profile), `autobrowse cli-login wrangler` (Cloudflare's session) and
+ * `autobrowse cli-login gcloud` (the Google session);
+ * `autobrowse cloudflare token` mints a scoped API token for unattended deploys.
  */
 import { execFileSync } from "node:child_process";
 import type { Command } from "commander";
@@ -13,6 +13,7 @@ import { wranglerLoginChore } from "../chores/wrangler-login.js";
 import { recorded } from "../engine/leg.js";
 import { profileOf } from "../sites/wire.js";
 import type { LocalBackend } from "./backend.js";
+import { group } from "./cli-groups.js";
 import type { Settings } from "./config.js";
 import {
   bootstrapDepsFor,
@@ -29,8 +30,8 @@ export function registerAwsCommands(
   local: LocalBackend,
   settings: Settings,
 ): void {
-  program
-    .command("aws-login")
+  group(program, "cli-login")
+    .command("aws")
     .description(
       "Run `aws login --remote` and answer its verification code from the aws browser profile",
     )
@@ -62,8 +63,8 @@ export function registerAwsCommands(
       }
     });
 
-  program
-    .command("wrangler-login")
+  group(program, "cli-login")
+    .command("wrangler")
     .description(
       "Run `wrangler login` and authorize it from the signed-in Cloudflare session (the browser must run on this machine)",
     )
@@ -87,8 +88,8 @@ export function registerAwsCommands(
       if (!r.ok) process.exitCode = 1;
     });
 
-  program
-    .command("gcloud-login [account]")
+  group(program, "cli-login")
+    .command("gcloud [account]")
     .description(
       "Run `gcloud auth login --no-launch-browser` and answer its code from the Google session (default: gcloud's active account)",
     )
@@ -109,8 +110,8 @@ export function registerAwsCommands(
       if (!r.ok) process.exitCode = 1;
     });
 
-  program
-    .command("cloudflare-token <name>")
+  group(program, "cloudflare")
+    .command("token <name>")
     .description(
       "Mint a Cloudflare API token from the signed-in dashboard, verify it, store it under --env. The bootstrap workflow, in this process (the browser runs here)",
     )
@@ -151,7 +152,7 @@ export function registerAwsCommands(
         (g) =>
           g.name === "human"
             ? null
-            : { approved: true, note: "autobrowse cloudflare-token", at: new Date().toISOString() },
+            : { approved: true, note: "autobrowse cloudflare token", at: new Date().toISOString() },
         recorded(),
       );
       for (const [step, r] of Object.entries(out.results))

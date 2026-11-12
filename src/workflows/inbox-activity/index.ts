@@ -2,7 +2,7 @@
  * Give a sending inbox ordinary mail of its own: subscribe it to a few free
  * newsletters through their own subscribe page in the browser, then open
  * the confirm link any of them mails, and the verify links of the free
- * accounts `autobrowse inbox-accounts <inbox>` made (FREE_ACCOUNTS).
+ * accounts `autobrowse workspace inbox accounts <inbox>` made (FREE_ACCOUNTS).
  * Substack's subscribe API answers 200 to a bare POST and then sends
  * nothing (2026-10-02), so the page is the way in. Mail is read through the
  * Gmail client (delegation for our Workspace). A rerun skips what it did.

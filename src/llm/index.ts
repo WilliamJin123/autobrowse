@@ -36,7 +36,7 @@ export const DEFAULT_MODELS: Record<LlmProvider, string> = {
 
 /**
  * Every call is counted by default (`llm/ledger`): into the stats dir
- * (`deps/stats`, `~/.config/autobrowse/llm`), which `autobrowse tokens` reads
+ * (`deps/stats`, `~/.config/autobrowse/llm`), which `autobrowse stats tokens` reads
  * and a flow run tallies. `calls` names another place; null counts nothing.
  */
 export function makeLlm(

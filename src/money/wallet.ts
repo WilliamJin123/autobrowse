@@ -342,7 +342,7 @@ export function backedUpWallet(
       await f();
     } catch (err) {
       throw new Error(
-        `${what}: changed on this Mac, but its SSM backup failed (rerun once AWS is signed in: autobrowse aws-login): ${(err as Error).name}`,
+        `${what}: changed on this Mac, but its SSM backup failed (rerun once AWS is signed in: autobrowse cli-login aws): ${(err as Error).name}`,
       );
     }
   };

@@ -20,7 +20,7 @@ Checkboxes are solved by the hands alone; pictures need `Eyes` (a model that see
 - `Captcha { kind: checkbox|grid|text|slider, vendor: recaptcha|hcaptcha|turnstile|generic … }` — `src/browser/captcha/index.ts:28-46`; `Eyes`, `CaptchaOutcome`, `SolveOptions` — `:36-57`. Vendor frames are found by tag or, failing that, by the frame list (`vendorFrame` `:156`: hCaptcha enterprise on Lever, Turnstile shadow root)
 - hCaptcha canvas task (no tiles: drag or click on one picture): `canvasTask` — `src/browser/captcha/index.ts:`; the eyes' move parsed by `parseCanvasMove` — `:346`
 - Panel (off by default; it lost to Sonnet alone on the bench): `eyes` may be a list; every model looks at once (`panelOf`, 20 s each), `voteSquares` (majority per square, tie to the lead) or `mostAlike` (text, slider, canvas) picks the answer. Each look (`Look`: every answer, the choice, who agreed) rides on `CaptchaOutcome.looks`
-- Record: the runner puts each solve in its flow row (`FlowRunRow.captchas`, `src/runs/flows.ts`); `autobrowse success` shows walls (cleared, run ok) and eyes (answered, chosen)
+- Record: the runner puts each solve in its flow row (`FlowRunRow.captchas`, `src/runs/flows.ts`); `autobrowse stats success` shows walls (cleared, run ok) and eyes (answered, chosen)
 - Wired by `captchaFor` — `src/app/services-browser.ts`: `EYES_PANEL` (`provider:model,…`; `gemini` = Google's OpenAI-compatible door, `GEMINI_API_KEY`), else `EYES_PROVIDER`/`EYES_MODEL`. Why: `designs/2026-11-05-captcha-panel.md`
 
 ## Connected to

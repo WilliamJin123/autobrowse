@@ -34,6 +34,7 @@ import { registerEnvCommands } from "./cli-env.js";
 import { registerEvalsCommands } from "./cli-evals.js";
 import { registerFilesCommands } from "./cli-files.js";
 import { registerFilmCommand } from "./cli-film.js";
+import { group } from "./cli-groups.js";
 import { registerJobCommands } from "./cli-jobs.js";
 import { readJson } from "./cli-json.js";
 import { registerLangfuseCommands } from "./cli-langfuse.js";
@@ -598,8 +599,8 @@ program
     console.log(`started redirect/${domain}; watch: autobrowse status redirect ${domain}`);
   });
 
-program
-  .command("inbox <address> <first> <last>")
+group(group(program, "workspace"), "inbox")
+  .command("add <address> <first> <last>")
   .description(
     "One Workspace inbox, ready (workflow workspace-inbox): user, password + authenticator stored, signature, photo, Gmail consent, accounts row",
   )
@@ -693,8 +694,8 @@ program
     },
   );
 
-program
-  .command("inbox-name <address> <first> <last>")
+group(group(program, "workspace"), "inbox")
+  .command("name <address> <first> <last>")
   .description(
     "The name mail shows beside a Workspace inbox (users cannot change it themselves): set through the admin API",
   )
@@ -710,8 +711,8 @@ program
     console.log(`${address}: name is now ${first} ${last} (mail shows it within minutes)`);
   });
 
-program
-  .command("inbox-photo <address> <file>")
+group(group(program, "workspace"), "inbox")
+  .command("photo <address> <file>")
   .description(
     "A Workspace inbox's picture through the admin API, no sign-in (PNG or JPEG, still); `all` = every active user; `profile-photo` keeps a GIF animated but signs in",
   )
@@ -732,8 +733,8 @@ program
     }
   });
 
-program
-  .command("warmup-match <like> [emails...]")
+group(program, "warmup")
+  .command("copy <like> [emails...]")
   .description(
     "Instantly: copy one inbox's warmup and sending settings onto others (every other inbox when none named)",
   )

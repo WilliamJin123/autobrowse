@@ -1,7 +1,7 @@
 /**
  * Teach on by default (designs/2026-10-05-teach-mode.md): each run a person acted in by hand
  * becomes a draft walk, every guess taken. `walks keep` builds it again under a real name with
- * the review; `walks drop` deletes it. Drafts sit beside the walks, never among them: they do
+ * the review; `walks remove` deletes it. Drafts sit beside the walks, never among them: they do
  * not run by name and never pack.
  */
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";

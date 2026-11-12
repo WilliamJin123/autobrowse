@@ -1,5 +1,5 @@
 /**
- * `autobrowse gcloud-login`: renew the Mac's gcloud CLI credentials without
+ * `autobrowse cli-login gcloud`: renew the Mac's gcloud CLI credentials without
  * hands, like `aws-login`. `gcloud auth login --no-launch-browser` prints a
  * Google authorize URL and waits on stdin for a verification code; the
  * `google` profile consents as the account, the code comes back in the

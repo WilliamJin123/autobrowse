@@ -10,7 +10,7 @@
  * - `tokens`: what autobrowse spends, and the verdict against tools that
  *   send the whole page (src/runs/tokens).
  * - `success`: how often runs and site calls reach what they were asked for,
- *   and every try that did not (src/runs/success); `success import` backfills
+ *   and every try that did not (src/runs/success); `stats success import` backfills
  *   site calls from Restate and the caps ledger.
  */
 
@@ -58,6 +58,7 @@ import {
   walkFile,
 } from "../walks/spec.js";
 import type { LocalBackend } from "./backend.js";
+import { group } from "./cli-groups.js";
 import { registerDraftCommands } from "./cli-teach.js";
 import type { Settings } from "./config.js";
 import {
@@ -137,8 +138,8 @@ export function registerRunsCommands(
   const walksDir = walksDirFor(settings);
   const walkRef = walkRefIn(walksDir);
 
-  const explored = program
-    .command("explored [site]")
+  const explored = group(program, "history")
+    .command("explore [site]")
     .description("Explore runs, newest last: driver, goal, outcome, commands, answer tokens")
     .option("-n, --last <n>", "how many", "30")
     .option("--json", "one summary per line")
@@ -200,7 +201,7 @@ export function registerRunsCommands(
     .action((id: string) => {
       const known =
         listRuns(runsDir).find((r) => r.run === id) ?? openRuns(runsDir).find((r) => r.run === id);
-      if (!known) throw new Error(`no run ${id}; see: autobrowse explored`);
+      if (!known) throw new Error(`no run ${id}; see: autobrowse history explore`);
       const rows = readRun(runFile(runsDir, known.site, id));
       for (const r of rows) {
         const t = r.at.slice(11, 19);
@@ -529,7 +530,7 @@ export function registerRunsCommands(
       },
     );
 
-  program
+  group(program, "stats")
     .command("tokens")
     .description(
       "Token spend: model calls by purpose, explore answers against whole-page reads, and the verdict",
@@ -550,7 +551,7 @@ export function registerRunsCommands(
       else for (const line of formatTokenReport(report)) console.log(line);
     });
 
-  const success = program
+  const success = group(program, "stats")
     .command("success")
     .description(
       "Success rates: explore runs and their failed commands, site calls and their retries, agent steps, model calls, the probe's newest state per site and workflow",

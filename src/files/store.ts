@@ -386,7 +386,7 @@ export function backedUpFiles(local: FileStore, backup: FileStore) {
       await f();
     } catch (err) {
       throw new Error(
-        `${what}: changed on this Mac, but its backup failed (autobrowse aws-login, then autobrowse files backup): ${(err as Error).name}`,
+        `${what}: changed on this Mac, but its backup failed (autobrowse cli-login aws, then autobrowse files backup): ${(err as Error).name}`,
       );
     }
   };

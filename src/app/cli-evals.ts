@@ -1,4 +1,4 @@
-/** `autobrowse evals run|report|baseline` (OpenCLI audit U22): the agent's own evals. */
+/** `autobrowse stats evals run|report|baseline` (OpenCLI audit U22): the agent's own evals. */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Command } from "commander";
@@ -11,6 +11,7 @@ import {
   reportLines,
   summarize,
 } from "../evals/suite.js";
+import { group } from "./cli-groups.js";
 import type { Settings } from "./config.js";
 import { llmFor } from "./services-browser.js";
 
@@ -26,7 +27,7 @@ const modelOf = (run: string): string => {
 };
 
 export function registerEvalsCommands(program: Command, settings: Settings): void {
-  const evals = program
+  const evals = group(program, "stats")
     .command("evals")
     .description(
       "The agent's evals: fixed tasks on public pages, train and test, against a baseline",

@@ -22,11 +22,11 @@ A failure record says why one run broke; failure rates need every run. No input 
 - A browser that never opens still writes a row: goal `open the browser`, acts 0, outcome interrupted (transient) or failed — `src/browser/flow.ts:526`
 - Tokens per run: `tallied` — `src/llm/ledger.ts:85`, run at `src/browser/flow.ts:991`
 - `failure`: the run's `.failure.json` (U19), set in `src/browser/flow.ts` (`failureFile`); `byFailure[].record` shows the newest per kind
-- CLI: `autobrowse success` reads `flowRunsDirFor` — `src/app/services-state.ts:352`
+- CLI: `autobrowse stats success` reads `flowRunsDirFor` — `src/app/services-state.ts:352`
 
 ## Connected to
 
-- **joins:** [[llm-call]] (tokens per run), [[site-call-ledger]] (`autobrowse success`)
+- **joins:** [[llm-call]] (tokens per run), [[site-call-ledger]] (`autobrowse stats success`)
 - **looks-like-but-is-not:** the failure record (`*.failure.json`, one broken run); [[watch-step]] (per step)
 
 ## If you change this

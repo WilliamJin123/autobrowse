@@ -90,7 +90,7 @@ const NEXT: Record<Tier, string[]> = {
     "next: `autobrowse explore example --url https://example.com`, then `compile <name> --no-llm` and `try <name>`",
   ],
   1: [
-    "next: `autobrowse login <site> --headed` once per site, then `autobrowse enroll-totp <site>` where 2FA is off",
+    "next: `autobrowse login <site> --headed` once per site, then `autobrowse mfa totp <site>` where 2FA is off",
     '      `autobrowse do "<a task in words>"` runs the agent',
   ],
   2: [

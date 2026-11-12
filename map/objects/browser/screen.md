@@ -32,7 +32,7 @@ Sign-ins branch. Determinism is per known screen, not per fixed sequence: a walk
 
 ## If you change this
 
-- **Hits:** `src/auth/google.ts`, `src/auth/sites.ts` (cloudflare walk), `src/browser/flow.ts` (interrupt lookup), `src/browser/repair.ts:156`, `autobrowse screens` (`src/app/cli-record.ts`), `test/site-fakes.ts`.
+- **Hits:** `src/auth/google.ts`, `src/auth/sites.ts` (cloudflare walk), `src/browser/flow.ts` (interrupt lookup), `src/browser/repair.ts:156`, `autobrowse history screens` (`src/app/cli-record.ts`), `test/site-fakes.ts`.
 - **Does not hit:** compiled workflows and their outline; fixes.
 
 ## Surfaces
@@ -40,7 +40,7 @@ Sign-ins branch. Determinism is per known screen, not per fixed sequence: a walk
 | Surface | Role |
 |---|---|
 | walks, runner | read, keep |
-| `autobrowse screens` | list, forget |
+| `autobrowse history screens` | list, forget |
 
 ## See
 

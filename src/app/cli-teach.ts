@@ -139,7 +139,7 @@ export function registerTeachCommand(program: Command, settings: Settings): void
 
 /**
  * Teach on by default: each run a person acted in became a draft (src/walks/drafts.ts).
- * `walks drafts` lists them, `walks keep` makes one a walk with the review, `walks drop` deletes one.
+ * `walks drafts` lists them, `walks keep` makes one a walk with the review, `walks remove` deletes one.
  */
 export function registerDraftCommands(walks: Command, settings: Settings): void {
   const walksDir = walksDirFor(settings);
@@ -200,7 +200,7 @@ export function registerDraftCommands(walks: Command, settings: Settings): void 
       },
     );
   walks
-    .command("drop <draft>")
+    .command("remove <draft>")
     .description("Delete a draft walk")
     .action((ref: string) => {
       const d = findDraft(walksDir, ref);

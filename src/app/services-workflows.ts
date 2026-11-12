@@ -33,7 +33,7 @@ import { credentialsFor, identitiesFor } from "./services-state.js";
  * store (SSM) in prod; elsewhere the env file in front of it, so a token
  * minted on the laptop is on the box and survives the laptop.
  */
-/** The bootstrap workflow's deps; the worker and `autobrowse cloudflare-token` share them. */
+/** The bootstrap workflow's deps; the worker and `autobrowse cloudflare token` share them. */
 export function bootstrapDepsFor(
   settings: Settings,
   browser: FlowRunner,

@@ -3,7 +3,7 @@
  * A repair that works is kept here by flow, goal and the hints that broke.
  * The next run tries the fix first, so a moved button costs no 15s wait and
  * no model call. A fix that stops working is dropped, and the repairer runs
- * again. `autobrowse repairs` lists them; `--apply` writes them into the
+ * again. `autobrowse history repairs` lists them; `--apply` writes them into the
  * compiled workflows they belong to (that one statement, no model), and a
  * hand-written flow's row is a line to change by hand, then `--forget`.
  */

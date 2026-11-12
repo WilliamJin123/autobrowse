@@ -202,7 +202,7 @@ describe("wallet stores", () => {
     const local = memoryWallet();
     const w = backedUpWallet(local, broken);
     const err = await w.put(card("visa", "credit")).catch((e: Error) => e);
-    expect((err as Error).message).toMatch(/visa: changed on this Mac.*aws-login.*ExpiredToken/);
+    expect((err as Error).message).toMatch(/visa: changed on this Mac.*cli-login aws.*ExpiredToken/);
     expect((err as Error).message).not.toContain(VISA);
     expect(await local.get("visa")).not.toBeNull();
   });

@@ -1,5 +1,5 @@
 /**
- * `autobrowse aws-login`: renew the Mac's AWS CLI session without hands.
+ * `autobrowse cli-login aws`: renew the Mac's AWS CLI session without hands.
  * `aws login --remote` prints an authorize URL and waits on stdin for a
  * verification code; the `aws` browser profile (signed in as the IAM user)
  * fetches that code and it is piped straight back. Nothing prints it, no

@@ -28,14 +28,14 @@ A run that must be explained afterwards is watched at act granularity; every oth
 
 ## If you change this
 
-- **Hits:** `src/browser/flow.ts`, `autobrowse watched` (`src/app/cli-watched.ts`).
+- **Hits:** `src/browser/flow.ts`, `autobrowse history run` (`src/app/cli-watched.ts`).
 - **Does not hit:** agent sessions, the engine.
 
 ## Surfaces
 
 | Surface | Role |
 |---|---|
-| `autobrowse watched` | reads |
+| `autobrowse history run` | reads |
 
 ## See
 

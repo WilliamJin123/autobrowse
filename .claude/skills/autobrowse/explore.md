@@ -132,7 +132,7 @@ Act (journaled):
   - Acts in a rerun: a click, press or script is done once; a rerun skips it and goes on from the URL it left. Hover, fill, select and upload are replayed to rebuild the page. Mark a click that changes only the page (a "Next" with no new URL, a tab, a menu) `{goal, view:true}`, or a rerun skips it and reads the wrong page.
   - Many pages to read: `const got = await fp.each(plan.urls.split(" "), async (tab, url, i) => { await tab.open(url); return tab.records({…}); }, {tabs?}); rows.push(...got.flat())`. Lists in `plan` are one string (`"urls":"a b c"`): plan values are strings. Up to `READ_TABS` (default 3) background tabs, same sign-in; results in item order. A tab has `open`, `read`, `has`, `wait`, `records`, and `act` for hover or a `{view:true}` click/press only. Any other act in a tab, and any `fp` call inside `each`, throws: do it before or after. `failed.item` names the item; a rerun replays done items. Worth it when each page is slow (a scroll read, a heavy page): opens are spaced 0.3–1.2 s, so fast pages gain little.
   - `failed` says an act "may have run" (the last run died mid act): look at the page, then send again with `"started":"ran"` (it happened) or `"redo"`.
-  - Money acts ask the person, as yours do. Journaled as one row: `save` compiles it into the workflow. Each call is a row in the run history (`autobrowse explored show <run>`).
+  - Money acts ask the person, as yours do. Journaled as one row: `save` compiles it into the workflow. Each call is a row in the run history (`autobrowse history explore show <run>`).
 - `tools` in an answer: the first answer on a page of a known site lists that site's workflows (`{sites, tools:[{name, aim, inputs, accounts?}], more}`; `inputs` read as code: `q, max = 20, account = "google@wren"` = required, a default (the schema's, the saved plan's, this profile's account), optional with none `max?`; pass a field to override its default; a `-login` tool lists its `accounts`). It comes once per site. A provider's product (youtube.com, portal.azure.com) lists the provider's (`google-login` first). Use one with `flow` before you do the job by hand.
 - `{"cmd":"tools"}` — each site and its count. `"site":"x"`: that site's workflows (past the 20 an answer shows). `"find":"words"`: a fuzzy search over all of them.
 
@@ -172,7 +172,7 @@ Every look costs tokens. Look once, then let the acts tell you what changed.
 5. Acts you are sure of (fill a form, submit) go in one `batch`. It stops at the first failure: `failed: {at, cmd, error}`, `done` holds what ran. A paying click goes alone.
 6. Prefer `role`+`name`; fall back to `css`+`nth`. A failed act is not journaled. Change the hints; don't repeat. A miss answers with `marks` (the picture and its list): read it and act on a mark.
 6. Never `raw:true` on a page showing a key.
-7. Done: `done` with the outcome and a one-line summary, `save` with a kebab name if it should compile, `autobrowse stop <port>`. Or `autobrowse stop <port> achieved|failed "summary"` in one go. Never stop without a verdict: `autobrowse success` counts a run with none as unknown.
+7. Done: `done` with the outcome and a one-line summary, `save` with a kebab name if it should compile, `autobrowse stop <port>`. Or `autobrowse stop <port> achieved|failed "summary"` in one go. Never stop without a verdict: `autobrowse stats success` counts a run with none as unknown.
 
 The payment gate: a billing field (card, CVC, tax id, billing address) or a
 spending button (Buy, Pay, Subscribe, Add funds, Start trial) texts William and
@@ -192,11 +192,11 @@ their URL and landmarks, each with the acts that worked on it. A walk runs
 as `<site>/walk-<name>` in the catalog, with no model in the loop.
 
 ```sh
-autobrowse explored <site>                         # runs: driver, goal, outcome, answer tokens
+autobrowse history explore <site>                         # runs: driver, goal, outcome, answer tokens
 autobrowse walks build <site> <name> --goal-like "<words>"   # or --run id,id
 autobrowse walks show <site>/<name>                # screens and ops, never values
 autobrowse walks run <site>/<name> --plan key=value [--yes]  # --yes when it has a final act
-autobrowse tokens --days 30                        # spend and the verdict
+autobrowse stats tokens --days 30                        # spend and the verdict
 ```
 
 Or compile a saved recording to TypeScript:

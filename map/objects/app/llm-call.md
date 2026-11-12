@@ -9,7 +9,7 @@ entity: src/llm/ledger.ts
 
 # Model call ledger
 
-Every model call autobrowse makes, one JSON line each with its purpose: `LlmCall` in `src/llm/ledger.ts`, monthly files `llm/llm-YYYY-MM.jsonl` beside the credentials file. `autobrowse tokens` reads it with the run `cmd` rows and gives the verdict.
+Every model call autobrowse makes, one JSON line each with its purpose: `LlmCall` in `src/llm/ledger.ts`, monthly files `llm/llm-YYYY-MM.jsonl` beside the credentials file. `autobrowse stats tokens` reads it with the run `cmd` rows and gives the verdict.
 
 ## Why this shape
 
@@ -24,7 +24,7 @@ Spend has to be read back by purpose to judge it. Purpose rides on the request (
 ## Connected to
 
 - **owned-by:** the app's model ([[app]])
-- **joins:** [[explore-run]] (answer tokens), [[site-call-ledger]] (`autobrowse success` counts failed calls with it), [[agent-session]] (`steps.jsonl`, read when no call rows exist)
+- **joins:** [[explore-run]] (answer tokens), [[site-call-ledger]] (`autobrowse stats success` counts failed calls with it), [[agent-session]] (`steps.jsonl`, read when no call rows exist)
 - **looks-like-but-is-not:** the [[site-call-ledger]] (site calls, not model calls); the OTLP trace sink (spans to Langfuse); the step ledger
 
 ## If you change this
@@ -37,7 +37,7 @@ Spend has to be read back by purpose to judge it. Purpose rides on the request (
 | Surface | Role |
 |---|---|
 | every model call | writes |
-| `autobrowse tokens`, `success` | reads |
+| `autobrowse stats tokens`, `stats success` | reads |
 
 ## See
 

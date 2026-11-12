@@ -209,7 +209,7 @@ export function registerFilesCommands(program: Command, settings: Settings): voi
           console.log("backed up to files/ in the bucket (the old papers/ objects stay)");
         } catch (err) {
           console.log(
-            `backup failed (${(err as Error).name}): autobrowse aws-login, then autobrowse files backup`,
+            `backup failed (${(err as Error).name}): autobrowse cli-login aws, then autobrowse files backup`,
           );
         }
       }
