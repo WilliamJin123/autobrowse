@@ -115,7 +115,8 @@ describe("the toolkit", () => {
   it("the tree's root is each site and its count", () => {
     const tree = sitesTree(tools);
     expect(tree).toContainEqual({ site: "hn", tools: 1 });
-    expect(tree).toContainEqual({ site: "(any)", tools: 1 });
+    // a multi-site workflow and page-login
+    expect(tree).toContainEqual({ site: "(any)", tools: 2 });
   });
 });
 

@@ -18,6 +18,7 @@ Robustness lives in one place: a pause to read, a curved reach, typing in runs w
 ## Shape
 
 - `Pace` — `src/browser/human/index.ts:50`; `Hands { think, click, type, press, scroll … }` — `:113`; `handsFor` — `:245`
+- Field-swap guard (WA-1349): `paste`, and `type` of text `hidden` marks as secret, take the element handle first and check after the reach that the hints still find it, its tag, name, id, autocomplete and form are unchanged, and it has focus; else `FieldSwapped`, nothing typed. Not `type` of the field (text-to-password on focus is common). Instant hands have no gap between find and fill
 - Mouse, scroll, typing styles in the sibling files
 - An optional `HandsLog` sink hears each act (move, down, up, key, scroll, focus): [[film]]
 - Chosen from settings: `paceFor` — `src/app/services-signin.ts:293`

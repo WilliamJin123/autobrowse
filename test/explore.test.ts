@@ -154,7 +154,7 @@ describe("explore mode", () => {
 
   it("compacts a long eval answer: TOON, then an even cut, the whole in a file", async () => {
     const small = await send({ cmd: "eval", js: "'a b '.repeat(25)" });
-    expect(small.body).toEqual({ result: "a b ".repeat(25) });
+    expect(small.body).toEqual({ result: "a b ".repeat(25), page: "data:" });
     // Same-shape rows over the budget as JSON, under it as TOON: nothing left out, no file.
     const rows = await send({
       cmd: "eval",
@@ -176,7 +176,7 @@ describe("explore mode", () => {
     expect((long.body.result as string).length).toBeLessThanOrEqual(20_000);
     expect(long.body.result as string).toMatch(/ …\d+ chars… /);
     const wide = await send({ cmd: "eval", js: "'c d '.repeat(7500)", limit: 40_000 });
-    expect(wide.body).toEqual({ result: "c d ".repeat(7500) });
+    expect(wide.body).toEqual({ result: "c d ".repeat(7500), page: "data:" });
   });
 
   it("takes commands one at a time, journals the ones that work, and saves a compilable recording", async () => {
@@ -651,6 +651,63 @@ describe("explore mode", () => {
     });
     const { aria } = (await send({ cmd: "aria" })).body as { aria: string };
     expect(aria).toMatch(/checkbox "Agree" \[checked\]/);
+  }, 60_000);
+
+  it("aria refs act as hints, in the page and in a frame; since answers only the change", async () => {
+    const inner = `<button onclick="document.title='inner'">Inner</button>`;
+    const page = `data:text/html,${encodeURIComponent(
+      `<button onclick="this.after(Object.assign(document.createElement('button'),{textContent:'Added'}));document.title='outer'">Outer</button><iframe id="w" srcdoc="${inner.replaceAll('"', "&quot;")}"></iframe>`,
+    )}`;
+    await send({ cmd: "open", url: page });
+    // the srcdoc frame loads a moment after the page
+    let aria = "";
+    for (let i = 0; i < 20 && !/Inner/.test(aria); i++) {
+      if (i) await new Promise((r) => setTimeout(r, 100));
+      aria = ((await send({ cmd: "aria" })).body as { aria: string }).aria;
+    }
+    // page text inside the session's fence
+    expect(aria).toMatch(/^<<page [0-9a-f]{12} data:>>\n/);
+    expect(aria).toMatch(/\n<<end [0-9a-f]{12}>>$/);
+    // a ref names its frame (`f12e2`); the main frame's too after other pages
+    const outer = /button "Outer" \[ref=((?:f\d+)?e\d+)\]/.exec(aria)?.[1];
+    const framed = /button "Inner" \[ref=((?:f\d+)?e\d+)\]/.exec(aria)?.[1];
+    expect(outer && framed).toBeTruthy();
+    await send({ cmd: "click", hints: { ref: outer } });
+    expect((await send({ cmd: "eval", js: "document.title" })).body.result).toBe("outer");
+    const { since } = (await send({ cmd: "aria", since: true })).body as {
+      since: { added: string[]; gone: number };
+    };
+    expect(since.added.join("\n")).toMatch(/button "Added"/);
+    expect(since.gone).toBe(0);
+    await send({ cmd: "click", hints: { ref: framed } });
+    const { actions } = (await send({ cmd: "journal", last: 2 })).body as {
+      actions: Array<{ target: Record<string, unknown> }>;
+    };
+    // journaled as the control's own hints, never the ref
+    expect(actions[0]?.target).toMatchObject({ role: "button", name: "Outer" });
+    expect(actions[1]?.target).toMatchObject({ name: "Inner", frame: "iframe#w" });
+    expect(actions[1]?.target).not.toHaveProperty("ref");
+    const stale = await send({ cmd: "click", hints: { ref: "e9999" } });
+    expect(JSON.stringify(stale.body)).toMatch(/ref e9999 is stale/);
+    // snapshot since: nothing changed, nothing sent
+    await send({ cmd: "snapshot" });
+    expect((await send({ cmd: "snapshot", since: true })).body).toMatchObject({
+      since: { added: [], gone: 0 },
+    });
+  }, 60_000);
+
+  it("screenshot ifChanged keeps the last file when the page looks the same", async () => {
+    await send({ cmd: "open", url: "data:text/html,<p>still</p>" });
+    const first = (await send({ cmd: "screenshot" })).body as { file: string };
+    const same = (await send({ cmd: "screenshot", ifChanged: true })).body;
+    expect(same).toMatchObject({ file: first.file, unchanged: true, diff: 0 });
+    await send({ cmd: "eval", js: "document.body.style.background = 'black'" });
+    const moved = (await send({ cmd: "screenshot", ifChanged: true })).body as {
+      file: string;
+      diff: number;
+    };
+    expect(moved.file).not.toBe(first.file);
+    expect(moved.diff).toBeGreaterThan(0.5);
   }, 60_000);
 
   it("reads a list as rows with the driver's code and journals the op a walk replays", async () => {

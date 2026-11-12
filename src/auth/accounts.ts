@@ -11,6 +11,7 @@ import { defineFlow, type FlowPage, type FlowRunner } from "../browser/flow.js";
 import { runLeg } from "../engine/leg.js";
 import { accent, bold, columns, dim } from "../style.js";
 import { credentialFor, resolveLogin, type SiteLogin, viaLogin } from "./login.js";
+import { pageLogin } from "./page-login.js";
 import { PROVIDERS } from "./providers.js";
 import { MAIN, type NamedStore, resolveAccount, shownRoles } from "./roles.js";
 import { SITE_LOGINS } from "./sites.js";
@@ -97,7 +98,7 @@ export function accountsOf(opts: {
     const known = resolveLogin(logins, site);
     if (known) return known;
     const cred = await store.get(site);
-    return cred?.via ? viaLogin(site, cred) : null;
+    return cred?.via ? viaLogin(site, cred) : cred?.password ? pageLogin(site, cred) : null;
   };
   const saving = new Map<string, Promise<void>>();
   const row = async (site: string) =>

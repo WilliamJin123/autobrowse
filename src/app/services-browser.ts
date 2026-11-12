@@ -136,6 +136,7 @@ export function browserOptions(
     ...(settings.film
       ? { film: { dir: expandHome(settings.film), size: filmSizeOf(settings.filmSize) } }
       : {}),
+    ...(settings.har ? { har: { record: expandHome(settings.har) } } : {}),
     browserbase:
       settings.browserbaseApiKey && settings.browserbaseProjectId
         ? {

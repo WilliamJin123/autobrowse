@@ -174,7 +174,8 @@ export function loginAccounts(
   const own =
     cred && cred.split("@")[0] === platform
       ? cred
-      : resolveLogin(logins, session)?.site.split("@")[0] === platform
+      : // no spec (a `page-login` site): the session's own name
+        (resolveLogin(logins, session)?.site ?? session).split("@")[0] === platform
         ? session
         : at >= 0
           ? `${platform}${session.slice(at)}`

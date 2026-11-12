@@ -63,6 +63,12 @@ import { inPage } from "../browser/in-page.js";
 import { layoutText } from "../browser/layout.js";
 import { type Hints, locate, locateAll, textOf } from "../browser/locate.js";
 import {
+  fenceNavigations,
+  type HostRule,
+  outsideSession,
+  urlAllowed,
+} from "../browser/nav-fence.js";
+import {
   callName,
   diffHtml,
   diffShapes,
@@ -166,7 +172,7 @@ import { type Capture, captureFor } from "../runs/capture.js";
 import { machine, type RunLog, type RunOutcome, runLog } from "../runs/log.js";
 import { missCause, targetOf } from "../runs/success.js";
 import { accountIn, compiledDeps, platformOf } from "../workflows/compiled-deps.js";
-import { LOGIN_WORKFLOWS, loginName } from "../workflows/logins.js";
+import { LOGIN_WORKFLOWS, loginName, PAGE_LOGIN } from "../workflows/logins.js";
 import {
   findable,
   find as findTools,
@@ -179,10 +185,12 @@ import {
   toolkitFor,
   toolsOf,
 } from "../workflows/toolkit.js";
+import { originOf, pageFence } from "./boundary.js";
 import { codeVersion, skewWatch } from "./code-version.js";
 import {
   type Command,
   commandSchema,
+  LOOK_ONLY,
   LOOKED_AT,
   LOOKS,
   placeHint,
@@ -195,7 +203,7 @@ import {
 import { compactText, compactValue } from "./compact.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
-import { type Box, marksFor, missed } from "./marks.js";
+import { type Box, marksFor, missed, refHints } from "./marks.js";
 import { overlayFor, traceRow } from "./overlay.js";
 import { COLLECT_SCRIPTS, type ScriptText, scanScripts } from "./script-scan.js";
 import {
@@ -208,6 +216,7 @@ import {
   siteFor,
   USERNAME_READ,
 } from "./sign-in-keep.js";
+import { shotDiff, sinceStore } from "./since.js";
 
 export { type Command, commandSchema, placeHint } from "./commands.js";
 export { journalFileFor, readJournal, tokenFileFor } from "./journal.js";
@@ -339,10 +348,11 @@ export function pageChange(before: readonly string[], after: readonly string[]):
   };
 }
 
-const STATE_TAIL = /(?: \[[^\]]*\])+$/;
+// an aria line with children ends in `:` after its state
+const STATE_TAIL = /(?: \[[^\]]*\])+:?$/;
 /** A snapshot row without its trailing `[state]` tokens. */
 const rowKey = (r: string) => r.replace(STATE_TAIL, "");
-const rowState = (r: string) => (STATE_TAIL.exec(r)?.[0] ?? "").trim();
+const rowState = (r: string) => (STATE_TAIL.exec(r)?.[0] ?? "").replace(/:$/, "").trim();
 
 /** A wall for the agent: a sign-in wall names the site's `<site>-login` tool (the provider's on its products). */
 export function wallAnswer(wall: Wall | null, url: string): (Wall & { signIn?: string }) | null {
@@ -375,6 +385,10 @@ export interface ExploreOptions {
   desktop?: Desktop;
   /** Draw the overlay (ref boxes, the act's target, the agent's goal and thought); default: when headed. */
   overlay?: boolean;
+  /** Only commands that read the page or go to a URL (`LOOK_ONLY`); the rest are refused. */
+  lookOnly?: boolean;
+  /** Hosts the top frame may load (`browser/nav-fence`); any other navigation fails unsent. Absent: any. */
+  allowHosts?: HostRule;
   /**
    * Compiled workflows the `flow` command may run on this page: by name, the plan with its saved
    * defaults under what the command gives, the key vault a key-minting flow keeps into. Absent: refused.
@@ -1256,6 +1270,10 @@ async function serve(
   type Target = z.infer<typeof targetSchema>;
   const find = (t: Target) => locate(page, t.hints as Hints);
   const marks = marksFor();
+  // page text in answers sits inside markers with this nonce: the page never sees it
+  const fence = pageFence(randomBytes(6).toString("hex"));
+  const looks = sinceStore(pageChange);
+  let lastShot: string | null = null;
   /** The marks picture, names masked as `aria` masks them. */
   const takeMarks = async () => {
     const { boxes, ...taken } = await marks.take(page, shoot, async () => {
@@ -1818,7 +1836,7 @@ async function serve(
     const login = t.name.endsWith("-login") && LOGIN_WORKFLOWS.has(t.name);
     const takes = t.fields.some((f) => f.name === "account");
     const platform = login
-      ? t.name.slice(0, -"-login".length)
+      ? loginPlatform(t.name, {})
       : takes && t.site
         ? platformOf(t.site)
         : null;
@@ -1856,7 +1874,7 @@ async function serve(
   ): Promise<{ account?: string }> => {
     if (accountIn(given)) return {};
     const login = name.endsWith("-login") && LOGIN_WORKFLOWS.has(name);
-    const platform = login ? name.slice(0, -"-login".length) : site ? platformOf(site) : null;
+    const platform = login ? loginPlatform(name, given) : site ? platformOf(site) : null;
     if (!platform) return {};
     const accounts = await accountsOf(platform);
     const own = accounts.find((a) => a.profile);
@@ -1867,10 +1885,18 @@ async function serve(
       );
     return {};
   };
-  const withAccounts = async <W extends { signIn?: string } | null>(wall: W) => {
-    if (!wall?.signIn) return wall;
-    const accounts = await accountsOf(wall.signIn.slice(0, -"-login".length));
-    return accounts.length ? { ...wall, accounts } : wall;
+  /** The platform a login tool signs in to; `page-login`'s is its plan's site, else the session's. */
+  const loginPlatform = (name: string, given: Record<string, unknown>) =>
+    name === PAGE_LOGIN
+      ? platformOf(typeof given.site === "string" ? given.site : opts.site)
+      : name.slice(0, -"-login".length);
+  const withAccounts = async <W extends (Wall & { signIn?: string }) | null>(wall: W) => {
+    if (!wall || wall.kind === "captcha") return wall;
+    // no `<site>-login`: the page's own boxes, when the session's site has a stored account
+    const signIn = wall.signIn ?? PAGE_LOGIN;
+    const accounts = await accountsOf(loginPlatform(signIn, {}));
+    if (!accounts.length) return wall;
+    return { ...wall, signIn, accounts };
   };
   const looked = async (c: Command, wait: boolean) => {
     if (!LOOKS.has(c.cmd)) return { answer: await act(c, wait), rows: null };
@@ -2099,7 +2125,11 @@ async function serve(
     if (!workflow)
       throw new Error(`flow: no compiled workflow ${c.name}; see: autobrowse workflows`);
     const given = await from.plan(c.name, c.plan ?? {});
-    const raw = { ...(await accountDefault(c.name, workflow.site, given)), ...given };
+    const raw = {
+      ...(await accountDefault(c.name, workflow.site, given)),
+      ...(c.name === PAGE_LOGIN ? { site: opts.site } : {}),
+      ...given,
+    };
     const plan = workflow.plan.parse({ dryRun: false, ...raw });
     crossSite.clear();
     if (c.fresh) flowRuns.delete(c.name);
@@ -2287,12 +2317,20 @@ async function serve(
     }
   };
 
+  /** Every command, batch steps too: the look-only refusal, then the answer's page text fenced. */
   const act = async (given: Command, wait: boolean): Promise<unknown> => {
+    if (opts.lookOnly && !LOOK_ONLY.has(given.cmd))
+      throw new Error(`${given.cmd}: refused, this session is look-only (explore --look-only)`);
+    return fence.answer(given.cmd, await actRaw(given, wait), originOf(fp.page.url()));
+  };
+  const actRaw = async (given: Command, wait: boolean): Promise<unknown> => {
     page = fp.page;
-    // A mark from the last picture acts, and journals, as the control's own hints.
-    const cmd =
-      "hints" in given && given.hints?.mark
-        ? ({ ...given, hints: await marks.hints(page, given.hints.mark) } as Command)
+    // A mark from the last picture, or a ref from the last aria, acts and journals as the control's own hints.
+    const h = "hints" in given ? given.hints : undefined;
+    const cmd = h?.mark
+      ? ({ ...given, hints: await marks.hints(page, h.mark) } as Command)
+      : h?.ref
+        ? ({ ...given, hints: await refHints(page, h.ref) } as Command)
         : given;
     // A target on no frame that the page lacks is looked for in its iframes (card fields, a
     // bank's challenge). A fill or place gives frames still loading a moment.
@@ -2328,6 +2366,7 @@ async function serve(
         // Through the runner: a wall its URL shows (the login page) is signed through. One only
         // the text suggests comes back as the wall, with the site's sign-in tool: the agent judges.
         // A captcha comes back too: a checkbox one is clicked like any control, a puzzle goes to a person.
+        if (opts.allowHosts && !urlAllowed(c.url, opts.allowHosts)) throw outsideSession(c.url);
         try {
           // An agent at the console picks the account: open never signs in; the wall lists them.
           await fp.open(c.url, { allowWall: opts.signInOn !== "any" || !opts.login });
@@ -2496,12 +2535,22 @@ async function serve(
         return { url: page.url() };
       }
       case "aria": {
+        // refs: `[ref=e12]` per line, iframes inline (`f1e3`), for `hints:{ref}`
+        const ai = c.refs !== false;
         const tree = await (c.hints
-          ? locate(page, c.hints as Hints).ariaSnapshot()
-          : ariaWithFrames(page)
+          ? locate(page, c.hints as Hints).ariaSnapshot(ai ? { mode: "ai" } : {})
+          : ai
+            ? page.ariaSnapshot({ mode: "ai" })
+            : ariaWithFrames(page)
         ).catch((e: Error) => `error: ${e.message}`);
         // Even raw: a password typed into a field is never something a caller may read back.
-        const fit = fitText(shotsDir, "aria", out(redactAria(tree), c.raw), c.limit ?? 12_000);
+        const shown_ = out(redactAria(tree), c.raw);
+        if (!tree.startsWith("error:")) {
+          const key = `aria|${JSON.stringify(c.hints ?? null)}|${ai}|${!!c.raw}`;
+          const delta = looks.look(key, page.url(), shown_.split("\n"), c.since);
+          if (delta) return { since: delta };
+        }
+        const fit = fitText(shotsDir, "aria", shown_, c.limit ?? 12_000);
         const aria = fit.text;
         const whole = fit.whole ? { whole: fit.whole } : {};
         if (c.hints && tree.startsWith("error:"))
@@ -2510,13 +2559,13 @@ async function serve(
         const extras = (await extrasOf(page)).map((e) => ({ ...e, name: out(e.name, c.raw) }));
         return { aria, extras, ...whole };
       }
-      case "snapshot":
-        return {
-          rows: (await snapshotPage(page, c.limit ?? 120))
-            .split("\n")
-            .map((r) => redactRow(r))
-            .join("\n"),
-        };
+      case "snapshot": {
+        const rows_ = (await snapshotPage(page, c.limit ?? 120))
+          .split("\n")
+          .map((r) => redactRow(r));
+        const delta = looks.look(`snapshot|${c.limit ?? 120}`, page.url(), rows_, c.since);
+        return delta ? { since: delta } : { rows: rows_.join("\n") };
+      }
       case "text": {
         if (c.article) {
           const a = await articleText(page);
@@ -2622,8 +2671,18 @@ async function serve(
         const closedTabs = c.index === "main" ? await closeStepTabs() : 0;
         return { url: next.url(), ...(closedTabs ? { closedTabs } : {}) };
       }
-      case "screenshot":
-        return { file: await shoot() };
+      case "screenshot": {
+        const file = await shoot();
+        const prev = lastShot;
+        lastShot = file;
+        if (!c.ifChanged || !prev || !existsSync(prev)) return { file };
+        const diff = shotDiff(readFileSync(prev), readFileSync(file));
+        if (diff >= (c.threshold ?? 0.01)) return { file, diff: Math.round(diff * 1e4) / 1e4 };
+        // same picture: the earlier file stands, this one goes
+        rmSync(file, { force: true });
+        lastShot = prev;
+        return { file: prev, unchanged: true, diff: Math.round(diff * 1e4) / 1e4 };
+      }
       case "proof": {
         const n = String(shotN++).padStart(4, "0");
         const proof = await proofPage(page, {
@@ -3109,6 +3168,7 @@ async function serve(
     };
     writeFileSync(infoFile, JSON.stringify(info), { mode: 0o600 });
   }
+  if (opts.allowHosts) await fenceNavigations(page.context(), opts.allowHosts);
   page.context().on("close", () => finish());
   // A page load is a person (or a popup) still at work.
   page.context().on("page", (p) => {

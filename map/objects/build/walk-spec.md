@@ -34,11 +34,12 @@ Data run by one interpreter, not rendered TypeScript: a walk is rebuilt from new
 - Again: a cut's `again: [n]` (part or `login`) makes act n start a new visit of the same page (a wrong code), its own screen after the first, known also by landmarks only it shows — `src/walks/cut.ts`, `src/walks/build.ts`
 - See: `see` stops the walk unless the page shows `hints` or a file field's base name within `ms` — `src/walks/flow.ts`
 - Pick: `pick` chooses checkboxes or radios in a `region` by their row's text (shadow roots too), clicks only what differs, reads back — `src/browser/pick.ts`, `src/walks/flow.ts`
+- Request tier (WA-1352): an eligible read-only walk (`ineligible`) learns one request leg per output on each UI run that reached its goal: `intercept` when the start page made the call before the first act, else `cookie` (sent again with `fetch` from the page). Legs live per profile in `<state>/walk-calls/<site@label>/<name>.json` (`loadCalls`, `saveCalls`), never in the walk file and never packed. The next run tries them through `ladder()`; `classify` stops on 429, sign-in and blocks, `RungBroke` falls to the UI rung, which learns again; legs that come back the same go `off` 7 days. Output `via`, `fell`, `learned` — `src/walks/calls.ts`, `src/walks/flow.ts`; design `designs/2026-11-12-walk-request-tier.md`
 - Run: `walkFlow` (input, then default, then v1 example, then `deps.ask`; profile values through `deps.profile`) — `src/walks/flow.ts:256`; `walkFor` resolves secrets through stored logins (`walkSecrets`) and profile values on the Mac — `src/app/services-signin.ts:71`, `:605`; the Restate `flow` handler falls back to it — `src/engine/browser-service.ts:160`
 
 ## Connected to
 
-- **owns:** `walks/<site>/<name>.json`; a [[mod]] may carry one under `mods/<dir>/walks/`
+- **owns:** `walks/<site>/<name>.json`, `walk-calls/<site@label>/<name>.json` (learned request legs); a [[mod]] may carry one under `mods/<dir>/walks/`
 - **owned-by:** the owner's state dir ([[state-files]])
 - **joins:** [[explore-run]] (input), [[screen]] (`walk()`, `PageLook`), [[outline]] (op and field schemas), [[flow]] (`FlowPage`), [[browser-service]] (catalog), [[sign-in-context]] (`loginSecrets`)
 - **looks-like-but-is-not:** a hand-written sign-in walk (`Walk` in `src/browser/screens.ts`, code); a [[compiled-workflow]] (TypeScript, from one recording)
@@ -58,4 +59,4 @@ Data run by one interpreter, not rendered TypeScript: a walk is rebuilt from new
 ## See
 
 - Source: `src/walks/`
-- Design: `designs/2026-09-30-runs-and-walks.md`, `designs/2026-10-05-teach-mode.md`, `designs/2026-10-23-cut-runs.md`
+- Design: `designs/2026-09-30-runs-and-walks.md`, `designs/2026-10-05-teach-mode.md`, `designs/2026-10-23-cut-runs.md`, `designs/2026-11-12-walk-request-tier.md`

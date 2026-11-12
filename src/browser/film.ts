@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { accessSync, constants, existsSync } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import type { BrowserContext, Page } from "playwright";
 import type { HandEvent, HandsLog } from "./human/index.js";
 
@@ -58,6 +58,8 @@ export interface Pane {
   scale: number;
   /** `t` is ms from `start`. */
   events: PaneEvent[];
+  /** Contact sheets beside the mp4: the first frame and each scene change, 4x4 a sheet. */
+  sheets?: string[];
 }
 
 /** A tool filming runs, and how to get it. */
@@ -270,6 +272,8 @@ export async function filmPage(
           px,
           join(dir, file),
         );
+        // a failed sheet costs the sheet, never the take
+        const sheets = await contactSheet(join(dir, file), join(dir, name)).catch(() => []);
         const pane: Pane = {
           name,
           file,
@@ -279,6 +283,7 @@ export async function filmPage(
           size: [w, h],
           scale: px[0] / w,
           events,
+          ...(sheets.length ? { sheets } : {}),
         };
         const tmp = join(dir, `.${name}.json`);
         await writeFile(tmp, `${JSON.stringify(pane)}\n`);
@@ -366,8 +371,7 @@ async function encode(
   const [w, h] = [px[0] & ~1, px[1] & ~1];
   const list = `${out}.ffconcat`;
   await writeFile(list, ffconcat(holds(plan), fileOf));
-  const ff = spawn(
-    ffmpegBin(),
+  await ffmpeg(
     [
       ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list],
       // Only the frames the page painted, each on its 1/60 s slot: a still page costs nothing.
@@ -377,8 +381,12 @@ async function encode(
       ["-video_track_timescale", "60000"],
       ["-movflags", "+faststart", out],
     ].flat(),
-    { stdio: ["ignore", "ignore", "pipe"] },
-  );
+    out,
+  ).finally(() => rm(list, { force: true }));
+}
+
+async function ffmpeg(args: string[], out: string): Promise<void> {
+  const ff = spawn(ffmpegBin(), args, { stdio: ["ignore", "ignore", "pipe"] });
   let said = "";
   ff.stderr.on("data", (b: Buffer) => {
     said = (said + b.toString()).slice(-2_000);
@@ -387,9 +395,38 @@ async function encode(
     ff.on("error", reject);
     ff.on("close", resolve);
   });
-  await rm(list, { force: true });
   if (code !== 0)
     throw new Error(`film: ffmpeg failed for ${out}: ${said.trim() || `exit ${code}`}`);
+}
+
+/** Scene score past which a frame starts a new tile; a page that only scrolled a little stays one. */
+export const SHEET_SCENE = 0.08;
+export const SHEET_TILE = { cols: 4, rows: 4, width: 480 };
+
+/**
+ * A video's contact sheets (agent-browser's `--contact-sheet`): the first frame and each scene
+ * change, tiled in order, so a run is checked without watching it. `<base>-sheet-NN.png`, one per
+ * 16 tiles; the last one partly filled.
+ */
+export async function contactSheet(video: string, base: string): Promise<string[]> {
+  const { cols, rows, width } = SHEET_TILE;
+  const pattern = `${base}-sheet-%02d.png`;
+  await ffmpeg(
+    [
+      ["-y", "-loglevel", "error", "-i", video],
+      [
+        "-vf",
+        `select=eq(n\\,0)+gt(scene\\,${SHEET_SCENE}),scale=${width}:-2,tile=${cols}x${rows}:padding=4:margin=4:color=white`,
+      ],
+      ["-fps_mode", "vfr", "-start_number", "1", pattern],
+    ].flat(),
+    pattern,
+  );
+  const dir = dirname(base);
+  const stem = basename(base);
+  return (await readdir(dir))
+    .filter((f) => f.startsWith(`${stem}-sheet-`) && f.endsWith(".png"))
+    .sort();
 }
 
 /** Film every page a context opens, now and later; `stop` ends them all. */

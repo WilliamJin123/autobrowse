@@ -31,6 +31,7 @@ import { expandHome } from "../google/auth.js";
 import type { GmailUserClient } from "../google/gmail.js";
 import type { Profile } from "../money/profile.js";
 import { isDefaultOwner } from "../owner.js";
+import { loadCalls, saveCalls } from "../walks/calls.js";
 import { type WalkDeps, type WalkInput, type WalkOutput, walkFlow } from "../walks/flow.js";
 import { loadWalk, saveWalk, type WalkSpec } from "../walks/spec.js";
 import type { Settings } from "./config.js";
@@ -112,11 +113,14 @@ export function walkFor(
   sink: SecretSink = sinkFor(settings),
   o: { profile?: string; ask?: WalkDeps["ask"] } = {},
 ): BrowserFlow<WalkInput, WalkOutput> | null {
-  const m = /^([a-z0-9][a-z0-9._-]*)(?:@[\w-]+)?\/walk-([a-z][a-z0-9-]*)$/i.exec(flowName);
+  const m = /^([a-z0-9][a-z0-9._-]*)(@[\w-]+)?\/walk-([a-z][a-z0-9-]*)$/i.exec(flowName);
   if (!m) return null;
   const dir = walksDirFor(settings);
-  const spec = loadWalk(dir, m[1] as string, m[2] as string);
+  const spec = loadWalk(dir, m[1] as string, m[3] as string);
   if (!spec) return null;
+  // Legs per profile: one may carry its account's ids.
+  const callsDir = join(stateDirFor(settings), "walk-calls");
+  const profile = `${m[1]}${m[2] ?? ""}`;
   const profiles = profilesForPlace(settings);
   let who: Promise<Profile | null> | null = null;
   return walkFlow(spec, {
@@ -145,6 +149,10 @@ export function walkFor(
       return "error" in w ? null : w;
     },
     save: (s) => saveWalk(dir, s),
+    calls: {
+      load: () => loadCalls(callsDir, profile, spec.name),
+      save: (c) => saveCalls(callsDir, profile, spec.name, c),
+    },
     archive: (as, html) =>
       writeFileSync(recordsFile(settings, spec.site, spec.name, as, "html"), html, {
         mode: 0o600,

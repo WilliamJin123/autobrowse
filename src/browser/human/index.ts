@@ -37,7 +37,7 @@
  *
  * This folder imports nothing from autobrowse: only Playwright's types.
  */
-import type { Locator, Page } from "playwright";
+import type { ElementHandle, Locator, Page } from "playwright";
 import { chance, drawMs, type Random } from "./draw.js";
 import {
   aimPoint,
@@ -491,16 +491,25 @@ export function handsFor(
     scroll: (page, dy) => wheel(page, dy, pace, random, log),
     async type(target, text, o) {
       const page = isPage(target) ? target : target.page();
+      // a secret lands in the field found or nowhere (WA-1349)
+      let el: ElementHandle | null = null;
       if (!isPage(target)) {
+        el = hidden(text) ? await target.elementHandle({ timeout: o.timeout }) : null;
+        const was = el ? await fieldPrint(el) : "";
         await click(target, o);
         // A click on a wrapper or an overlay leaves focus elsewhere and the keys would
         // go nowhere: put focus on the control, as a person's second click would.
         if (!(await hasFocus(target))) await target.focus(o);
+        if (el) {
+          await sameField(target, el, was);
+          if (!(await hasFocus(target)))
+            throw new FieldSwapped("focus left the field before the first key");
+        }
         await target.fill("", o);
       }
       if ([...text].length > pace.typing.pasteOver) {
         await page.waitForTimeout(drawMs(pace.think, random));
-        await (isPage(target) ? target.keyboard.insertText(text) : target.fill(text, o));
+        await (isPage(target) ? target.keyboard.insertText(text) : (el ?? target).fill(text, o));
         return null;
       }
       // The click focused the control: keys go to the page's keyboard from here, not
@@ -517,7 +526,8 @@ export function handsFor(
       }
       // Keys that landed nowhere leave the field empty: a person would see it and fill it.
       const ms = Date.now() - began;
-      if (!isPage(target) && text && (await fieldValue(target)) === "") await target.fill(text, o);
+      if (!isPage(target) && text && (await fieldValue(target)) === "")
+        await (el ?? target).fill(text, o);
       return {
         keys: plan.length,
         plannedMs: Math.round(plan.reduce((n, k) => n + k.hold + (k.after ?? 0), 0)),
@@ -527,16 +537,23 @@ export function handsFor(
     async paste(target, text, o) {
       if (await chosen(target, text, o, (l) => click(l, o))) return;
       await target.waitFor({ state: "visible", timeout: o.timeout });
+      // The field as found: the value lands in this element or nowhere (WA-1349).
+      const el = await target.elementHandle({ timeout: o.timeout });
+      const was = await fieldPrint(el);
       // Covered (a parent's label over a card iframe): focus it, as autofill does.
       await click(target, { timeout: Math.min(o.timeout, COVERED_MS) }).catch(async (err) => {
         if (!/Timeout/.test(String(err))) throw err;
         await target.focus(o);
       });
       await rest(target.page(), pace.mouse.hover, pace, random, log).catch(() => undefined);
+      await sameField(target, el, was);
       // A code split one box per character (Microsoft's six digit boxes): a fill lands
       // it all in the first box. Keys, as a person types them, move the widget along.
       if ([...text].length > 1 && (await boxWidth(target)) === 1) {
-        await target.fill("", o);
+        await el.fill("", o);
+        // keys go to the focus: it must be this box when the first one lands
+        if (!(await hasFocus(target)))
+          throw new FieldSwapped("focus left the field before the first key");
         const hide = hidden(text);
         for (const ch of text) {
           key(target.page(), hide ? HIDDEN_KEY : ch);
@@ -544,7 +561,7 @@ export function handsFor(
         }
         return;
       }
-      await target.fill(text, o);
+      await el.fill(text, o);
     },
     press: (target, k, o) => {
       const delay = drawMs(pace.typing.hold, random);
@@ -571,6 +588,41 @@ const hits = (target: Locator, box: Box, p: Point): Promise<boolean> =>
       { box: { x: box.x, y: box.y }, p },
     )
     .catch(() => true);
+
+/** The page changed a field between finding it and typing into it: nothing was typed. */
+export class FieldSwapped extends Error {
+  constructor(why: string) {
+    super(`refused: ${why}; nothing typed. Look again, then retry`);
+    this.name = "FieldSwapped";
+  }
+}
+
+/**
+ * What a page would change to send a value elsewhere: tag, name, id, autocomplete, form.
+ * Not `type`: some login fields turn text to password on focus.
+ */
+const fieldPrint = (el: ElementHandle) =>
+  el.evaluate((e) => {
+    const f = e as unknown as {
+      tagName: string;
+      name?: string;
+      id: string;
+      autocomplete?: string;
+      form?: { action?: string } | null;
+    };
+    return [f.tagName, f.name ?? "", f.id, f.autocomplete ?? "", f.form?.action ?? ""].join(
+      "\u0000",
+    );
+  });
+
+/** Still the element found, attached, unchanged, and still the one the hints find. */
+async function sameField(target: Locator, el: ElementHandle, was: string): Promise<void> {
+  const now = await fieldPrint(el).catch(() => null);
+  if (now === null) throw new FieldSwapped("the field left the page");
+  if (now !== was) throw new FieldSwapped("the field changed its name, id or form");
+  const found = await target.evaluate((t, h) => t === h, el, { timeout: 2_000 }).catch(() => false);
+  if (!found) throw new FieldSwapped("the hints now find another element");
+}
 
 /** Whether the control (or something inside it) has focus; unknown counts as yes. */
 const hasFocus = (target: Locator): Promise<boolean> =>

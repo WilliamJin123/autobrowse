@@ -13,6 +13,7 @@ import { gmailOAuth } from "../sites/gmail.js";
 import { createRegistryUser, NPM_TOKEN } from "../sites/npm.js";
 import { accountEnv } from "../sites/oauth.js";
 import { type CodeSource, totpSource } from "./codes.js";
+import { hostNamed, hostUnder, registrable } from "./guard.js";
 import { localPhone, phoneCountry } from "./phone.js";
 
 export { localPhone, phoneCountry };
@@ -226,6 +227,33 @@ export function signupHosts(site: string, url?: string | null): (host: string) =
     const h = host.toLowerCase();
     return h.includes(word) || h === own || also.includes(h);
   };
+}
+
+/** Sign-in pages a site's own login can hand off to; only these hosts, never the whole company. */
+export const SIGN_IN_HOSTS: readonly string[] = [
+  "accounts.google.com",
+  "appleid.apple.com",
+  "login.microsoftonline.com",
+  "login.live.com",
+];
+
+/**
+ * The hosts an agent session on `site` may load: a host named for the site
+ * (`instagram` → www.instagram.com), the start URL's registrable domain, the
+ * site's parent sign-in hosts, the big sign-in providers, and `domains`.
+ */
+export function sessionHosts(
+  site: string,
+  url: string | null | undefined,
+  domains: readonly string[] = [],
+): (host: string) => boolean {
+  const word = (site.split("@")[0] ?? site).toLowerCase();
+  const start = url ? registrable(new URL(url).hostname) : null;
+  const also = [...(SIGNUP_ALSO_HOSTS[word] ?? []), ...SIGN_IN_HOSTS, ...domains];
+  return (host) =>
+    hostNamed(host, word) ||
+    (start !== null && registrable(host) === start) ||
+    also.some((d) => hostUnder(host, d));
 }
 
 /** A second-factor vendor's page: a sign-in's one-time code goes there, never its password. */

@@ -19,6 +19,11 @@ const hintsSchema = z.object({
   frame: z.string().nullable().optional(),
   /** A number from the last `marks` picture, in place of the rest: the act journals its hints. */
   mark: z.number().int().positive().optional(),
+  /** A ref from the last `aria` (`e12`, `f1e3` in a frame), in place of the rest: the act journals its hints. */
+  ref: z
+    .string()
+    .regex(/^(?:f\d+)?e\d+$/)
+    .optional(),
 });
 
 /** What an act points at: the same hints a flow uses (`css` and `nth` included). */
@@ -77,9 +82,18 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     raw: z.boolean().optional(),
     /** Also the controls the tree leaves out: closed shadow roots, script-only clicks. */
     extras: z.boolean().optional(),
+    /** `[ref=e12]` on each line, to act with `hints:{ref:"e12"}`; on unless false. */
+    refs: z.boolean().optional(),
+    /** Only what changed since the last `aria` of this scope on this page; whole on a new URL. */
+    since: z.boolean().optional(),
   }),
   /** Interactive elements as one line each, what the repairer sees. */
-  z.object({ cmd: z.literal("snapshot"), limit: z.number().int().positive().optional() }),
+  z.object({
+    cmd: z.literal("snapshot"),
+    limit: z.number().int().positive().optional(),
+    /** Only what changed since the last `snapshot` on this page. */
+    since: z.boolean().optional(),
+  }),
   /** The page's words as laid out (rows, tables, columns); `layout: false` = DOM order, `coords` = `@x,y` per line. */
   z.object({
     cmd: z.literal("text"),
@@ -103,7 +117,12 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     cmd: z.literal("page"),
     index: z.union([z.number().int().min(0), z.literal("main")]),
   }),
-  z.object({ cmd: z.literal("screenshot") }),
+  z.object({
+    cmd: z.literal("screenshot"),
+    /** No new file when under `threshold` (default 0.01) of pixels changed since the last one. */
+    ifChanged: z.boolean().optional(),
+    threshold: z.number().min(0).max(1).optional(),
+  }),
   /**
    * The page (or `url`) loaded at each width (390, 1280): sideways scroll, boxes past the edge,
    * cut text, page errors, broken assets, a full-page shot each. `against` = an earlier proof's
@@ -343,6 +362,38 @@ export const LOOKS = new Set<Command["cmd"]>([
   "hover",
   "type",
   "key",
+]);
+/**
+ * What a look-only session may run (`explore --look-only`): read the page, go to a URL, end.
+ * Nothing that types, clicks, runs page script or stores.
+ */
+export const LOOK_ONLY = new Set<Command["cmd"]>([
+  "open",
+  "aria",
+  "snapshot",
+  "text",
+  "html",
+  "url",
+  "screenshot",
+  "marks",
+  "proof",
+  "network",
+  "errors",
+  "wait",
+  "pages",
+  "page",
+  "count",
+  "read",
+  "records",
+  "memory",
+  "journal",
+  "tools",
+  "goal",
+  "note",
+  "done",
+  "close",
+  "overlay",
+  "batch",
 ]);
 /** Session controls and nesting stay out of a batch. */
 export const UNBATCHABLE = new Set<Command["cmd"]>([

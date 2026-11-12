@@ -345,3 +345,64 @@ export function marksFor() {
     },
   };
 }
+
+/** In one frame: the hints of the element tagged `attr`, shadow roots included. */
+const taggedHints = (attr: string) => `(() => {
+${HINTS_JS}
+  const roots = [document];
+  while (roots.length) {
+    const root = roots.shift();
+    const el = root.querySelector('[' + ${JSON.stringify(attr)} + ']');
+    if (el) return hints(el);
+    for (const e of root.querySelectorAll('*')) if (e.shadowRoot) roots.push(e.shadowRoot);
+  }
+  return null;
+})()`;
+
+/**
+ * A ref from an `ai` aria snapshot (`e12`, `f1e3` in a frame) as hints a flow replays: the
+ * element's own, its frame chain, `nth` among their matches. Refs die with the next snapshot.
+ */
+export async function refHints(page: Page, ref: string): Promise<Hints> {
+  const el = await page
+    .locator(`aria-ref=${ref}`)
+    .elementHandle({ timeout: 2_000 })
+    .catch(() => null);
+  if (!el) throw new StaleMark(`ref ${ref} is stale (the page changed): take aria again`);
+  const attr = `data-r${randomBytes(4).toString("hex")}`;
+  try {
+    const frame = await el.ownerFrame();
+    let chain: string | null = null;
+    if (frame && frame !== page.mainFrame()) {
+      chain = (await framesInView(page)).find((f) => f.frame === frame)?.chain ?? null;
+      if (!chain) throw new StaleMark(`ref ${ref}: its frame has no selector; use marks`);
+    }
+    // no DOM lib in this build
+    await el.evaluate(
+      (e, a) => (e as unknown as { setAttribute(n: string, v: string): void }).setAttribute(a, "1"),
+      attr,
+    );
+    const found = await (frame ?? page.mainFrame()).evaluate<Hints | null>(taggedHints(attr));
+    if (!found) throw new StaleMark(`ref ${ref} is stale (the page changed): take aria again`);
+    const { nth: _, ...bare } = found;
+    const own: Hints = chain ? { ...bare, frame: chain } : bare;
+    const at = chain ? { frame: chain } : {};
+    const tries: Hints[] = [own];
+    if (own.role) tries.push({ tag: own.tag, role: own.role, ...at });
+    if (own.tag) tries.push({ tag: own.tag, css: own.tag, ...at });
+    for (const t of tries) {
+      if (!planLocator(t)) continue;
+      const i = await markIndex(locateAll(page, t), attr, "1");
+      if (i >= 0) return i ? { ...t, nth: i } : t;
+    }
+    throw new StaleMark(`ref ${ref}: no locator finds it; use marks`);
+  } finally {
+    await el
+      .evaluate(
+        (e, a) => (e as unknown as { removeAttribute(n: string): void }).removeAttribute(a),
+        attr,
+      )
+      .catch(() => undefined);
+    await el.dispose().catch(() => undefined);
+  }
+}

@@ -67,6 +67,8 @@ export interface StartRequest {
   inputs?: Record<string, string>;
   maxSteps?: number;
   url?: string | null;
+  /** Hosts beyond the site's own the top frame may load (`sessionHosts`); the rest fail unsent. */
+  allowDomains?: readonly string[];
 }
 
 export interface AgentSessions {
@@ -99,7 +101,12 @@ export interface SessionsOptions {
     port: number,
     session?: string,
     /** For the run history: what the agent is after and which model drives. */
-    run?: { goal: string; driver: string },
+    run?: {
+      goal: string;
+      driver: string;
+      /** Where the top frame may go: the start URL and extra domains, beside the site's own. */
+      hosts?: { url: string | null; domains: readonly string[] };
+    },
   ): Promise<Explorer>;
   /** First loopback port; each live session takes the next free one. */
   basePort?: number;
@@ -244,6 +251,7 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
         const ex = await o.open(req.site, view.port, view.id, {
           goal: req.goal,
           driver: `agent:${o.llm.id}`,
+          hosts: { url: req.url ?? null, domains: req.allowDomains ?? [] },
         });
         live.explorer = ex;
         void ex.done.then(() => {

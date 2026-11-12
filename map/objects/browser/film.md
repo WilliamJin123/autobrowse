@@ -21,6 +21,7 @@ Filming is a session option, so every runner films with no change (`AUTOBROWSE_F
 - `filmContext` — `:383`: films each page of a context; the session sets `Session.filmed` (`src/browser/session.ts:145`), and the trace then takes no screenshots
 - Events from the hands: `HandsLog` (`src/browser/human/index.ts:147`) fed by `filmLog`; `FILM_PACE` (`:111`) whenever a film is on (`paceFor`, `src/app/services-signin.ts:294`)
 - `filmTape` — `src/film/director.ts:38`: ttyd in headless Chrome as the `term` pane; `wait` counts only output after the last key (`showsAnew`, `:149`); writes `take.json`
+- Contact sheets (WA-1348): after each mp4, `contactSheet` tiles the first frame and each scene change (ffmpeg `select=gt(scene,SHEET_SCENE)`, `tile=4x4`) into `<pane>-sheet-NN.png`, listed in the pane's `sheets`; a failed sheet never fails the take. `autobrowse film-sheet <video>` makes them for any video
 - Needs: `FILM_NEEDS` (ffmpeg, ttyd), checked at start and in `doctor`
 
 ## Connected to
@@ -38,6 +39,7 @@ Filming is a session option, so every runner films with no change (`AUTOBROWSE_F
 | Surface | Role |
 |---|---|
 | `autobrowse film <tape> --out <dir>` | films a tape |
+| `autobrowse film-sheet <video>` | contact sheets of a video |
 | `AUTOBROWSE_FILM=<dir>` on any command | films its browsers |
 | `autobrowse doctor` | the `film` row |
 

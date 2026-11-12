@@ -52,7 +52,7 @@ const run = async (w: ReturnType<typeof loginWorkflow>, browser: FlowRunner, pla
 
 describe("a site's sign-in is a workflow", () => {
   it("every site login is in the catalog as <site>-login, and no leg has that name", () => {
-    expect(LOGIN_WORKFLOWS.size).toBe(SITE_LOGINS.length);
+    expect(LOGIN_WORKFLOWS.size).toBe(SITE_LOGINS.length + 1); // + page-login
     for (const l of SITE_LOGINS) {
       expect(LOGIN_WORKFLOWS.has(loginName(l.site))).toBe(true);
       expect(LEG_WORKFLOWS.has(loginName(l.site))).toBe(false);

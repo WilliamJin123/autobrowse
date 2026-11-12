@@ -141,6 +141,8 @@ const schema = z.object({
   pace: z.enum(["human", "fast"]).default("human"),
   /** Film every browser into this take folder (designs/2026-10-24-film.md); `autobrowse film` sets it for its shell. */
   film: z.string().min(1).optional(),
+  /** Record each browser's calls to this HAR file, scrubbed on close (WA-1350): a fixture for an offline walk test. */
+  har: z.string().min(1).optional(),
   /** The filmed page's size, CSS px. */
   filmSize: z
     .string()
@@ -470,6 +472,7 @@ export const ENV_KEYS = {
   showPointer: "SHOW_POINTER",
   overlay: "AUTOBROWSE_OVERLAY",
   film: "AUTOBROWSE_FILM",
+  har: "AUTOBROWSE_HAR",
   filmSize: "AUTOBROWSE_FILM_SIZE",
   artifactsDir: "ARTIFACTS_DIR",
   fixesFile: "FIXES_FILE",

@@ -1,9 +1,12 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import {
   cfrPlan,
+  contactSheet,
   FILM_FPS,
   type Frame,
   ffconcat,
@@ -95,6 +98,31 @@ describe("film", () => {
     ]);
     expect(missingNeeds(["ffmpeg"], { PATH: "", FFMPEG: join(bin, "ttyd") })).toEqual([]);
   });
+
+  it.skipIf(!!missingNeeds(["ffmpeg"]).length)(
+    "tiles the first frame and each scene change into 4x4 contact sheets",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "sheet-"));
+      const video = join(dir, "web.mp4");
+      // 18 one-second colour cards: 18 scenes, so two sheets, the second with 2 tiles
+      const colours = Array.from({ length: 18 }, (_, i) => (i % 2 ? "black" : "white"));
+      execFileSync("ffmpeg", [
+        ...["-y", "-loglevel", "error"],
+        ...colours.flatMap((c) => ["-f", "lavfi", "-i", `color=c=${c}:s=320x180:d=1:r=10`]),
+        ...[
+          "-filter_complex",
+          `${colours.map((_, i) => `[${i}:v]`).join("")}concat=n=${colours.length}:v=1`,
+        ],
+        ...["-pix_fmt", "yuv420p", video],
+      ]);
+      const sheets = await contactSheet(video, join(dir, "web"));
+      expect(sheets).toEqual(["web-sheet-01.png", "web-sheet-02.png"]);
+      const first = PNG.sync.read(readFileSync(join(dir, sheets[0] as string)));
+      // 4 tiles of 480 wide, padding 4, margin 4
+      expect(first.width).toBe(4 * 480 + 3 * 4 + 2 * 4);
+    },
+    30_000,
+  );
 
   it("lists a take's finished panes, not the ones still filming or the take file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "take-"));

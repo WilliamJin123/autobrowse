@@ -126,6 +126,7 @@ const agentStart = z.object({
   inputs: z.record(z.string(), z.string()).optional(),
   maxSteps: z.number().int().min(1).max(200).optional(),
   url: z.string().url().optional(),
+  allowDomains: z.array(z.string().min(1)).max(50).optional(),
 });
 const AGENT_ACTIONS = ["pause", "resume", "stop", "save", "close"] as const;
 const agentAction = z.object({ name: z.string().optional() });
@@ -886,7 +887,7 @@ export function api(deps: ApiDeps): Hono<Env> {
     if (!deps.agent) return fail(c, 501, "no model configured: set LLM_PROVIDER");
     const body = await readJson(c, agentStart);
     if (!body.ok) return body.res;
-    const { url, inputs, maxSteps, ...rest } = body.data;
+    const { url, inputs, maxSteps, allowDomains, ...rest } = body.data;
     if (!allowsSite(scopeOf(c), rest.site))
       return fail(c, 403, `this key may not use ${rest.site}`);
     return created(
@@ -895,6 +896,7 @@ export function api(deps: ApiDeps): Hono<Env> {
         ...rest,
         ...(inputs ? { inputs } : {}),
         ...(maxSteps ? { maxSteps } : {}),
+        ...(allowDomains ? { allowDomains } : {}),
         url: url ?? null,
       }),
     );

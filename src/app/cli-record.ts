@@ -6,7 +6,7 @@ import type { Command } from "commander";
 import type { StepRecord } from "../agent/explorer.js";
 import { runJson } from "../agent/run-json.js";
 import { urlWithoutQuery } from "../auth/guard.js";
-import type { SecretValues } from "../auth/signup.js";
+import { type SecretValues, sessionHosts } from "../auth/signup.js";
 import type { Command as ExploreCommand } from "../explore/commands.js";
 import { DEFAULT_IDLE_MINUTES, pidAlive } from "../explore/lease.js";
 import type { Explorer } from "../explore/server.js";
@@ -108,6 +108,10 @@ export function registerRecordCommands(
       "return once the session takes commands; it keeps running (`autobrowse cmd` talks to it)",
     )
     .option("--force", "open even when memory is critical (a person's call)")
+    .option(
+      "--look-only",
+      "read the page and go to URLs only: no click, type, script, store or flow (a page you do not trust)",
+    )
     .action(
       async (
         site: string,
@@ -125,6 +129,7 @@ export function registerRecordCommands(
           files?: string;
           background?: boolean;
           force?: boolean;
+          lookOnly?: boolean;
         },
       ) => {
         const { tokenFileFor, journalFileFor } = await import("../explore/server.js");
@@ -152,6 +157,7 @@ export function registerRecordCommands(
           signIn: !o.signup,
           ...(await withLogins(await exploreSecrets(site, o), o.login, site)),
           ...(o.files ? { fileSets: listOf(o.files) } : {}),
+          ...(o.lookOnly ? { lookOnly: true } : {}),
         });
         // The token lives in an owner-only file, not in this output: logs get pasted, files do not.
         console.log(
@@ -409,6 +415,10 @@ export function registerRecordCommands(
       "never sign in with a stored account (a benchmark task, a stranger's site)",
     )
     .option("--no-os", "no desktop or shell acts: the browser only (task text you did not write)")
+    .option(
+      "--allow-domains <domains...>",
+      "fence the top frame to the site's own hosts, the --url domain and these; any other navigation fails unsent",
+    )
     .action(
       async (
         site: string,
@@ -424,6 +434,7 @@ export function registerRecordCommands(
           json?: string;
           signIn: boolean;
           os: boolean;
+          allowDomains?: string[];
         },
       ) => {
         let secrets: AgentRun["secrets"] = null;
@@ -453,6 +464,7 @@ export function registerRecordCommands(
           signIn: o.signIn,
           desktop: o.os,
           ...(o.json ? { json: o.json } : {}),
+          ...(o.allowDomains ? { allowDomains: o.allowDomains } : {}),
         });
       },
     );
@@ -941,6 +953,8 @@ interface AgentRun {
   desktop?: boolean;
   /** The run as JSON here, rewritten after every step, so a killed run still leaves its evidence. */
   json?: string;
+  /** Set: the top frame is fenced to the site's hosts, the start URL's domain and these (`sessionHosts`). */
+  allowDomains?: readonly string[];
 }
 
 /** One agent session: explore server up, agent to the goal, journal saved as a recording. */
@@ -959,6 +973,7 @@ async function runAgent(settings: Settings, r: AgentRun): Promise<{ achieved: bo
       signInOn: "any",
       ...(r.secrets ? { secrets: r.secrets.values, secretHosts: r.secrets.hosts } : {}),
       ...(r.signIn === false ? { signIn: false } : {}),
+      ...(r.allowDomains ? { allowHosts: sessionHosts(r.site, r.url, r.allowDomains) } : {}),
     },
   );
   console.log(`agent on ${r.site}; pause: autobrowse cmd '{"cmd":"pause"}' --port ${ex.port}`);

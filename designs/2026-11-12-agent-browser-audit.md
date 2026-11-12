@@ -59,3 +59,4 @@ Cheap and independent first: 11, 1, 2, 14, 9, 6a. Then 6b, 10, 13, 12. Then 7 (i
 ## Decision log
 
 - 2026-11-12: Audit written. Content boundaries agreed (William). Mouse paths: ours already go further. Secrets stay in credvault; only the field-swap guard and a generic sign-in come over.
+- 2026-11-12: Rows 10 (HAR record and offline replay, WA-1350), 12 (nav fence, WA-1351) and 7 (walk request tier, WA-1352) built. Row 7 learns `intercept` legs where the start page makes the call and `cookie` legs where an act does; design `designs/2026-11-12-walk-request-tier.md`. Gap in row 12: a popup's first request leaves before the fence blanks the popup.

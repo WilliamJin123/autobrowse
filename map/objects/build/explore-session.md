@@ -3,7 +3,7 @@ type: object
 cluster: build
 universe: live
 status: verified
-verified: 2026-09-30 @ baab3e6+
+verified: 2026-11-12 @ dd98d51+
 entity: src/explore/server.ts
 ---
 
@@ -25,7 +25,12 @@ A person or a model maps a page and acts on it; what works is journaled and beco
 - Help by hand, no pause: acts a person does between two commands count (`byHand`, `HAND_GRACE_MS` — `:279`, `:595-602`); the next answer carries `helped {acts, url, changed, note}` — `helpedSince` `:1027`
 - A target with no `frame` the page lacks is looked for in each visible iframe (`withFrame`, `src/browser/frames.ts`), so `place` on a card provider's hosted field (Braintree) works with plain role/name hints — `:1045-1049`. A paste whose click stays covered 3 s (a parent's label over the field's iframe) focuses the field instead (`COVERED_MS`, `src/browser/human/index.ts`); a placed card answers `captcha` when a captcha frame is in view (`captchaInView`, `src/browser/frames.ts`) (WA-1235)
 - History: every command, act and ending also goes to the session's [[explore-run]] (`goal`, `done`; `openRun` `:633`, `endRun` `:660`), which outlives the journal
-- `marks` (`src/explore/marks.ts`, 2026-10-25): a viewport screenshot with a numbered box per control in view, and `hints:{mark:n}` on any target. A mark becomes the control's own hints plus `nth` at the top of `act`, so the journal replays it. A miss (`missed`: a Playwright timeout, strict mode, a stale mark) answers with marks. The hints code is the recorder's (`HINTS_JS`, `src/recorder/observer.ts`). Main frame only
+- `marks` (`src/explore/marks.ts`, 2026-10-25): a viewport screenshot with a numbered box per control in view, and `hints:{mark:n}` on any target. A mark becomes the control's own hints plus `nth` at the top of `act`, so the journal replays it. A miss (`missed`: a Playwright timeout, strict mode, a stale mark) answers with marks. The hints code is the recorder's (`HINTS_JS`, `src/recorder/observer.ts`). Frames in view too
+- `aria` refs (WA-1347): `page.ariaSnapshot({mode:"ai"})` prints `[ref=e12]` per line, iframes inline (`f2e3`); `hints:{ref}` becomes the control's own hints plus `nth` and frame chain at the top of `act` (`refHints`, `src/explore/marks.ts`), like a mark. `refs:false` keeps the old tree with frame sections, which [[agent-session]]'s digest reads
+- `since` on `aria`/`snapshot`: the last rows per look and URL (`sinceStore`, `src/explore/since.ts`) diffed by `pageChange`; a new URL or `more` answers whole. `screenshot ifChanged` diffs against the last shot (`shotDiff`, pixelmatch)
+- Content fence (WA-1347): `act` wraps `actRaw`; page text in `aria`/`snapshot`/`text` answers sits between `<<page <nonce> <origin>>>` and `<<end <nonce>>>`, `eval`/`read`/`records`/`network` get `page: <origin>` (`pageFence`, `src/explore/boundary.ts`). The headless agent unwraps the tree, digests it and fences the digest again (`unfence`)
+- `--look-only` (`ExploreOptions.lookOnly`): `act` refuses any command outside `LOOK_ONLY` (`src/explore/commands.ts`), batch steps too
+- `ExploreOptions.allowHosts`: the top frame is fenced to those hosts ([[nav-fence]]); an `open` off them is refused before it is sent. Desk agent sessions always set it
 - `text` reads the page as laid out (`layoutText`, `src/browser/layout.ts`): rendered text blocks cut apart by whitespace (XY-cut) into rows, tables and columns; `layout: false` is `innerText`
 - `network` lists the session's JSON calls grouped by URL shape and GraphQL query name (`filter`, `all` = pages and non-JSON too, `find` = calls whose body holds a text with key paths, `id` = one with its body, `pick` = one path of it, `diff` = call shapes and response keys against the site's last session); `html` saves the page (scripts emptied, redacted), `diff` against the last save of that URL shape. Files: `recordings/.explore-<site>/network-<stamp>.jsonl`, `html/` with `index.jsonl`; shipped like shots. Caps 2,000 rows, 32 MB bodies (`src/browser/network.ts`). On in explore unless `AUTOBROWSE_NETWORK=0` (`exploreNetworkOn`, WA-1251.4); flows elsewhere off unless `=1` (`networkOn`).
 - Long answers (`eval`, `aria`, `text`, `read`, `read_file`, `network` body, desktop `shell`) are compacted, never cut at one point: `compactValue` (JSON, then TOON, then an even cut) and `compactText` (a tree's deepest levels first, lines shortened alike, then sampled) in `src/explore/compact.ts`; the whole goes to `recordings/.explore-<site>/whole/`, named in `whole: {chars, file}` (`keepWhole`, `fitText` in `src/explore/server.ts`; WA-1093)

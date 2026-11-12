@@ -13,6 +13,7 @@ import type { SecretValues } from "../auth/signup.js";
 import { runCode } from "../browser/code.js";
 import { type Fetched, fetchFile } from "../browser/download.js";
 import { type BrowserFlow, defineFlow, type FlowPage } from "../browser/flow.js";
+import { type Fell, ladder, type Rung, RungBroke, type Strategy } from "../browser/ladder.js";
 import type { Hints } from "../browser/locate.js";
 import { OPTIONS, optionsIn, ROWS, squash } from "../browser/pick.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/records.js";
@@ -20,6 +21,18 @@ import { lookAt, type PageLook, type Screen, walk } from "../browser/screens.js"
 import { NeedsHuman } from "../browser/session.js";
 import { heldOther, type SecretSink } from "../deps/sink.js";
 import { samePage, shows } from "./build.js";
+import {
+  ineligible,
+  listenCalls,
+  nextCalls,
+  offNow,
+  runLegs,
+  type SeenCall,
+  strategyOf,
+  traceLegs,
+  usableCalls,
+  type WalkCalls,
+} from "./calls.js";
 import {
   FIELD_REF,
   MAX_DEPTH,
@@ -49,6 +62,8 @@ export interface WalkDeps {
   rewrite?(fp: FlowPage, op: RecordsOp): Promise<{ op: RecordsOp; rows: Row[] } | null>;
   /** The walk changed (a re-written records op): keep it. */
   save?(spec: WalkSpec): void;
+  /** This walk's request legs on this profile (walks/calls.ts); missing: the walk never learns them. */
+  calls?: { load(): WalkCalls | null; save(calls: WalkCalls | null): void };
   /** The page markup a records op read, kept beside its rows; never in the journal. */
   archive?(as: string, html: string): void;
   /** An `ai` op's model call: the prompt with its reads filled in, the answer back. */
@@ -56,6 +71,9 @@ export interface WalkDeps {
   /** Where a `download` op's file goes; the answer (a path, a ref) is read under its `as`. Missing: a temp file. */
   download?(as: string, file: Fetched): Promise<string>;
 }
+
+/** Ops that only look: every other op is an act (walks/calls.ts). */
+const LOOKS = new Set<WalkOp["kind"]>(["see", "read", "records", "ai", "captcha", "walk", "each"]);
 
 /** A run given `submit=false` stops here, before its first irreversible op: a dry run up to the send. */
 class Held extends Error {}
@@ -136,6 +154,12 @@ export interface WalkOutput {
   screens: string[];
   /** Given `submit=false`: the irreversible op it stopped before, not done. */
   held?: string;
+  /** Which way answered: the site's own calls (`cookie`) or the screens (`ui`). */
+  via?: Strategy;
+  /** Each way that broke before it, and why. */
+  fell?: Fell[];
+  /** After a UI run: legs learned, or why none. */
+  learned?: string;
 }
 
 /** A look is fresh this long: every screen's check in one pass shares it. */
@@ -151,6 +175,27 @@ const ordered = (screens: readonly ScreenSpec[]): ScreenSpec[] =>
     (a, b) => Number(!!b.goal) - Number(!!a.goal) || b.landmarks.length - a.landmarks.length,
   );
 
+/** An `ai` op: its prompt with reads, rows and plan values filled in, sent to the model. */
+async function askModel(
+  op: Extract<WalkOp, { kind: "ai" }>,
+  out: WalkOutput,
+  deps: WalkDeps,
+  plan: (key: string) => Promise<string>,
+): Promise<string> {
+  if (!deps.ai) throw new Error(`${op.goal}: no model here for an ai step`);
+  if (++out.aiCalls > AI_CALLS)
+    throw new Error(`${op.goal}: more than ${AI_CALLS} ai calls in one run`);
+  let prompt = op.prompt;
+  for (const m of [...op.prompt.matchAll(FIELD_REF)]) {
+    const k = m[1] as string;
+    const v =
+      out.read[k] ??
+      (out.records[k] ? JSON.stringify(out.records[k]).slice(0, AI_ROWS_CHARS) : await plan(k));
+    prompt = prompt.split(m[0]).join(v);
+  }
+  return deps.ai(op, prompt);
+}
+
 async function walkSpec(
   fp: FlowPage,
   spec: WalkSpec,
@@ -159,6 +204,9 @@ async function walkSpec(
   out: WalkOutput,
   depth: number,
   fresh = depth === 0,
+  used?: Map<string, string>,
+  /** Acts done so far, `open` among them: a call made before the first is the start page's own. */
+  acts?: { n: number },
 ): Promise<string> {
   const fields = new Map(spec.fields.map((f) => [f.key, f]));
   const handled = new Set<string>();
@@ -185,6 +233,7 @@ async function walkSpec(
       (f && deps.ask ? ((await deps.ask(f, goal)) ?? undefined) : undefined);
     if (given === undefined) return fp.human(`${goal}: no ${key} given (--plan ${key}=…)`);
     asked.set(key, given);
+    used?.set(key, given);
     return given;
   };
   const textFor = async (v: WalkValue, goal: string): Promise<string> => {
@@ -238,6 +287,7 @@ async function walkSpec(
   };
 
   const run = async (op: WalkOp): Promise<void> => {
+    if (acts && !LOOKS.has(op.kind)) acts.n++;
     switch (op.kind) {
       case "click":
         gate(op);
@@ -382,23 +432,9 @@ async function walkSpec(
         out.records[op.as] = listed(JSON.stringify(rows));
         return;
       }
-      case "ai": {
-        if (!deps.ai) throw new Error(`${op.goal}: no model here for an ai step`);
-        if (++out.aiCalls > AI_CALLS)
-          throw new Error(`${op.goal}: more than ${AI_CALLS} ai calls in one run`);
-        let prompt = op.prompt;
-        for (const m of [...op.prompt.matchAll(FIELD_REF)]) {
-          const k = m[1] as string;
-          const v =
-            out.read[k] ??
-            (out.records[k]
-              ? JSON.stringify(out.records[k]).slice(0, AI_ROWS_CHARS)
-              : await fieldValue(k, op.goal));
-          prompt = prompt.split(m[0]).join(v);
-        }
-        out.read[op.as] = await deps.ai(op, prompt);
+      case "ai":
+        out.read[op.as] = await askModel(op, out, deps, (k) => fieldValue(k, op.goal));
         return;
-      }
       case "open": {
         const whole = /^\{([a-z][a-zA-Z0-9]*)\}$/.exec(op.url);
         if (!whole) return fp.open(await fill(op.url, op.goal, true));
@@ -502,27 +538,142 @@ async function walkSpec(
   );
 }
 
+/** A plan value with no person: given, else the default, else (v1) the example; null when none. */
+const planValue = (spec: WalkSpec, input: WalkInput, now: Date) => (key: string) => {
+  const f = spec.fields.find((x) => x.key === key);
+  return (
+    input[key] ??
+    (f?.default !== undefined ? resolveDefault(f.default, now) : undefined) ??
+    (spec.version === 1 ? (f?.example ?? undefined) : undefined) ??
+    null
+  );
+};
+
+/**
+ * The request tier (walks/calls.ts): open the start page, take each leg's answer, then the `ai` ops in
+ * op order. The UI-only ops (`see`, `captcha`, the acts) do not run.
+ */
+async function walkRequest(
+  fp: FlowPage,
+  spec: WalkSpec,
+  calls: WalkCalls,
+  input: WalkInput,
+  deps: WalkDeps,
+  out: WalkOutput,
+): Promise<void> {
+  const plan = planValue(spec, input, deps.now?.() ?? new Date());
+  const start = (spec.start as string)
+    .replace(/%7B/gi, "{")
+    .replace(/%7D/gi, "}")
+    .replace(FIELD_REF, (_, key: string) => {
+      const v = plan(key);
+      if (v === null) throw new RungBroke(`no value for ${key}`);
+      return encodeURIComponent(v);
+    });
+  await runLegs(fp, spec, calls, start, {
+    plan,
+    read: out.read,
+    records: out.records,
+    wait: (ms) => fp.wait(ms),
+  });
+  for (const s of spec.screens)
+    for (const op of s.ops)
+      if (op.kind === "ai")
+        out.read[op.as] = await askModel(op, out, deps, async (k) => {
+          const v = plan(k);
+          if (v === null) throw new RungBroke(`no value for ${k}`);
+          return v;
+        });
+  out.goal = spec.screens.find((x) => x.goal)?.name ?? "";
+}
+
+/** The site's cookies by name, for the calls a run saw. */
+async function cookiesFor(fp: FlowPage, calls: SeenCall[]): Promise<Record<string, string>> {
+  const urls = [...new Set(calls.map((c) => new URL(c.url).origin))];
+  if (!urls.length) return {};
+  const jar = await fp.page.context().cookies(urls);
+  return Object.fromEntries(jar.map((c) => [c.name, c.value]));
+}
+
 /** A walk as a flow the runner runs like any other: `<site>/walk-<name>` in the catalog. */
 export function walkFlow(spec: WalkSpec, deps: WalkDeps = {}): BrowserFlow<WalkInput, WalkOutput> {
   return defineFlow({
     site: spec.site,
     name: walkFlowName(spec),
     async run(fp, input) {
-      const out: WalkOutput = {
+      const plan = input ?? {};
+      const now = deps.now?.() ?? new Date();
+      const blank = (): WalkOutput => ({
         goal: "",
         read: {},
         records: {},
         aiCalls: 0,
         kept: [],
         screens: [],
+      });
+      const stored = deps.calls?.load() ?? null;
+      const calls = input?.submit === "false" ? null : usableCalls(spec, stored, now);
+      let broke: string | null = null;
+      const request: Rung<WalkOutput> = {
+        strategy: calls ? strategyOf(calls) : "cookie",
+        run: async () => {
+          const out = blank();
+          try {
+            await walkRequest(fp, spec, calls as WalkCalls, plan, deps, out);
+          } catch (e) {
+            if (e instanceof RungBroke) broke = e.message;
+            throw e;
+          }
+          return out;
+        },
       };
-      try {
-        out.goal = await walkSpec(fp, spec, input ?? {}, deps, out, 0);
-      } catch (err) {
-        if (!(err instanceof Held)) throw err;
-        out.held = err.message;
-      }
-      return out;
+      const ui: Rung<WalkOutput> = {
+        strategy: "ui",
+        run: async () => {
+          const out = blank();
+          const store = deps.calls;
+          const acts = { n: 0 };
+          // Off: the legs broke and came back the same; no new try till `until`.
+          const learn =
+            store && !ineligible(spec) && !offNow(stored, now)
+              ? listenCalls(fp.page, () => acts.n)
+              : null;
+          const used = new Map<string, string>();
+          let seen: SeenCall[] = [];
+          try {
+            out.goal = await walkSpec(fp, spec, plan, deps, out, 0, true, used, acts);
+          } catch (err) {
+            if (!(err instanceof Held)) throw err;
+            out.held = err.message;
+          } finally {
+            if (learn) seen = await learn.stop();
+          }
+          if (learn && store && !out.held) {
+            const t = traceLegs({
+              spec,
+              read: out.read,
+              records: out.records,
+              calls: seen,
+              used: Object.fromEntries(used),
+              cookies: await cookiesFor(fp, seen),
+            });
+            if ("legs" in t) {
+              const next = nextCalls(stored ?? undefined, t.legs, broke, now);
+              store.save(next);
+              out.learned = next.off
+                ? `${t.legs.length} leg(s) came back the same; off until ${next.off.until}`
+                : `${t.legs.length} leg(s)`;
+            } else {
+              out.learned = t.why;
+              // Old legs that broke and could not be learned again: gone.
+              if (broke && stored) store.save(null);
+            }
+          }
+          return out;
+        },
+      };
+      const c = await ladder(calls ? [request, ui] : [ui]);
+      return { ...c.value, via: c.via, ...(c.fell.length ? { fell: c.fell } : {}) };
     },
   });
 }

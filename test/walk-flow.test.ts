@@ -197,6 +197,7 @@ describe("walkFlow", () => {
       aiCalls: 0,
       kept: [],
       screens: ["sign-up", "your-details"],
+      via: "ui",
     });
   });
 
@@ -227,6 +228,7 @@ describe("walkFlow", () => {
       aiCalls: 0,
       kept: [],
       screens: [],
+      via: "ui",
     });
   });
 

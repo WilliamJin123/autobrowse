@@ -17,6 +17,7 @@ import { boundRequests } from "./driver-memory.js";
 import type { Egress, Exit } from "./egress.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
+import { type Fault, type HarOptions, injectFaults, replayHar, scrubOrDrop } from "./har.js";
 import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import {
   assertOwnTabRoom,
@@ -177,6 +178,10 @@ export interface BrowserOptions {
   timezone?: string;
   /** Film every page into a take (`AUTOBROWSE_FILM`, `browser/film`); never the person's own browser. */
   film?: FilmOptions | null;
+  /** Record the run's calls to a HAR (`AUTOBROWSE_HAR`, local only), or answer them from one (tests). */
+  har?: HarOptions;
+  /** Tests: a status, a delay or a dropped call on matching URLs (`browser/har`). */
+  faults?: readonly Fault[];
 }
 
 export interface Session {
@@ -269,6 +274,10 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
         });
     });
   boundRequests(context);
+  // after the guard: a replay answers first, a fault before both
+  if (opts.har?.replay) await replayHar(context, opts.har.replay);
+  if (opts.faults?.length) await injectFaults(context, opts.faults);
+  const recording = local ? opts.har?.record : undefined;
   const dialogs = watchDialogs(context);
   const film = opts.film ? await filmContext(context, opts.film) : null;
   const passkeys = virtualAuthenticator(context, await opts.passkeys?.(site).catch(() => []));
@@ -298,6 +307,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
       const keep = local ? keptDomains(site) : null;
       if (keep) await keepSessionCookies(context, keep).catch(() => 0);
       await context.close().catch(() => undefined);
+      if (recording) scrubOrDrop(recording);
       await browser?.close().catch(() => undefined);
     },
   };
@@ -462,6 +472,10 @@ async function launchLocal(
     ignoreDefaultArgs: ["--enable-automation"],
     timeout: LAUNCH_TIMEOUT_MS,
     ...(proxy ? { proxy } : {}),
+    // written on close; scrubbed then (`browser/har`)
+    ...(opts.har?.record
+      ? { recordHar: { path: opts.har.record, content: "embed" as const } }
+      : {}),
     ...(tz ? { env: { ...process.env, TZ: tz } } : {}),
   });
   const launch = async (o: ReturnType<typeof base>) => {

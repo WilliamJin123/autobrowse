@@ -344,7 +344,8 @@ export function saveWalk(dir: string, spec: WalkSpec): string {
   const w = walkSpecSchema.parse(spec);
   const file = walkFile(dir, w.site, w.name);
   mkdirSync(join(dir, baseSite(w.site)), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.tmp`;
+  // Two runs may save one walk at once: each its own temp file.
+  const tmp = `${file}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(w, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, file);
   return file;

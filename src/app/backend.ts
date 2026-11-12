@@ -15,6 +15,7 @@ import { type HealOutcome, healFailure } from "../agent/heal.js";
 import { type AgentSessions, agentSessions } from "../agent/sessions.js";
 import { type Accounts, accountsOf, accountsOn } from "../auth/accounts.js";
 import { type LedgerWindow, ledgerSince } from "../auth/ledger.js";
+import { sessionHosts } from "../auth/signup.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { fileFixes } from "../browser/fixes.js";
 import { type FlowRunner, flowRunner } from "../browser/flow.js";
@@ -336,6 +337,8 @@ export function explorerOpener(
     | "fileSets"
     | "signInOn"
     | "owner"
+    | "lookOnly"
+    | "allowHosts"
   > & {
     /** false: a wall on `open` stays a wall (a signup page must not sign in as a stored account). */
     signIn?: boolean;
@@ -425,6 +428,8 @@ export function agentFor(
     // One journal per session: a pick-up after a crash saves the acts before it too.
     open: (site, port, session, run) =>
       open(site, port, {
+        // a page's text cannot send a desk agent off its sites (WA-1351)
+        allowHosts: sessionHosts(site, run?.hosts?.url, run?.hosts?.domains),
         // `autobrowse browsers` sees it as agent:<port> and can close it.
         tokenFile: tokenFileFor(port),
         // no `flow` command to hand a guessed wall to
@@ -432,7 +437,7 @@ export function agentFor(
         ...(session
           ? { journalFile: journalFileFor(expandHome(settings.recordingsDir), site, session) }
           : {}),
-        ...run,
+        ...(run ? { goal: run.goal, driver: run.driver } : {}),
       }),
   });
 }

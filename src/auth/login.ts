@@ -21,6 +21,7 @@ import { NeedsHuman, wallOf } from "../browser/session.js";
 import { safeUrls } from "../clients/http.js";
 import { type CodeKind, type CodeSource, inboxLock } from "./codes.js";
 import { guardedPage, hostNamed, hostUnder, registrable } from "./guard.js";
+import { pageLogin } from "./page-login.js";
 import { type IdentityProvider, type Provider, providerOf } from "./providers.js";
 
 /** The page left the address it was at: a person's step is past. */
@@ -993,10 +994,11 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
     for (const method of methodsOf(cred)) {
       // A method via a provider takes the generic provider path when the
       // site's own spec does not know that provider (or there is no spec at all).
+      // No spec, a password: the boxes the page shows (WA-1349).
       const login =
         method.via && !known?.via?.includes(method.via as Provider)
           ? viaLogin(name, method)
-          : known;
+          : (known ?? (method.password ? pageLogin(name, method) : null));
       if (!login) continue;
       const ctx = signInContext({
         fp,
