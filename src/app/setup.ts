@@ -245,7 +245,7 @@ export async function runSetup(
     }
     const totp = (
       await io.askHidden(
-        "  already using an authenticator app there? paste its setup key, else empty (enroll-totp turns one on later): ",
+        "  already using an authenticator app there? paste its setup key, else empty (mfa totp turns one on later): ",
       )
     ).trim();
     try {

@@ -36,7 +36,8 @@ describe("the CLI", () => {
         NODE_OPTIONS: `--import ${probe}`,
       },
     });
-    expect(stdout).toContain("watched");
+    expect(stdout).toMatch(/^  history\b/m);
+    expect(stdout).toMatch(/^  cli-login\b/m);
     const line = stderr.split("\n").find((l) => l.startsWith("LOADED "));
     const loaded = JSON.parse(line?.slice(7) ?? "null") as string[];
     expect(loaded).toContain("commander");

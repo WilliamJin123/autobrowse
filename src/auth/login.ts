@@ -125,13 +125,13 @@ export interface SiteLogin {
    * and what waits behind it survive.
    */
   reauth?: { field: Hints; submit: Hints };
-  /** How this site's authenticator setup page walks, when it is known; `enroll-totp` guesses otherwise. */
+  /** How this site's authenticator setup page walks, when it is known; `mfa totp` guesses otherwise. */
   totpSetup?: TotpSetupSpec;
   /** How this site's change-password page walks, for `creds rotate`. */
   passwordChange?: PasswordChangeSpec;
-  /** How this site's passkey page walks, for `enroll-passkey`. */
+  /** How this site's passkey page walks, for `mfa passkey`. */
   passkeySetup?: PasskeySetupSpec;
-  /** Where this site shows the account's recovery codes, for `recovery-codes` and after an enrollment. */
+  /** Where this site shows the account's recovery codes, for `mfa codes` and after an enrollment. */
   recoveryCodes?: RecoveryCodesSpec;
   /**
    * Registrable domains the credential's password may be typed on, beside

@@ -19,7 +19,7 @@ Stored in `~/.config/autobrowse/credentials.json`, sealed with the login
 Keychain when `CREDENTIALS_CIPHER=keychain`. Nothing prints a value. `creds
 rotate` changes a site's password to a random one — only when you ask.
 
-TOTP and one-time codes are code paths, not a person: `enroll-totp <site>`
+TOTP and one-time codes are code paths, not a person: `mfa totp <site>`
 reads the seed off the setup page and stores it; email codes come from
 `CODES_INBOX` or the credential's own `codesInbox`; SMS from the paired
 iPhone (`PHONE_NUMBER`) or Twilio.

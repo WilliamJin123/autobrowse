@@ -714,7 +714,7 @@ group(group(program, "workspace"), "inbox")
 group(group(program, "workspace"), "inbox")
   .command("photo <address> <file>")
   .description(
-    "A Workspace inbox's picture through the admin API, no sign-in (PNG or JPEG, still); `all` = every active user; `profile-photo` keeps a GIF animated but signs in",
+    "A Workspace inbox's picture through the admin API, no sign-in (PNG or JPEG, still); `all` = every active user; `google photo` keeps a GIF animated but signs in",
   )
   .action(async (address: string, file: string) => {
     const { readFile } = await import("node:fs/promises");

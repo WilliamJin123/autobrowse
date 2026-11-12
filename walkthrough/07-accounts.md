@@ -59,8 +59,8 @@ pnpm autobrowse mfa totp cloudflare --url https://dash.cloudflare.com/profile/au
 pnpm autobrowse mfa passkey cloudflare
 ```
 
-`enroll-totp` reads the seed off the setup page, stores it sealed, confirms
-with a generated code. `enroll-passkey` makes one with our own authenticator
+`mfa totp` reads the seed off the setup page, stores it sealed, confirms
+with a generated code. `mfa passkey` makes one with our own authenticator
 and keeps it; sign-ins then need no password or code. Neither prints anything.
 
 ## Signup (Wren's accounts)
