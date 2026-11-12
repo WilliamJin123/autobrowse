@@ -707,6 +707,8 @@ export const meta: SiteApi = {
       path: "/me/accounts",
       summary: "The Pages the person admins, each with its Instagram professional account id",
       request: pages,
+      // Changes when a Page is added; 747 reads in Nov, most within the hour.
+      ttl: 3600,
       api: (q, leg) => get(leg, "me/accounts", q),
     }),
     route({

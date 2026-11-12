@@ -607,7 +607,18 @@ export function api(deps: ApiDeps): Hono<Env> {
     try {
       // `account` picks the identity; it is not part of the site's own query.
       const { account, ...query } = c.req.query();
-      return c.json(await sites.call(site, method, path, { ...query, ...body }, account ?? null));
+      // `Cache-Control: no-cache` skips a kept answer (call-cache.ts).
+      const fresh = /no-cache/i.test(c.req.header("cache-control") ?? "");
+      return c.json(
+        await sites.call(
+          site,
+          method,
+          path,
+          { ...query, ...body },
+          account ?? null,
+          fresh ? { fresh } : undefined,
+        ),
+      );
     } catch (err) {
       return siteError(c, err);
     }

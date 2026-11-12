@@ -11,6 +11,8 @@ import type { SpentKeys } from "../reach/key-ring.js";
 import type { KeysDep } from "../reach/key-source.js";
 import type { ErrorCode } from "../ui/http.js";
 import type { Proof, RunAs } from "../workflows/proof.js";
+import type { BreakerState } from "./breaker.js";
+import type { CallCache } from "./call-cache.js";
 import type { DailyCaps, Hold, MeteredCall } from "./caps.js";
 import type { Effective, LimitStore, SiteLimits } from "./limits.js";
 import type { MintedTokens } from "./oauth.js";
@@ -55,6 +57,8 @@ export interface SiteFacadeDeps {
    */
   accountFor?: (site: SiteApi, step?: SetupStep) => Promise<string | null>;
   now?: () => number;
+  /** Kept read answers (call-cache.ts); none: every call reads the site. */
+  cache?: CallCache;
   /**
    * Who says yes to a route that commits money (the spend policy, then the
    * person). Absent: every such call is refused, as the browser's gate is
@@ -147,6 +151,8 @@ export interface CallFrom {
   armId?: string;
   /** A send's verify read: metered in the site's `verify` bucket, not the route's own. */
   verify?: boolean;
+  /** Skip the kept answer: read the site now (the answer is kept for the next caller). */
+  fresh?: boolean;
 }
 
 /** What `arm` answers: an id for the call to carry, or null when there is nothing to warm. */
@@ -186,6 +192,8 @@ export interface LimitsRow extends Effective {
 
 export interface SiteFacade {
   list(): Promise<SiteRow[]>;
+  /** API-leg breakers that have seen a fault or a trip in this process (breaker.ts). */
+  breakers?(): BreakerState[];
   status(site: string): Promise<SiteRow>;
   /** One call as the official API takes it: path params in the path, query for reads, body for writes. */
   call(

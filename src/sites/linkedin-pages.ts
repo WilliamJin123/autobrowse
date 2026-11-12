@@ -61,6 +61,7 @@ export const linkedinPages: SiteApi = {
       summary:
         "A company by its handle (`vanity`): id, name, site, logo, places, type; the fields LinkedIn shows a non-admin",
       request: company,
+      ttl: 3600,
       meter: () => ({ lookup: 1 }),
       api: async ({ vanity }, leg) =>
         mustOk(
@@ -77,6 +78,7 @@ export const linkedinPages: SiteApi = {
       path: "/rest/networkSizes/{urn}",
       summary: "A company's follower count (`firstDegreeSize`)",
       request: orgUrn,
+      ttl: 3600,
       meter: () => ({ lookup: 1 }),
       api: async ({ urn }, leg) =>
         mustOk(

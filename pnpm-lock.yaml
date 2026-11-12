@@ -86,6 +86,9 @@ importers:
       libmime:
         specifier: 5.4.7
         version: 5.4.7
+      lru-cache:
+        specifier: 11.5.3
+        version: 11.5.3
       mammoth:
         specifier: 1.13.0
         version: 1.13.0
@@ -1516,6 +1519,10 @@ packages:
 
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
+
+  lru-cache@11.5.3:
+    resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
+    engines: {node: 20 || >=22}
 
   magic-string@1.4.1:
     resolution: {integrity: sha512-8lyCu36ErXR0J9uaGKlKQoiLZKmtI63YGLE8G2o9jyRPdr4X47LusSOwgOJOzcVtp81fTAAjxR7BwKz682Jhow==}
@@ -3470,6 +3477,8 @@ snapshots:
       underscore: 1.13.8
 
   lru-cache@10.4.3: {}
+
+  lru-cache@11.5.3: {}
 
   magic-string@1.4.1:
     dependencies:

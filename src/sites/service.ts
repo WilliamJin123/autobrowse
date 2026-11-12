@@ -95,6 +95,8 @@ const call = site.extend({
   caller: z.string().min(1).max(120).optional(),
   /** An earlier `arm`'s id: the leg runs in its tab, already on the page. */
   armId: z.string().uuid().optional(),
+  /** Skip a kept answer and read the site now (call-cache.ts). */
+  fresh: z.boolean().optional(),
   /** A write with a key answers a `SendVerdict`, once per key (`send-journal.ts`). */
   sendKey: z.string().min(1).max(200).optional(),
   /**
@@ -253,41 +255,50 @@ async function recorded<T>(
   base: { service: string; site: string; route: string; caller: string | null; invocation: string },
   attempt: number,
   fn: () => Promise<T>,
+  req?: { account?: string | null | undefined; input: unknown },
 ): Promise<T> {
+  const data = (answer?: unknown) =>
+    req ? { account: req.account ?? null, input: req.input, answer } : undefined;
   const t0 = Date.now();
   const at = new Date(t0).toISOString();
   const leg: LegTaken = {};
   try {
     const out = await withLeg(leg, fn);
-    calls?.record({
-      ...base,
-      ...leg,
-      at,
-      attempt,
-      ok: true,
-      status: null,
-      terminal: false,
-      error: null,
-      ms: Date.now() - t0,
-    });
+    calls?.record(
+      {
+        ...base,
+        ...leg,
+        at,
+        attempt,
+        ok: true,
+        status: null,
+        terminal: false,
+        error: null,
+        ms: Date.now() - t0,
+      },
+      data(out),
+    );
     return out;
   } catch (err) {
     const terminal = err instanceof restate.TerminalError;
     const status = terminal ? (err.code ?? null) : null;
     const error = err instanceof Error ? err.message : String(err);
     const artifact = failureOf(err);
-    calls?.record({
-      ...base,
-      ...leg,
-      at,
-      attempt,
-      ok: false,
-      status,
-      terminal,
-      error,
-      ms: Date.now() - t0,
-      ...(artifact ? { artifact } : {}),
-    });
+    calls?.record(
+      {
+        ...base,
+        ...leg,
+        at,
+        attempt,
+        ok: false,
+        status,
+        terminal,
+        error,
+        ms: Date.now() - t0,
+        ...(artifact ? { artifact } : {}),
+      },
+      data(),
+    );
     throw err;
   }
 }
@@ -658,7 +669,7 @@ export function sitesService(
       gate = await waitForProfile(
         ctx,
         step,
-        () => sendLeg(req, key, spec, (fn) => recorded(calls, base, ++attempt, fn), from),
+        () => sendLeg(req, key, spec, (fn) => recorded(calls, base, ++attempt, fn, req), from),
         // A write may take its profile from an explore session nobody is driving.
         {
           retry: WRITE_RETRY,
@@ -721,6 +732,7 @@ export function sitesService(
           caller: req.caller ?? ctx.request().headers.get("x-caller") ?? null,
           invocation: ctx.request().id,
           ...(req.armId ? { armId: req.armId } : {}),
+          ...(req.fresh ? { fresh: true } : {}),
         };
         const step = `sites ${req.site} ${req.method} ${req.path}`;
         const base = {
@@ -750,14 +762,19 @@ export function sitesService(
             ctx,
             step,
             () =>
-              recorded(calls, base, ++attempt, () =>
-                terminalOnSiteError(
-                  `${ctx.request().id} ${step}`,
-                  () => facade.call(req.site, req.method, req.path, req.input, req.account, from),
-                  // Writes run once; this bounds a read's retries.
-                  write ? undefined : attempt,
-                  write,
-                ),
+              recorded(
+                calls,
+                base,
+                ++attempt,
+                () =>
+                  terminalOnSiteError(
+                    `${ctx.request().id} ${step}`,
+                    () => facade.call(req.site, req.method, req.path, req.input, req.account, from),
+                    // Writes run once; this bounds a read's retries.
+                    write ? undefined : attempt,
+                    write,
+                  ),
+                req,
               ),
             // A write may take its profile from an explore session nobody is driving.
             {

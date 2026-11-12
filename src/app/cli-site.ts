@@ -8,7 +8,8 @@
  */
 
 import type { Command } from "commander";
-import { readSiteCalls } from "../runs/calls.js";
+import { readBodies } from "../runs/call-bodies.js";
+import { bodiesDirOf, readSiteCalls } from "../runs/calls.js";
 import { RETRY_BUFFER } from "../sites/caps.js";
 import type { CapsReport, LimitsRow } from "../sites/facade.js";
 import { type CheckRow, checkSite, type Method, SITES } from "../sites/index.js";
@@ -316,7 +317,13 @@ export function registerSiteCommands(
               (typeof r.prefer === "function" || typeof r.needs === "function"),
           ) ?? false;
         const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-        const ran = o.check && callsDir ? readSiteCalls(callsDir, since).filter((r) => r.via) : [];
+        const ran =
+          o.check && callsDir
+            ? readSiteCalls(callsDir, since).filter(
+                (r): r is typeof r & { via: "api" | "browser" } =>
+                  r.via === "api" || r.via === "browser",
+              )
+            : [];
         const drifted = drift(rows, ran, perRequest);
         if (o.json) console.log(JSON.stringify(o.check ? { ...report, drift: drifted } : report));
         else if (o.final)
@@ -402,12 +409,13 @@ export function registerSiteCommands(
       "--account <address>",
       "as that consented account (its own token); the site's own by default",
     )
+    .option("--fresh", "skip a kept answer: read the site now")
     .action(
       async (
         name: string,
         method: string,
         path: string,
-        o: { body?: string; account?: string },
+        o: { body?: string; account?: string; fresh?: boolean },
       ) => {
         const sites = local().backend.sites;
         if (!sites) throw new Error("no site apis here");
@@ -418,10 +426,24 @@ export function registerSiteCommands(
           path,
           input,
           o.account ?? null,
+          o.fresh ? { fresh: true } : undefined,
         );
         console.log(JSON.stringify(out, null, 2));
       },
     );
+  site
+    .command("bodies [site]")
+    .description("What site calls took and gave (input, answer or error), one JSON line each")
+    .option("--day <yyyy-mm-dd>", "a UTC day; today by default")
+    .option("--hour <hh>", "one UTC hour of that day")
+    .option("--route <text>", "only routes that contain this text")
+    .action((name: string | undefined, o: { day?: string; hour?: string; route?: string }) => {
+      if (!callsDir) throw new Error("no calls ledger here");
+      const day = o.day ?? new Date().toISOString().slice(0, 10);
+      for (const b of readBodies(bodiesDirOf(callsDir), day, o.hour))
+        if ((!name || b.site === name) && (!o.route || b.route.includes(o.route)))
+          console.log(JSON.stringify(b));
+    });
   site
     .command("setup <site> <step>")
     .description(

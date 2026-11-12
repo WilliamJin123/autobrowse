@@ -86,6 +86,8 @@ export interface SiteRoute<I = unknown, O = unknown> {
   path: string;
   /** Validates the request the way the official API takes it: body for writes, query + path params for reads. */
   request: z.ZodType<I>;
+  /** Seconds a GET's answer is kept (call-cache.ts); 0 never. Default 60. */
+  ttl?: number;
   /**
    * The answer's shape, checked in the facade on both legs (U2). Loose objects: the answer goes
    * back as sent, never stripped. A read that fails it is `upstream_broken`; a write keeps its

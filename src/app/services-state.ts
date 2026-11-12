@@ -38,6 +38,8 @@ import { expandHome } from "../google/auth.js";
 import { registerDataLogins } from "../mods/login.js";
 import { modFixes, modScreens, withModFixes, withModScreens } from "../mods/mod.js";
 import { isDefaultOwner, ownerKeys } from "../owner.js";
+import { closedHour } from "../runs/call-bodies.js";
+import { bodiesDirOf } from "../runs/calls.js";
 import { clearRun, keepRun, packStale } from "../runs/capture.js";
 import type { ProbeRow } from "../runs/probes.js";
 import { s3BlobStore, s3TraceStore } from "../shots/s3.js";
@@ -169,6 +171,12 @@ export function shipperFor(
         },
         { name: "recordings", dir: expandHome(settings.recordingsDir), keep: keepRecording },
         { name: "runs", dir: runs, keep: keepRun, clear: clearRun },
+        // Each closed hour of call bodies, once (call-bodies.ts); the Mac keeps its copy.
+        {
+          name: "calls",
+          dir: bodiesDirOf(siteCallsDirFor(settings)),
+          keep: (rel) => closedHour(rel),
+        },
       ],
       store,
       ledgerFile: join(artifacts, ".shots-shipped.tsv"),

@@ -60,6 +60,7 @@ const TYPES: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".json": "application/json",
   ".jsonl": "application/x-ndjson",
+  ".gz": "application/gzip",
   ".txt": "text/plain; charset=utf-8",
   // As text, so the bucket never serves a saved page as a page.
   ".html": "text/plain; charset=utf-8",

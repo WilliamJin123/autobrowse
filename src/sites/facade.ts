@@ -43,6 +43,8 @@ import {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 import { runLeg } from "../engine/leg.js";
+import { BREAK_MAX_MS, breakers, upstreamFault } from "./breaker.js";
+import { accountPrefix, CALL_TTL_MS, callKey, type Kept, replay } from "./call-cache.js";
 import { standingOf } from "./standing.js";
 import {
   type ApiLeg,
@@ -152,10 +154,12 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
   };
   /** Kept names whose bearer the probe passed, till when: a scope 401 asks it once per window. */
   const probedOk = new Map<string, number>();
-  /** Kept names whose app quota a 429 spent, till UTC midnight: a route with a browser leg skips the API till then. */
-  const quotaSpent = new Map<string, number>();
-  const spentNow = (kept: string | null) =>
-    kept !== null && (quotaSpent.get(kept) ?? 0) > (deps.now ?? Date.now)();
+  /**
+   * API-leg breakers (breaker.ts), by the token's kept name: `app|` a 429 spent the app's day (a
+   * route with a browser leg takes it till UTC midnight); `quota|`/`fault|` per route (a 429, or
+   * upstream faults in a row): a GET with a browser leg takes it, any other call fails fast.
+   */
+  const brk = breakers(deps.now ? { now: deps.now } : {});
   /**
    * A refusal on `path` means a dead bearer: on the probe itself, or when the probe with the same
    * bearer is refused too. A probe that answers says the route refused, not the token.
@@ -477,6 +481,7 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         calls: (deps.caps?.calls(at) ?? []).filter((c) => !only || c.site === only),
       };
     },
+    breakers: () => brk.states(),
     sendSpec(name, method, path) {
       const { r, params } = routeOf(site(name), method, path);
       return {
@@ -499,289 +504,361 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
       // key, kept under its plain name). A site with its own OAuth logins keeps that token for whoever
       // its own credential is (a person's own LinkedIn), never for the policy's account.
       const chosen = account ?? (s.signedOut ? null : await deps.accountFor?.(s)) ?? null;
-      // An open site has no logins: what a caller names there is a key's address (`web` + `exa@label`).
-      const keyAccount = "open" in s.auth && account ? account : null;
-      const oneKey = !s.setup.some((st) => "oauth" in st.how);
-      const fallback = !account && chosen && (deps.providerOf?.(s) || oneKey);
-      // A route that prefers the browser never reaches the API, so never pays for a read; one
-      // whose token lacks a grant (a review still pending) runs as if no token were held.
-      const { by, lacks } = tokenSiteOf(s, r, chosen, parsed.data as never);
-      // Whose token the API leg holds: the chosen account's, else the site's own (`fallback`).
-      let tokenAs = chosen;
-      const tokenOf = (as: string | null) =>
-        tokenFor(by, as).catch((e) => {
-          // Which site and account asked, so the refusal is kept where `renew` finds it.
-          if (e instanceof TokenRefused)
-            throw new TokenRefused(e.token, e.why, { site: by.site, account: as });
-          throw e;
-        });
-      let token: string | null = null;
-      if (r.api && !prefersBrowser(r, parsed.data as never) && !lacks.length) {
-        token = await tokenOf(chosen);
-        if (token === null && fallback) {
-          tokenAs = null;
-          token = await tokenOf(null);
+      const route = `${method} ${r.path}`;
+      // Writes clear the account's kept reads, even a failed one (it may have gone through).
+      if (method !== "GET" && deps.cache) {
+        const prefix = accountPrefix(s.site, chosen);
+        try {
+          return await live();
+        } finally {
+          deps.cache.clear(prefix);
         }
-        // The app's day is spent: the paced browser leg till it resets.
-        if (token !== null && r.browser && spentNow(keptName(by, tokenAs))) token = null;
       }
-      const byBrowser = !(r.api && token !== null) && Boolean(r.browser);
-      const lim = limitsOf(s);
-      // A send's own verify read spends the site's `verify` bucket, where it has one, not the sends'.
-      const metered = r.meter?.(parsed.data as never);
-      const use =
-        from?.verify && metered && lim.caps?.verify !== undefined ? { verify: 1 } : metered;
-      const note = (outcome: MeteredCall["outcome"], bucket?: string, spent?: boolean) => {
-        if (!use || !lim.caps || !deps.caps) return;
-        deps.caps.note({
-          at: new Date((deps.now ?? Date.now)()).toISOString(),
-          site: s.site,
-          account: chosen ?? s.site,
-          route: `${method} ${r.path}`,
-          use,
-          caller: from?.caller ?? null,
-          ...(from?.invocation ? { invocation: from.invocation } : {}),
-          outcome,
-          ...(bucket ? { bucket } : {}),
-          ...(spent !== undefined ? { spent } : {}),
-        });
-      };
-      // The page showed this account limited: no call for it until the hold ends (U8).
-      const accountHold = deps.caps?.accountHeld(s.site, chosen ?? s.site) ?? 0;
-      if (accountHold > 0) {
-        note("capped", ACCOUNT_HOLD);
-        throw new SiteError(
-          429,
-          `${s.site} is held for ${chosen ?? "the default account"}: the site showed the account limited; retry after ${accountHold}s`,
-          accountHold,
-        );
+      const ttlMs = r.ttl === undefined ? CALL_TTL_MS : r.ttl * 1000;
+      const cache =
+        method === "GET" && ttlMs > 0 && !from?.verify && !from?.arm && !from?.armId && !from?.fresh
+          ? deps.cache
+          : undefined;
+      if (!cache) return live();
+      const key = callKey(s.site, chosen, route, parsed.data);
+      const ready = cache.get(key);
+      const flying = ready ? undefined : cache.flying(key);
+      if (ready || flying) {
+        markLeg("cache", r.path);
+        return replay(ready ?? (await (flying as Promise<Kept>)));
       }
-      // Paced before counted: a refusal here spends none of the day's cap.
-      const slot =
-        byBrowser && lim.pace && deps.caps
-          ? deps.caps.slot(s.site, chosen ?? s.site, lim.pace)
-          : null;
-      if (slot && !slot.ok) note("paced");
-      if (slot && !slot.ok)
-        throw new SiteError(
-          429,
-          `${s.site} pace for ${chosen ?? "the default account"}: too many calls queued; retry after ${slot.retryAfter}s`,
-          slot.retryAfter,
-        );
-      let taken = false;
-      if (use && lim.caps && deps.caps) {
-        const limits = {
-          ...lim.caps,
-          ...(await capsOfKeys(s, lim, keyAccount)),
-          ...(await capsOfAccount(s, lim, chosen, named)),
+      return replay(await cache.run(key, ttlMs, live));
+
+      async function live(): Promise<unknown> {
+        // An open site has no logins: what a caller names there is a key's address (`web` + `exa@label`).
+        const keyAccount = "open" in s.auth && account ? account : null;
+        const oneKey = !s.setup.some((st) => "oauth" in st.how);
+        const fallback = !account && chosen && (deps.providerOf?.(s) || oneKey);
+        // A route that prefers the browser never reaches the API, so never pays for a read; one
+        // whose token lacks a grant (a review still pending) runs as if no token were held.
+        const { by, lacks } = tokenSiteOf(s, r, chosen, parsed.data as never);
+        // Whose token the API leg holds: the chosen account's, else the site's own (`fallback`).
+        let tokenAs = chosen;
+        const tokenOf = (as: string | null) =>
+          tokenFor(by, as).catch((e) => {
+            // Which site and account asked, so the refusal is kept where `renew` finds it.
+            if (e instanceof TokenRefused)
+              throw new TokenRefused(e.token, e.why, { site: by.site, account: as });
+            throw e;
+          });
+        /** Breaker keys of this call's API leg; `checked`: the ones this call reports back to. */
+        const keys = () => {
+          const kept = keptName(by, tokenAs) ?? `${by.site}@${keyAccount ?? ""}`;
+          return {
+            app: `app|${kept}`,
+            quota: `quota|${kept}|${r.path}`,
+            fault: `fault|${kept}|${r.path}`,
+          };
         };
-        const buffer = lim.retryBuffer ?? (method === "GET" ? RETRY_BUFFER.read : RETRY_BUFFER.act);
-        const t = deps.caps.take(s.site, chosen ?? s.site, use, limits, buffer);
-        if (!t.ok) {
-          note("capped", t.bucket);
-          const who = chosen ?? "the default account";
+        const checked: string[] = [];
+        let token: string | null = null;
+        if (r.api && !prefersBrowser(r, parsed.data as never) && !lacks.length) {
+          token = await tokenOf(chosen);
+          if (token === null && fallback) {
+            tokenAs = null;
+            token = await tokenOf(null);
+          }
+          if (token !== null) {
+            // The app's day is spent: the paced browser leg till it resets.
+            if (r.browser && brk.blocked(keys().app) !== null) token = null;
+            else {
+              if (r.browser) checked.push(keys().app);
+              for (const [k, status, what] of [
+                [keys().quota, 429, "the API refused this route for its quota (429)"],
+                [keys().fault, 503, "the API failed several times in a row"],
+              ] as const) {
+                const wait = brk.blocked(k);
+                if (wait === null) {
+                  checked.push(k);
+                  continue;
+                }
+                if (r.browser && method === "GET") {
+                  token = null;
+                  break;
+                }
+                const secs = Math.ceil(wait / 1000);
+                throw new SiteError(
+                  status,
+                  `${s.site} ${route}: ${what}; paused, retry after ${secs}s`,
+                  secs,
+                );
+              }
+            }
+          }
+        }
+        const byBrowser = !(r.api && token !== null) && Boolean(r.browser);
+        const lim = limitsOf(s);
+        // A send's own verify read spends the site's `verify` bucket, where it has one, not the sends'.
+        const metered = r.meter?.(parsed.data as never);
+        const use =
+          from?.verify && metered && lim.caps?.verify !== undefined ? { verify: 1 } : metered;
+        const note = (outcome: MeteredCall["outcome"], bucket?: string, spent?: boolean) => {
+          if (!use || !lim.caps || !deps.caps) return;
+          deps.caps.note({
+            at: new Date((deps.now ?? Date.now)()).toISOString(),
+            site: s.site,
+            account: chosen ?? s.site,
+            route: `${method} ${r.path}`,
+            use,
+            caller: from?.caller ?? null,
+            ...(from?.invocation ? { invocation: from.invocation } : {}),
+            outcome,
+            ...(bucket ? { bucket } : {}),
+            ...(spent !== undefined ? { spent } : {}),
+          });
+        };
+        // The page showed this account limited: no call for it until the hold ends (U8).
+        const accountHold = deps.caps?.accountHeld(s.site, chosen ?? s.site) ?? 0;
+        if (accountHold > 0) {
+          note("capped", ACCOUNT_HOLD);
           throw new SiteError(
             429,
-            t.held
-              ? `${s.site} ${t.bucket} is held for ${who}: the site undid an act, the account may be limited; retry after ${t.retryAfter}s`
-              : t.cap === 0
-                ? `${s.site} ${t.bucket} reads are off for ${who} (cap 0)`
-                : t.tries
-                  ? `${s.site} ${t.bucket} tries for ${who} are used (${t.used}/${t.cap} today, failures included); retry after ${t.retryAfter}s`
-                  : `${s.site} ${t.bucket} cap for ${who} is used (${t.used}/${t.cap} today); retry after ${t.retryAfter}s`,
-            t.retryAfter,
+            `${s.site} is held for ${chosen ?? "the default account"}: the site showed the account limited; retry after ${accountHold}s`,
+            accountHold,
           );
         }
-        taken = true;
-      }
-      // What the call did at the site settles its slot: none, a try, or a use.
-      const reach: Reach = { reached: false };
-      try {
-        const out = await withReach(reach, answer);
-        note("ok");
-        // The answer says the call used less (no invite offered): the day's count follows it.
-        const real = taken && use && r.used?.(parsed.data as never, out as never);
-        if (real && deps.caps) {
-          const who = chosen ?? s.site;
-          deps.caps.giveBack(s.site, who, use);
-          deps.caps.take(s.site, who, real, {});
-        } else if (taken && use && deps.caps && reach.already)
-          // The thing was there (already following): the site saw a load, not the act.
-          deps.caps.giveBack(s.site, chosen ?? s.site, use, true);
-        // The site kept the act: an earlier hold's steps start again.
-        if (taken && use && !reach.already)
-          deps.caps?.kept(s.site, chosen ?? s.site, Object.keys(use));
-        return out;
-      } catch (e) {
-        // The profile was open elsewhere, the browser down, offline: nothing reached the site.
-        const reached = reach.reached && !profileBusyOf(e);
-        // Only a use that worked counts to the cap; a failure that reached the site is a try.
-        if (taken && use) deps.caps?.giveBack(s.site, chosen ?? s.site, use, reached);
-        // The site undid the act: none of it for this account until the hold ends.
-        if (taken && use && reach.limited)
-          deps.caps?.hold(s.site, chosen ?? s.site, Object.keys(use));
-        // The page showed the account limited: every call for it holds, a ban from the longest step.
-        if (reach.banned)
-          deps.caps?.hold(
-            s.site,
-            chosen ?? s.site,
-            [ACCOUNT_HOLD],
-            reach.banned.kind === "limit" ? 0 : HOLD_STEPS_MS.length - 1,
+        // Paced before counted: a refusal here spends none of the day's cap.
+        const slot =
+          byBrowser && lim.pace && deps.caps
+            ? deps.caps.slot(s.site, chosen ?? s.site, lim.pace)
+            : null;
+        if (slot && !slot.ok) note("paced");
+        if (slot && !slot.ok)
+          throw new SiteError(
+            429,
+            `${s.site} pace for ${chosen ?? "the default account"}: too many calls queued; retry after ${slot.retryAfter}s`,
+            slot.retryAfter,
           );
-        if (profileBusyOf(e)) throw e;
-        note("failed", undefined, reached);
-        if (!use || !lim.caps || e instanceof SiteError || !reached) throw e;
-        // A durable retry here would spend a try each time: a failure that reached the site ends
-        // here and the caller chooses (six reads ate 40, 2026-10-01); the buffer holds its retries.
-        // A platform's lasting refusal keeps its status (a 403 is a missing scope to the caller).
-        const why = e instanceof Error ? e.message.slice(0, 300) : String(e);
-        throw new SiteError(
-          lastingRefusal(e) ? e.status : 502,
-          `${s.site} ${method} ${r.path} failed after spending a try: ${why}`,
-        );
-      }
-      async function answer(): Promise<unknown> {
-        // Arming warms a browser leg; an API leg has nothing to warm, a spend is never pre-run.
-        if (from?.arm && (!byBrowser || r.spends || method === "GET" || r.browser?.uploads))
-          return { armed: null } satisfies Armed;
-        const amount = r.spends ? r.spends(parsed.data as never) : false;
-        if (amount !== false) {
-          const what = `${method} ${path} on ${name}, which spends`;
-          if (!deps.approve)
-            throw new SiteError(
-              403,
-              `${what}: no channel to ask on (set PHONE_NUMBER, LINQ_* or NOTIFY_TO)`,
-            );
-          const ok = await deps.approve({
-            what,
-            url: `${originOf(s, deps.env)}${path}`,
-            site: name,
-            ...(amount ? { amount } : {}),
-          });
-          if (!ok) throw new SiteError(403, `${what}: refused`);
-        }
-        if (r.api && token !== null) {
-          const kept = keptName(by, tokenAs);
-          // A refused value: no call till a re-make (or a person) changes it.
-          const held = kept ? deps.held?.(kept) : null;
-          if (kept && held) throw new TokenRefused(kept, held, { site: by.site, account: tokenAs });
-          // A rerun of a durable call (Restate after a crash or a redeploy mid-call) must not
-          // publish twice: the first try may have gone through before its answer was saved.
-          const call = currentCall();
-          // A write's request is its submit step: a failure from here may have gone through.
-          markReached();
-          if (method !== "GET") markSubmitted();
-          if (r.irreversible && !r.resumes && call && deps.started) {
-            if (deps.started.has(call, STARTED))
-              throw new SiteError(409, `${method} ${r.path}: ${MAY_HAVE_GONE}`);
-            deps.started.add(call, STARTED);
-          }
-          const leg = (bearer: string): ApiLeg => ({
-            token: bearer,
-            http: deps.http,
-            env: deps.env,
-            keep: async (name, value) => deps.sink.put(name, value),
-            held: async (name) => ((await deps.sink.get?.(name)) ?? null) !== null,
-            ...(deps.spent ? { spent: deps.spent } : {}),
-            ...(deps.keys
-              ? {
-                  keys: deps.keys.source,
-                  keyCall: keyCall(deps.keys, {
-                    by: from?.caller ?? "sites",
-                    reason: `${method} ${r.path}`,
-                    ...(keyAccount ? { account: keyAccount } : {}),
-                  }),
-                }
-              : {}),
-            ...(deps.uploads ? { uploads: deps.uploads } : {}),
-            ...(deps.render ? { render: deps.render } : {}),
-          });
-          let out: unknown;
-          let overQuota = false;
-          markLeg("api", r.path);
-          try {
-            out = await r.api(parsed.data as never, leg(token));
-          } catch (e) {
-            if (kept && tokenRefusal(e) && (await deadBearer(by, r.path, leg(token), kept)))
-              throw new TokenRefused(kept, e.message, { site: by.site, account: tokenAs });
-            // LinkedIn's app quota resets at UTC midnight; a read refused before it ran takes the browser
-            if (!(e instanceof HttpError && e.status === 429)) throw e;
-            if (kept) quotaSpent.set(kept, nextUtcMidnight((deps.now ?? Date.now)()));
-            if (method !== "GET" || !r.browser) throw e;
-            overQuota = true;
-          }
-          if (!overQuota) {
-            if (kept) deps.worked?.(kept);
-            return checkResponse(r, out);
-          }
-          // Not paced on the way in (it was an API call): take the browser's slot now.
-          const late =
-            lim.pace && deps.caps ? deps.caps.slot(s.site, chosen ?? s.site, lim.pace) : null;
-          if (late && !late.ok)
+        let taken = false;
+        if (use && lim.caps && deps.caps) {
+          const limits = {
+            ...lim.caps,
+            ...(await capsOfKeys(s, lim, keyAccount)),
+            ...(await capsOfAccount(s, lim, chosen, named)),
+          };
+          const buffer =
+            lim.retryBuffer ?? (method === "GET" ? RETRY_BUFFER.read : RETRY_BUFFER.act);
+          const t = deps.caps.take(s.site, chosen ?? s.site, use, limits, buffer);
+          if (!t.ok) {
+            note("capped", t.bucket);
+            const who = chosen ?? "the default account";
             throw new SiteError(
               429,
-              `${s.site} pace for ${chosen ?? "the default account"}: the API's day is spent and the browser is busy; retry after ${late.retryAfter}s`,
-              late.retryAfter,
+              t.held
+                ? `${s.site} ${t.bucket} is held for ${who}: the site undid an act, the account may be limited; retry after ${t.retryAfter}s`
+                : t.cap === 0
+                  ? `${s.site} ${t.bucket} reads are off for ${who} (cap 0)`
+                  : t.tries
+                    ? `${s.site} ${t.bucket} tries for ${who} are used (${t.used}/${t.cap} today, failures included); retry after ${t.retryAfter}s`
+                    : `${s.site} ${t.bucket} cap for ${who} is used (${t.used}/${t.cap} today); retry after ${t.retryAfter}s`,
+              t.retryAfter,
             );
+          }
+          taken = true;
         }
-        if (r.browser) {
-          // The same account the API leg would have used: its profile, so a browser
-          // leg posts as the site's own identity and never as whoever the default
-          // profile happens to be signed in as.
-          // A site with its own logins (LinkedIn) keeps the account in its own `site@label` profile.
-          const at = deps.providerOf?.(s) ?? s.site;
-          // A signed-out site borrowing another's flow (reddit-public runs reddit/read) stays in its
-          // own profile, unless the leg says it needs the flow's signed-in one.
-          const profile = chosen
-            ? await deps.profileFor?.(at, chosen)
-            : s.signedOut && !r.browser.signedIn
-              ? s.site
-              : null;
-          if (chosen && at === s.site && deps.profileFor && !profile)
-            throw new SiteError(
-              409,
-              `${method} ${r.path}: no ${s.site} profile signs in as the chosen account (autobrowse accounts); creds paste ${s.site}@<label> with its username`,
+        // What the call did at the site settles its slot: none, a try, or a use.
+        const reach: Reach = { reached: false };
+        try {
+          const out = await withReach(reach, answer);
+          note("ok");
+          // The answer says the call used less (no invite offered): the day's count follows it.
+          const real = taken && use && r.used?.(parsed.data as never, out as never);
+          if (real && deps.caps) {
+            const who = chosen ?? s.site;
+            deps.caps.giveBack(s.site, who, use);
+            deps.caps.take(s.site, who, real, {});
+          } else if (taken && use && deps.caps && reach.already)
+            // The thing was there (already following): the site saw a load, not the act.
+            deps.caps.giveBack(s.site, chosen ?? s.site, use, true);
+          // The site kept the act: an earlier hold's steps start again.
+          if (taken && use && !reach.already)
+            deps.caps?.kept(s.site, chosen ?? s.site, Object.keys(use));
+          return out;
+        } catch (e) {
+          // The profile was open elsewhere, the browser down, offline: nothing reached the site.
+          const reached = reach.reached && !profileBusyOf(e);
+          // Only a use that worked counts to the cap; a failure that reached the site is a try.
+          if (taken && use) deps.caps?.giveBack(s.site, chosen ?? s.site, use, reached);
+          // The site undid the act: none of it for this account until the hold ends.
+          if (taken && use && reach.limited)
+            deps.caps?.hold(s.site, chosen ?? s.site, Object.keys(use));
+          // The page showed the account limited: every call for it holds, a ban from the longest step.
+          if (reach.banned)
+            deps.caps?.hold(
+              s.site,
+              chosen ?? s.site,
+              [ACCOUNT_HOLD],
+              reach.banned.kind === "limit" ? 0 : HOLD_STEPS_MS.length - 1,
             );
-          const run = await legOf(
-            r.browser,
-            profile,
-            at,
-            accessOf(r) === "read" && !r.irreversible,
+          if (profileBusyOf(e)) throw e;
+          note("failed", undefined, reached);
+          if (!use || !lim.caps || e instanceof SiteError || !reached) throw e;
+          // A durable retry here would spend a try each time: a failure that reached the site ends
+          // here and the caller chooses (six reads ate 40, 2026-10-01); the buffer holds its retries.
+          // A platform's lasting refusal keeps its status (a 403 is a missing scope to the caller).
+          const why = e instanceof Error ? e.message.slice(0, 300) : String(e);
+          throw new SiteError(
+            lastingRefusal(e) ? e.status : 502,
+            `${s.site} ${method} ${r.path} failed after spending a try: ${why}`,
           );
-          if (!run)
+        }
+        async function answer(): Promise<unknown> {
+          // Arming warms a browser leg; an API leg has nothing to warm, a spend is never pre-run.
+          if (from?.arm && (!byBrowser || r.spends || method === "GET" || r.browser?.uploads))
+            return { armed: null } satisfies Armed;
+          const amount = r.spends ? r.spends(parsed.data as never) : false;
+          if (amount !== false) {
+            const what = `${method} ${path} on ${name}, which spends`;
+            if (!deps.approve)
+              throw new SiteError(
+                403,
+                `${what}: no channel to ask on (set PHONE_NUMBER, LINQ_* or NOTIFY_TO)`,
+              );
+            const ok = await deps.approve({
+              what,
+              url: `${originOf(s, deps.env)}${path}`,
+              site: name,
+              ...(amount ? { amount } : {}),
+            });
+            if (!ok) throw new SiteError(403, `${what}: refused`);
+          }
+          if (r.api && token !== null) {
+            const kept = keptName(by, tokenAs);
+            // A refused value: no call till a re-make (or a person) changes it.
+            const held = kept ? deps.held?.(kept) : null;
+            if (kept && held)
+              throw new TokenRefused(kept, held, { site: by.site, account: tokenAs });
+            // A rerun of a durable call (Restate after a crash or a redeploy mid-call) must not
+            // publish twice: the first try may have gone through before its answer was saved.
+            const call = currentCall();
+            // A write's request is its submit step: a failure from here may have gone through.
+            markReached();
+            if (method !== "GET") markSubmitted();
+            if (r.irreversible && !r.resumes && call && deps.started) {
+              if (deps.started.has(call, STARTED))
+                throw new SiteError(409, `${method} ${r.path}: ${MAY_HAVE_GONE}`);
+              deps.started.add(call, STARTED);
+            }
+            const leg = (bearer: string): ApiLeg => ({
+              token: bearer,
+              http: deps.http,
+              env: deps.env,
+              keep: async (name, value) => deps.sink.put(name, value),
+              held: async (name) => ((await deps.sink.get?.(name)) ?? null) !== null,
+              ...(deps.spent ? { spent: deps.spent } : {}),
+              ...(deps.keys
+                ? {
+                    keys: deps.keys.source,
+                    keyCall: keyCall(deps.keys, {
+                      by: from?.caller ?? "sites",
+                      reason: `${method} ${r.path}`,
+                      ...(keyAccount ? { account: keyAccount } : {}),
+                    }),
+                  }
+                : {}),
+              ...(deps.uploads ? { uploads: deps.uploads } : {}),
+              ...(deps.render ? { render: deps.render } : {}),
+            });
+            let out: unknown;
+            let overQuota = false;
+            markLeg("api", r.path);
+            try {
+              out = await r.api(parsed.data as never, leg(token));
+            } catch (e) {
+              if (kept && tokenRefusal(e) && (await deadBearer(by, r.path, leg(token), kept)))
+                throw new TokenRefused(kept, e.message, { site: by.site, account: tokenAs });
+              if (upstreamFault(e)) brk.fault(keys().fault, (e as Error).message);
+              // LinkedIn's app quota resets at UTC midnight; a read refused before it ran takes the browser
+              if (!(e instanceof HttpError && e.status === 429)) {
+                // The site answered: a refusal, not an outage.
+                if (!upstreamFault(e)) for (const k of checked) brk.ok(k);
+                throw e;
+              }
+              const now = (deps.now ?? Date.now)();
+              brk.trip(keys().app, nextUtcMidnight(now), e.message);
+              brk.trip(keys().quota, now + BREAK_MAX_MS, e.message);
+              if (method !== "GET" || !r.browser) throw e;
+              overQuota = true;
+            }
+            if (!overQuota) {
+              for (const k of checked) brk.ok(k);
+              if (kept) deps.worked?.(kept);
+              return checkResponse(r, out);
+            }
+            // Not paced on the way in (it was an API call): take the browser's slot now.
+            const late =
+              lim.pace && deps.caps ? deps.caps.slot(s.site, chosen ?? s.site, lim.pace) : null;
+            if (late && !late.ok)
+              throw new SiteError(
+                429,
+                `${s.site} pace for ${chosen ?? "the default account"}: the API's day is spent and the browser is busy; retry after ${late.retryAfter}s`,
+                late.retryAfter,
+              );
+          }
+          if (r.browser) {
+            // The same account the API leg would have used: its profile, so a browser
+            // leg posts as the site's own identity and never as whoever the default
+            // profile happens to be signed in as.
+            // A site with its own logins (LinkedIn) keeps the account in its own `site@label` profile.
+            const at = deps.providerOf?.(s) ?? s.site;
+            // A signed-out site borrowing another's flow (reddit-public runs reddit/read) stays in its
+            // own profile, unless the leg says it needs the flow's signed-in one.
+            const profile = chosen
+              ? await deps.profileFor?.(at, chosen)
+              : s.signedOut && !r.browser.signedIn
+                ? s.site
+                : null;
+            if (chosen && at === s.site && deps.profileFor && !profile)
+              throw new SiteError(
+                409,
+                `${method} ${r.path}: no ${s.site} profile signs in as the chosen account (autobrowse accounts); creds paste ${s.site}@<label> with its username`,
+              );
+            const run = await legOf(
+              r.browser,
+              profile,
+              at,
+              accessOf(r) === "read" && !r.irreversible,
+            );
+            if (!run)
+              throw new SiteError(
+                501,
+                `${method} ${r.path}: ${legName(r.browser)} not recorded yet; explore it`,
+              );
+            markLeg("browser", r.path);
+            if (slot?.waitMs) await (deps.sleep ?? sleep)(slot.waitMs);
+            const input = r.browser.input
+              ? r.browser.input(parsed.data as never, deps.env)
+              : parsed.data;
+            const route = `${s.site} ${method} ${path} ${armKey(input)}`;
+            if (from?.arm) return armLeg(run, input, route);
+            const armed = takeArm(from?.armId, route, run);
+            if (armed)
+              try {
+                const out = await run(input, { page: armed.page });
+                return checkResponse(r, r.browser.output ? r.browser.output(out) : out);
+              } finally {
+                await armed.release();
+              }
+            const out = await (r.browser.uploads
+              ? withLocalFile(input as Record<string, unknown>, r.browser.uploads, run)
+              : run(input)
+            ).catch((e: unknown) => {
+              throw (method === "GET" && accessError(e)) || e;
+            });
+            return checkResponse(r, r.browser.output ? r.browser.output(out) : out);
+          }
+          if (lacks.length)
             throw new SiteError(
               501,
-              `${method} ${r.path}: ${legName(r.browser)} not recorded yet; explore it`,
+              `${method} ${r.path}: waiting on ${lacks.join(", ")} for ${name}, and no browser leg`,
             );
-          markLeg("browser", r.path);
-          if (slot?.waitMs) await (deps.sleep ?? sleep)(slot.waitMs);
-          const input = r.browser.input
-            ? r.browser.input(parsed.data as never, deps.env)
-            : parsed.data;
-          const route = `${s.site} ${method} ${path} ${armKey(input)}`;
-          if (from?.arm) return armLeg(run, input, route);
-          const armed = takeArm(from?.armId, route, run);
-          if (armed)
-            try {
-              const out = await run(input, { page: armed.page });
-              return checkResponse(r, r.browser.output ? r.browser.output(out) : out);
-            } finally {
-              await armed.release();
-            }
-          const out = await (r.browser.uploads
-            ? withLocalFile(input as Record<string, unknown>, r.browser.uploads, run)
-            : run(input)
-          ).catch((e: unknown) => {
-            throw (method === "GET" && accessError(e)) || e;
-          });
-          return checkResponse(r, r.browser.output ? r.browser.output(out) : out);
+          throw new SiteError(501, `${method} ${r.path}: no token for ${name} and no browser leg`);
         }
-        if (lacks.length)
-          throw new SiteError(
-            501,
-            `${method} ${r.path}: waiting on ${lacks.join(", ")} for ${name}, and no browser leg`,
-          );
-        throw new SiteError(501, `${method} ${r.path}: no token for ${name} and no browser leg`);
       }
     },
     async revoke(name, account) {

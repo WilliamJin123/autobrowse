@@ -26,6 +26,7 @@ import type { SpentKeys } from "../reach/key-ring.js";
 import type { KeysDep } from "../reach/key-source.js";
 import type { CompiledCatalog } from "../workflows/compiled.js";
 import { runCompiled } from "../workflows/proof.js";
+import { type CallCache, callCache } from "./call-cache.js";
 import type { DailyCaps } from "./caps.js";
 import { checkSite, type SiteFacade, type SiteRow, siteFacade } from "./facade.js";
 import { type CallHook, withHooks } from "./hooks.js";
@@ -53,6 +54,8 @@ import { type SetupStep, type SiteApi, SiteError } from "./types.js";
 import type { UploadSessions } from "./uploads.js";
 
 export interface SiteParts {
+  /** Kept read answers; `false` turns them off (call-cache.ts). */
+  cache?: CallCache | false;
   catalog: CompiledCatalog;
   browser: FlowRunner;
   sink: SecretSink;
@@ -231,6 +234,8 @@ export function sitesFor(p: SiteParts): SiteFacade {
     },
     oauthPort: p.oauthPort,
     approve: p.approve ?? null,
+    // Kept reads by default; `cache: false` reads the site every time.
+    ...(p.cache === false ? {} : { cache: p.cache ?? callCache() }),
     ...(p.caps ? { caps: p.caps } : {}),
     ...(p.limits ? { limits: p.limits } : {}),
     ...(p.spent ? { spent: p.spent } : {}),

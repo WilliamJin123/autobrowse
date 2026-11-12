@@ -5,10 +5,12 @@
  * A retried call is several lines under one `invocation`: the last says how
  * it ended. One file per month (`calls-2026-10.jsonl`), plain appends like
  * the model call ledger: several processes write and a line under 4 KB lands
- * whole. Never the input or the answer, only the route and the error's text.
+ * whole. The input and the answer go to the bodies ledger beside it (`bodies/`, call-bodies.ts);
+ * the row carries the body's id.
  */
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { appendBody } from "./call-bodies.js";
 
 export interface SiteCallRow {
   at: string;
@@ -29,7 +31,9 @@ export interface SiteCallRow {
   error: string | null;
   ms: number;
   /** The leg that ran (from 2026-11-05); absent when the call ended before a leg began. */
-  via?: "api" | "browser";
+  via?: "api" | "browser" | "cache";
+  /** The answer's line id in the bodies ledger (call-bodies.ts). */
+  body?: string;
   /** The route's path as written, `{param}` and all: what `site paths --check` groups by. */
   template?: string;
   /** Imported from an older record (Restate's history, the caps ledger), not written live. */
@@ -38,17 +42,43 @@ export interface SiteCallRow {
   artifact?: string;
 }
 
-export interface SiteCalls {
-  record(row: SiteCallRow): void;
+/** What a call took and gave, for the bodies ledger. */
+export interface CallData {
+  account: string | null;
+  input: unknown;
+  answer?: unknown;
 }
+
+export interface SiteCalls {
+  record(row: SiteCallRow, data?: CallData): void;
+}
+
+export const bodiesDirOf = (callsDir: string): string => join(callsDir, "bodies");
 
 const ERROR_CHARS = 300;
 const monthOf = (iso: string): string => iso.slice(0, 7);
 
 export function fileSiteCalls(dir: string): SiteCalls {
   return {
-    record(row) {
-      const line = { ...row, error: row.error?.slice(0, ERROR_CHARS) ?? null };
+    record(row, data) {
+      const body = data
+        ? appendBody(bodiesDirOf(dir), {
+            at: row.at,
+            service: row.service,
+            site: row.site,
+            route: row.route,
+            account: data.account,
+            caller: row.caller,
+            ok: row.ok,
+            input: data.input,
+            ...(row.ok ? { answer: data.answer } : { error: row.error }),
+          })
+        : null;
+      const line = {
+        ...row,
+        ...(body ? { body } : {}),
+        error: row.error?.slice(0, ERROR_CHARS) ?? null,
+      };
       try {
         mkdirSync(dir, { recursive: true, mode: 0o700 });
         appendFileSync(join(dir, `calls-${monthOf(row.at)}.jsonl`), `${JSON.stringify(line)}\n`, {
@@ -61,9 +91,20 @@ export function fileSiteCalls(dir: string): SiteCalls {
   };
 }
 
-export function memorySiteCalls(): SiteCalls & { rows: SiteCallRow[] } {
+export function memorySiteCalls(): SiteCalls & {
+  rows: SiteCallRow[];
+  data: (CallData | undefined)[];
+} {
   const rows: SiteCallRow[] = [];
-  return { rows, record: (r) => rows.push(r) };
+  const data: (CallData | undefined)[] = [];
+  return {
+    rows,
+    data,
+    record: (r, d) => {
+      rows.push(r);
+      data.push(d);
+    },
+  };
 }
 
 /** Rows since `since` (ISO), oldest first, from the month files that can hold them. */

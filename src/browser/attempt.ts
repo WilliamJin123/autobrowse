@@ -96,7 +96,8 @@ export const markSubmitted = (): void => {
 
 /** Which leg a site call ran, and the route's path as written (`{param}`), for the call ledger. */
 export interface LegTaken {
-  via?: "api" | "browser";
+  /** `cache`: a kept answer (call-cache.ts), the site not called. */
+  via?: "api" | "browser" | "cache";
   template?: string;
 }
 
@@ -105,7 +106,7 @@ const legs = new AsyncLocalStorage<LegTaken>();
 export const withLeg = <T>(l: LegTaken, fn: () => Promise<T>): Promise<T> => legs.run(l, fn);
 
 /** The facade says which leg it starts. */
-export const markLeg = (via: "api" | "browser", template: string): void => {
+export const markLeg = (via: "api" | "browser" | "cache", template: string): void => {
   const l = legs.getStore();
   if (!l) return;
   l.via = via;
