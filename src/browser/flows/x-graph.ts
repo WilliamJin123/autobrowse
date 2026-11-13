@@ -78,7 +78,7 @@ export interface Captured {
 export async function captureOps(
   fp: FlowPage,
   o: { url: string; ops: readonly string[]; kind: Kind; max: number; scroll?: boolean },
-): Promise<(Captured & { bodies: unknown[] }) | "signed_out"> {
+): Promise<(Captured & { bodies: unknown[]; ops: string[] }) | "signed_out"> {
   const seen = new Map<string, Record<string, unknown>>();
   // what came instead, for the miss message
   const ops = new Set<string>();
@@ -90,8 +90,9 @@ export async function captureOps(
   const { bodies } = await captureJson(fp, { match: opsMatch(o.ops) }, async (got) => {
     await fp.open(o.url);
     if (SIGNED_OUT.test(fp.url())) return;
-    // The first answer comes with the load.
-    for (let i = 0; i < 15 && !got.length; i++) await fp.wait(700);
+    // first answer holding `kind`: another op (UserByScreenName) can land first
+    const has = () => got.some((b) => entitiesOf(b, o.kind).size > 0);
+    for (let i = 0; i < 15 && !has(); i++) await fp.wait(700);
     if (o.scroll === false) return;
     await scrollCollect(fp, {
       read: async () => {
@@ -109,7 +110,12 @@ export async function captureOps(
       `no ${o.ops.join("/")} answer seen (calls: ${[...ops].join(", ") || "none"}; ${fp.url()})`,
     );
   for (const b of bodies) entitiesOf(b, o.kind, seen);
-  return { items: [...seen.values()].slice(0, o.max), calls: bodies.length, bodies };
+  return {
+    items: [...seen.values()].slice(0, o.max),
+    calls: bodies.length,
+    bodies,
+    ops: [...ops],
+  };
 }
 
 const signedOut = (fp: FlowPage) =>
@@ -252,8 +258,10 @@ export interface UserPosts extends Captured {
   username: string;
   /** False: no such account (no user in the answers, no posts). */
   found: boolean;
-  /** The profile user whole (`user_results.result`): `rest_id`, followers in `legacy.followers_count`. */
+  /** The profile user whole (`UserByScreenName`'s `data.user.result`): `rest_id`, followers in `relationship_counts.followers` (11-12; `legacy` before). */
   user: Record<string, unknown> | null;
+  /** Only with no posts: GraphQL calls seen, `<op> <status>`. */
+  seen?: string[];
 }
 
 /** One account's posts as its profile page lists them (`UserTweets`), newest first after a pinned post; retweets are kept whole. */
@@ -277,6 +285,8 @@ export const xUserPosts = defineFlow<{ username: string; max?: number }, UserPos
       user,
       items: c.items,
       calls: c.calls,
+      // no posts: the GraphQL calls the page made, to tell empty from renamed
+      ...(c.items.length ? {} : { seen: c.ops }),
     };
   },
 });

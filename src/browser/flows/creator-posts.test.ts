@@ -28,7 +28,7 @@ describe("X user posts", () => {
         result: {
           rest_id: "11",
           core: { screen_name: "Creator" },
-          legacy: { followers_count: 500 },
+          relationship_counts: { followers: 500 },
         },
       },
     },
@@ -48,7 +48,7 @@ describe("X user posts", () => {
   it("finds the profile user by handle, any case, with or without @", () => {
     const u = userNamed([timeline, byName], "@creator");
     expect(u?.rest_id).toBe("11");
-    expect(u?.legacy).toEqual({ followers_count: 500 });
+    expect(u?.relationship_counts).toEqual({ followers: 500 });
     expect(userNamed([timeline], "nobody")).toBeNull();
   });
 
