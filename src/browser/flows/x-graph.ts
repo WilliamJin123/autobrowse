@@ -17,6 +17,9 @@ const SIGNED_OUT = /\/(i\/flow\/login|login)\b/;
 
 export type Kind = "tweet" | "user" | "list" | "trend";
 
+/** The timeline's last rendered cell into view (else a screen down): X asks for the next page there. */
+const LAST_CELL = `(() => { const c = [...document.querySelectorAll('[data-testid="cellInnerDiv"]')].at(-1); if (c) c.scrollIntoView({ block: "end", behavior: "smooth" }); else scrollBy(0, innerHeight); })()`;
+
 /** A GraphQL call of one of `ops`: `…/graphql/<queryId>/<Op>?…`. */
 export const opsMatch = (ops: readonly string[]) =>
   new RegExp(`/graphql/[\\w-]+/(${ops.join("|")})(\\?|$)`);
@@ -106,6 +109,10 @@ export async function captureOps(
       },
       key: (id) => id,
       max: o.max,
+      // one answer is ~20 tall cells: screen-sized steps go idle before the next page loads
+      scroll: async () => {
+        await fp.page.evaluate(LAST_CELL).catch(() => undefined);
+      },
       settleMs: 1_800,
     });
   }).finally(() => fp.page.off("response", onAny));
