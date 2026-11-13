@@ -19,6 +19,7 @@ import { scrollCollect } from "../scroll-collect.js";
 
 const WEB = "https://www.threads.com";
 const GRAPHQL = /^https:\/\/www\.threads\.com\/(api\/graphql|graphql\/query)\b/;
+const TO_FOOT = `scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" })`;
 const MISSING = /sorry, this page isn.t available|this profile isn.t available/i;
 
 type Post = Record<string, unknown> & { code: string };
@@ -134,6 +135,10 @@ async function read(fp: FlowPage, username: string, cap: number): Promise<Thread
         read: async () => threadsPostsOf([...html, ...seen], username),
         key: (p) => p.code,
         max: cap,
+        // a page of posts is many screens: screen-sized steps go idle before the next loads
+        scroll: async () => {
+          await fp.page.evaluate(TO_FOOT).catch(() => undefined);
+        },
         settleMs: 2_500,
       });
     },
