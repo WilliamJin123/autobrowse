@@ -562,7 +562,7 @@ export const instagram: SiteApi = {
           "the Graph API lists another account's posts only for business and creator accounts (`meta GET /instagram/{username}/reels`, try that first)",
       },
       summary:
-        "Any account's posts, every kind (photo, video, carousel, reel), read in the signed-in profile: the grid's own GraphQL as it pages (intercept), each media whole (`media_type`, `product_type`, `taken_at`, `like_count`, `comment_count`, `view_count`, `reshare_count`), and the profile user whole (`pk`, `full_name`, `follower_count`); the grid's links (ui) when that breaks. `{ username, found, via, fell, user, pk, posts, urls, pages }` (`max`, default 50). Reads only",
+        "Any account's posts, every kind (photo, video, carousel, reel), read in the signed-in profile: the grid's own GraphQL as it pages (intercept), each media whole (`media_type`, `product_type`, `taken_at`, `like_count`, `comment_count`, `reshare_count`; `view_count` comes null off the grid: a reel's views are on `GET /web/p/{shortcode}`), and the profile user whole (`pk`, `full_name`, `follower_count`); the grid's links (ui) when that breaks. `{ username, found, via, fell, user, pk, posts, urls, pages }` (`max`, default 50). Reads only",
       request: posts,
       meter: () => ({ user_posts: 1 }),
       browser: { flow: "instagram/posts" },
