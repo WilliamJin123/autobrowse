@@ -259,6 +259,8 @@ export interface SavedInput {
 export interface IgSaved extends IgGrid {
   collection: string | null;
   found: boolean;
+  /** every collection, whole: a media's `saved_collection_ids` name these */
+  collections: Array<Record<string, unknown>>;
 }
 
 /** Our own saved posts (all, or one collection by name): `feed/saved/posts` or `feed/collection/<id>/posts`. */
@@ -271,17 +273,19 @@ export const instagramSaved = defineFlow<SavedInput, IgSaved>({
     await fp.open(`${WEB}/`);
     if (SIGNED_OUT.test(fp.url())) return signedOut(fp);
     let base = "/api/v1/feed/saved/posts/";
+    type Lists = { items?: Array<Record<string, unknown>> };
+    const lists = await pageJson<Lists>(
+      fp,
+      `/api/v1/collections/list/?collection_types=${encodeURIComponent('["MEDIA","ALL_MEDIA_AUTO_COLLECTION"]')}`,
+      HEADERS,
+    );
+    const collections = lists.items ?? [];
     if (collection) {
-      type Lists = { items?: Array<{ collection_id?: unknown; collection_name?: unknown }> };
-      const lists = await pageJson<Lists>(
-        fp,
-        `/api/v1/collections/list/?collection_types=${encodeURIComponent('["MEDIA","ALL_MEDIA_AUTO_COLLECTION"]')}`,
-        HEADERS,
-      );
-      const hit = (lists.items ?? []).find(
+      const hit = collections.find(
         (c) => String(c.collection_name ?? "").toLowerCase() === collection.toLowerCase(),
       );
-      if (!hit?.collection_id) return { collection, found: false, media: [], pages: 0 };
+      if (!hit?.collection_id)
+        return { collection, found: false, collections, media: [], pages: 0 };
       base = `/api/v1/feed/collection/${encodeURIComponent(String(hit.collection_id))}/posts/`;
     }
     const seen = new Map<string, Record<string, unknown>>();
@@ -306,6 +310,7 @@ export const instagramSaved = defineFlow<SavedInput, IgSaved>({
     return {
       collection: collection ?? null,
       found: true,
+      collections,
       media: [...seen.values()].slice(0, cap),
       pages,
     };

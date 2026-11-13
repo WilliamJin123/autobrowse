@@ -128,6 +128,7 @@ describe("browser service", () => {
       "linkedin/post-stats",
       "linkedin/profile",
       "linkedin/relationship",
+      "linkedin/saved",
       "linkedin/search-people",
       "linkedin/search-posts",
       "linkedin/withdraw",

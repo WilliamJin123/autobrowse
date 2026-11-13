@@ -587,7 +587,7 @@ export const instagram: SiteApi = {
       path: "/web/saved",
       standing: { final: "the Graph API has no saved posts" },
       summary:
-        "Our saved posts, all or one `collection` by name, each media whole: `{ collection, found, media, pages }` (`max`, default 100). Reads only",
+        "Our saved posts, all or one `collection` by name, each media whole, and every collection whole (a media's `saved_collection_ids` name them): `{ collection, found, collections, media, pages }` (`max`, default 100). Reads only",
       request: saved,
       meter: () => ({ saved: 1 }),
       browser: { flow: "instagram/saved" },

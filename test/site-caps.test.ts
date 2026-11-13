@@ -120,11 +120,18 @@ describe("a named account", () => {
   });
 
   it("William's own LinkedIn and the alt are off in code (2026-11-04): research runs as linkedin@wren", () => {
+    // his own: one read a day of his saved posts (WA-1360.2, 11-12), nothing else
+    const open: Record<string, Record<string, number>> = {
+      linkedin: { saved: 1, total: 1 },
+      "linkedin@alt": {},
+    };
     for (const acct of ["linkedin", "linkedin@alt"] as const) {
       const caps = linkedin.accountCaps?.[acct] ?? {};
-      expect(Object.values(caps).every((n) => n === 0)).toBe(true);
+      for (const [kind, n] of Object.entries(caps))
+        expect([kind, n]).toEqual([kind, open[acct]?.[kind] ?? 0]);
       // every kind the site meters, so none falls through to the site's cap
-      for (const kind of Object.keys(linkedin.caps ?? {})) expect(caps).toHaveProperty(kind, 0);
+      for (const kind of Object.keys(linkedin.caps ?? {}))
+        expect(caps).toHaveProperty(kind, open[acct]?.[kind] ?? 0);
     }
     expect(linkedin.caps).toMatchObject({ company: 40 });
     expect(linkedin.caps).not.toHaveProperty("total");

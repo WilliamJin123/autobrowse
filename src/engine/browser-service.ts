@@ -83,6 +83,7 @@ import {
   linkedinSearchPeople,
   linkedinWithdraw,
 } from "../browser/flows/linkedin-reach.js";
+import { linkedinSaved } from "../browser/flows/linkedin-saved.js";
 import { loomDelete, loomRename, loomUpload } from "../browser/flows/loom.js";
 import { npmCreateOrg } from "../browser/flows/npm-create-org.js";
 import { npmGranularToken } from "../browser/flows/npm-granular-token.js";
@@ -237,6 +238,7 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     linkedinConnections,
     linkedinNotifications,
     linkedinActivity,
+    linkedinSaved,
     linkedinAudience,
     linkedinPostAnalytics,
     linkedinDashboard,

@@ -71,6 +71,7 @@ import {
   linkedinSearchPeople,
   linkedinWithdraw,
 } from "./linkedin-reach.js";
+import { linkedinSaved } from "./linkedin-saved.js";
 import { loomDelete, loomRename, loomUpload } from "./loom.js";
 import { npmCreateOrg } from "./npm-create-org.js";
 import { npmGranularToken } from "./npm-granular-token.js";
@@ -283,7 +284,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
-  entry(instagramPost, z.object({ shortcode: z.string() }), true),
+  entry(
+    instagramPost,
+    z.object({ shortcode: z.string() }),
+    true,
+    "A post by its code. The page embeds its media record (exact counts, views, frames, coauthors); the meta tags are the fallback (rounded counts). Mapped live 2026-11-12 on `/p/<code>/`; a `/reel/<code>/` URL lands on the Reels tab instead.",
+  ),
   entry(
     instagramPostComments,
     z.object({ max: z.number().optional(), shortcode: z.string() }),
@@ -443,6 +449,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     true,
     'Where this account stands with a member, from the buttons on the profile\'s top card: "Message" with no "Connect" = 1st degree, "Pending" = our invite is out, "Connect" = nothing yet. One profile read; the outreach loop asks it before every…',
   ),
+  entry(linkedinSaved, z.object({ max: z.number().optional() }), true),
   entry(
     linkedinSearchPeople,
     z.object({
@@ -592,7 +599,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     z.object({
       sr: z.string(),
       title: z.string(),
-      kind: z.union([z.literal("link"), z.literal("self"), z.literal("image")]),
+      kind: z.union([z.literal("link"), z.literal("image"), z.literal("self")]),
       text: z.string().optional(),
       url: z.string().optional(),
       image: z.string().optional(),

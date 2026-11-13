@@ -220,6 +220,7 @@ const activity = z.object({
   vanity,
   max: z.coerce.number().int().min(1).max(100).default(20),
 });
+const savedRead = z.object({ max: z.coerce.number().int().min(1).max(1000).default(100) });
 const postsMax = z.coerce.number().int().min(1).max(100).default(20);
 /** Strict: an old or misspelt filter name (`since`) is a 400, not a search with no filter. */
 const searchPosts = z
@@ -411,6 +412,8 @@ export const linkedin: SiteApi = {
     // Verify reads of our own sends (WA-982): apart from the send buckets, so a check never takes a
     // send's room; VERIFY_GAP_MS already holds each send to one read an hour.
     verify: 40,
+    // Our own saved posts (wren capture pull, WA-1360.2): one read a day.
+    saved: 2,
   },
   // William's own profile: off since 2026-11-04 (William: research runs as the Wren founder
   // account, linkedin@wren). Live limits.json already held it at 0 from 2026-10-30.
@@ -437,7 +440,9 @@ export const linkedin: SiteApi = {
       comments: 0,
       publish: 0,
       verify: 0,
-      total: 0,
+      // his own saved posts, his captures (WA-1360.2, William 11-12 "go ahead and do all these eden tasks")
+      saved: 1,
+      total: 1,
     },
     // The research alt (2026-10-05): restricted by LinkedIn 2026-10-06 (asks for an ID); off.
     "linkedin@alt": {
@@ -462,6 +467,7 @@ export const linkedin: SiteApi = {
       comments: 0,
       publish: 0,
       verify: 0,
+      saved: 0,
       total: 0,
     },
   },
@@ -880,6 +886,16 @@ export const linkedin: SiteApi = {
       request: activity,
       meter: () => ({ activity: 1 }),
       browser: { flow: "linkedin/activity" },
+    }),
+    route({
+      method: "GET",
+      path: "/web/saved",
+      standing: { final: "no LinkedIn API lists a member's saved posts" },
+      summary:
+        "Our saved posts, newest saved first (`max`, default 100): urn, url, author (name, url, headline), whole text, age label and approximate time, images, raw. The page shows no counts. Reads only",
+      request: savedRead,
+      meter: () => ({ saved: 1 }),
+      browser: { flow: "linkedin/saved" },
     }),
     route({
       method: "GET",
