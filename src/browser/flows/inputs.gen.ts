@@ -39,6 +39,7 @@ import {
   instagramProfile,
   instagramSaved,
 } from "./instagram-people.js";
+import { instagramPosts } from "./instagram-posts.js";
 import { instagramReels } from "./instagram-reels.js";
 import { learnQuizAttempt, learnQuizReview, learnQuizzes } from "./learn.js";
 import { linkedinFollow, linkedinLike } from "./linkedin-act.js";
@@ -107,6 +108,7 @@ import { resetMailProbe } from "./reset-mail-probe.js";
 import { threadsFollow, threadsLike, threadsReply, threadsSearch } from "./threads-act.js";
 import { threadsFollowing } from "./threads-following.js";
 import { threadsOauthConsent } from "./threads-oauth-consent.js";
+import { threadsPosts } from "./threads-posts.js";
 import { tiktokComment, tiktokFollow, tiktokLike, tiktokSearch } from "./tiktok-act.js";
 import { tiktokPostComments } from "./tiktok-comments.js";
 import { tiktokCreatePost } from "./tiktok-create-post.js";
@@ -116,7 +118,16 @@ import { tiktokExplore, tiktokNotifications, tiktokUser, tiktokVideos } from "./
 import { tiktokVideoAnalytics } from "./tiktok-video-analytics.js";
 import { wranglerLogin } from "./wrangler-login.js";
 import { xFollow, xLike, xReply } from "./x-act.js";
-import { xBookmarks, xLikes, xListPosts, xLists, xPeople, xThread, xTrending } from "./x-graph.js";
+import {
+  xBookmarks,
+  xLikes,
+  xListPosts,
+  xLists,
+  xPeople,
+  xThread,
+  xTrending,
+  xUserPosts,
+} from "./x-graph.js";
 import { xOauthConsent } from "./x-oauth-consent.js";
 import { xFollowing, xHome, xPost, xPosts, xProfile, xSearch } from "./x-read.js";
 import { youtubeCommunityPost } from "./youtube-community-post.js";
@@ -295,6 +306,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     z.object({ max: z.number().optional(), shortcode: z.string() }),
     true,
   ),
+  entry(instagramPosts, z.object({ username: z.string(), max: z.number().optional() }), true),
   entry(instagramProfile, z.object({ username: z.string() }), true),
   entry(instagramProfileName, z.object({ name: z.string() }), true),
   entry(instagramReels, z.object({ username: z.string(), max: z.number().optional() }), true),
@@ -696,6 +708,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     }),
     true,
   ),
+  entry(threadsPosts, z.object({ username: z.string(), max: z.number().optional() }), true),
   entry(threadsReply, z.object({ username: z.string(), code: z.string(), text: z.string() }), true),
   entry(
     threadsSearch,
@@ -896,6 +909,12 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     z.object({ max: z.number().optional() }),
     true,
     "What is trending for the signed-in account (`ExplorePage`, `GenericTimelineById`).",
+  ),
+  entry(
+    xUserPosts,
+    z.object({ username: z.string(), max: z.number().optional() }),
+    true,
+    "One account's posts as its profile page lists them (`UserTweets`), newest first after a pinned post; retweets are kept whole.",
   ),
   entry(
     youtubeCommunityPost,

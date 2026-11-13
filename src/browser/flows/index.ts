@@ -61,6 +61,7 @@ export {
   instagramProfile,
   instagramSaved,
 } from "./instagram-people.js";
+export { type IgPosts, instagramPosts } from "./instagram-posts.js";
 export {
   instagramReels,
   type Reels,
@@ -160,6 +161,7 @@ export {
 } from "./threads-act.js";
 export { followedOfThreads, threadsFollowing } from "./threads-following.js";
 export { threadsOauthConsent } from "./threads-oauth-consent.js";
+export { threadsPosts } from "./threads-posts.js";
 export {
   searchRows,
   type TikTokVideo,
@@ -194,6 +196,7 @@ export {
   xPeople,
   xThread,
   xTrending,
+  xUserPosts,
 } from "./x-graph.js";
 export { xOauthConsent } from "./x-oauth-consent.js";
 export {

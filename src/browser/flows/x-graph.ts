@@ -2,7 +2,7 @@
  * X reads off the page's own GraphQL answers (OpenCLI port; their commands call the same
  * operations). Mapped live 2026-11-10 as x@wren: `Bookmarks`, `Followers`/`Following`,
  * `CombinedLists`, `ExplorePage` + `GenericTimelineById` (trending), `TweetDetail`, `Likes`,
- * `ListLatestTweetsTimeline`. The page signs each call; the flow opens the page, keeps every
+ * `ListLatestTweetsTimeline`; `UserTweets` + `UserByScreenName` (a profile's posts, WA-1362). The page signs each call; the flow opens the page, keeps every
  * answer of the named operations while it scrolls, and returns each tweet, user, list or trend
  * whole (`tweet_results.result`, `user_results.result`, `list`, `trend`).
  */
@@ -78,7 +78,7 @@ export interface Captured {
 export async function captureOps(
   fp: FlowPage,
   o: { url: string; ops: readonly string[]; kind: Kind; max: number; scroll?: boolean },
-): Promise<Captured | "signed_out"> {
+): Promise<(Captured & { bodies: unknown[] }) | "signed_out"> {
   const seen = new Map<string, Record<string, unknown>>();
   const { bodies } = await captureJson(fp, { match: opsMatch(o.ops) }, async (got) => {
     await fp.open(o.url);
@@ -99,7 +99,7 @@ export async function captureOps(
   if (SIGNED_OUT.test(fp.url())) return "signed_out";
   if (!bodies.length) throw new RungBroke(`no ${o.ops.join("/")} answer seen`);
   for (const b of bodies) entitiesOf(b, o.kind, seen);
-  return { items: [...seen.values()].slice(0, o.max), calls: bodies.length };
+  return { items: [...seen.values()].slice(0, o.max), calls: bodies.length, bodies };
 }
 
 const signedOut = (fp: FlowPage) =>
@@ -112,7 +112,7 @@ const handle = (u: string) => encodeURIComponent(u.replace(/^@/, ""));
 
 async function read(fp: FlowPage, o: Parameters<typeof captureOps>[1]): Promise<Captured> {
   const c = await captureOps(fp, o);
-  return c === "signed_out" ? signedOut(fp) : c;
+  return c === "signed_out" ? signedOut(fp) : { items: c.items, calls: c.calls };
 }
 
 /** A post with its replies as the conversation page shows them (`TweetDetail`). */
@@ -213,6 +213,62 @@ export const xListPosts = defineFlow<{ id: string; max?: number }, Captured>({
       kind: "tweet",
       max: capOf(max, 50, 500),
     }),
+});
+
+/** The user of `handle` among the answers' users (`core.screen_name`, older `legacy.screen_name`). */
+export function userNamed(
+  bodies: readonly unknown[],
+  handle: string,
+): Record<string, unknown> | null {
+  const want = handle.replace(/^@/, "").toLowerCase();
+  // UserByScreenName (`data.user.result`) first: tweet authors may carry less
+  const profiles = bodies
+    .map((b) => (b as { data?: { user?: { result?: unknown } } } | null)?.data?.user?.result)
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === "object");
+  const users = new Map<string, Record<string, unknown>>();
+  for (const b of bodies) entitiesOf(b, "user", users);
+  for (const u of [...profiles, ...users.values()]) {
+    const { core, legacy } = u as {
+      core?: { screen_name?: unknown };
+      legacy?: { screen_name?: unknown };
+    };
+    const name = core?.screen_name ?? legacy?.screen_name;
+    if (typeof name === "string" && name.toLowerCase() === want) return u;
+  }
+  return null;
+}
+
+export interface UserPosts extends Captured {
+  username: string;
+  /** False: no such account (no user in the answers, no posts). */
+  found: boolean;
+  /** The profile user whole (`user_results.result`): `rest_id`, followers in `legacy.followers_count`. */
+  user: Record<string, unknown> | null;
+}
+
+/** One account's posts as its profile page lists them (`UserTweets`), newest first after a pinned post; retweets are kept whole. */
+export const xUserPosts = defineFlow<{ username: string; max?: number }, UserPosts>({
+  site: "x",
+  name: "user-posts",
+  strategies: ["intercept"],
+  async run(fp, { username, max }) {
+    const name = username.replace(/^@/, "");
+    const c = await captureOps(fp, {
+      url: `${WEB}/${handle(name)}`,
+      ops: ["UserTweets", "UserByScreenName"],
+      kind: "tweet",
+      max: capOf(max, 50, 300),
+    });
+    if (c === "signed_out") return signedOut(fp);
+    const user = userNamed(c.bodies, name);
+    return {
+      username: name,
+      found: user !== null || c.items.length > 0,
+      user,
+      items: c.items,
+      calls: c.calls,
+    };
+  },
 });
 
 /** Trend cells' lines (rank and place, name, posts) when no answer carried trends. */

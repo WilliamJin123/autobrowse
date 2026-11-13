@@ -305,6 +305,8 @@ export const x: SiteApi = {
     bookmarks: 10,
     lists: 20,
     trending: 12,
+    // One tracked creator's posts a day (creator index, WA-1362).
+    user_posts: 100,
   },
   pace: { gapMs: 5_000, jitterMs: 10_000 },
   routes: [
@@ -321,6 +323,19 @@ export const x: SiteApi = {
       meter: () => ({ thread: 1 }),
       browser: { flow: "x/thread" },
       ported: "clis/twitter/thread.js@9bc5f5c",
+    }),
+    route({
+      method: "GET",
+      path: "/web/{username}/posts",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "Any account's posts as its profile lists them (a pinned post first, retweets kept), each tweet whole as X's own GraphQL sends it (`tweet_results.result`: counts in `legacy`, views in `views.count`), and the profile user whole (`rest_id`, `legacy.followers_count`): `{ username, found, user, items, calls }` (`max`, default 50). Reads only",
+      request: z.object({
+        username: z.string().regex(/^@?\w{1,15}$/, "an X handle"),
+        max: z.coerce.number().int().min(1).max(300).optional(),
+      }),
+      meter: () => ({ user_posts: 1 }),
+      browser: { flow: "x/user-posts" },
     }),
     route({
       method: "GET",

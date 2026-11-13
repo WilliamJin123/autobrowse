@@ -47,6 +47,7 @@ import {
   instagramProfile,
   instagramSaved,
 } from "../browser/flows/instagram-people.js";
+import { instagramPosts } from "../browser/flows/instagram-posts.js";
 import { instagramReels } from "../browser/flows/instagram-reels.js";
 import { learnQuizAttempt, learnQuizReview, learnQuizzes } from "../browser/flows/learn.js";
 import { linkedinFollow, linkedinLike } from "../browser/flows/linkedin-act.js";
@@ -124,6 +125,7 @@ import {
 } from "../browser/flows/threads-act.js";
 import { threadsFollowing } from "../browser/flows/threads-following.js";
 import { threadsOauthConsent } from "../browser/flows/threads-oauth-consent.js";
+import { threadsPosts } from "../browser/flows/threads-posts.js";
 import {
   tiktokComment,
   tiktokFollow,
@@ -150,6 +152,7 @@ import {
   xPeople,
   xThread,
   xTrending,
+  xUserPosts,
 } from "../browser/flows/x-graph.js";
 import { xOauthConsent } from "../browser/flows/x-oauth-consent.js";
 import { xFollowing, xHome, xPost, xPosts, xProfile, xSearch } from "../browser/flows/x-read.js";
@@ -215,6 +218,7 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     instagramFollow,
     instagramFeed,
     instagramFollowing,
+    instagramPosts,
     instagramReels,
     instagramProfile,
     instagramPeople,
@@ -278,6 +282,7 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     tiktokLike,
     tiktokFollow,
     threadsFollowing,
+    threadsPosts,
     threadsSearch,
     threadsReply,
     threadsLike,
@@ -292,6 +297,7 @@ export const BROWSER_FLOWS: FlowCatalog = Object.fromEntries(
     xBookmarks,
     xLists,
     xListPosts,
+    xUserPosts,
     xTrending,
     xHome,
     xPosts,

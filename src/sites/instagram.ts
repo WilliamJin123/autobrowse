@@ -113,6 +113,11 @@ const reels = z.object({
   /** Most posts read, newest first (reels and others). */
   max: z.coerce.number().int().min(1).max(2000).optional(),
 });
+const posts = z.object({
+  username,
+  /** Most posts, newest first after pinned ones. */
+  max: z.coerce.number().int().min(1).max(500).optional(),
+});
 const threadsPost = z.object({
   username: z.string().regex(/^@?[\w.]{1,40}$/, "a Threads handle"),
   code: z.string().regex(/^[\w-]{5,20}$/, "a post code"),
@@ -200,6 +205,9 @@ export const instagram: SiteApi = {
     threads_like: 30,
     threads_reply: 15,
     threads_follow: 10,
+    // One tracked creator's posts a day (creator index, WA-1362).
+    user_posts: 40,
+    threads_posts: 40,
     // Our own posts (Graph allows 50 a day) and replies under them.
     publish: 10,
     reply: 30,
@@ -548,6 +556,19 @@ export const instagram: SiteApi = {
     }),
     route({
       method: "GET",
+      path: "/web/{username}/posts",
+      standing: {
+        final:
+          "the Graph API lists another account's posts only for business and creator accounts (`meta GET /instagram/{username}/reels`, try that first)",
+      },
+      summary:
+        "Any account's posts, every kind (photo, video, carousel, reel), read in the signed-in profile: the grid's own GraphQL as it pages (intercept), each media whole (`media_type`, `product_type`, `taken_at`, `like_count`, `comment_count`, `view_count`, `reshare_count`), and the profile user whole (`pk`, `full_name`, `follower_count`); the grid's links (ui) when that breaks. `{ username, found, via, fell, user, pk, posts, urls, pages }` (`max`, default 50). Reads only",
+      request: posts,
+      meter: () => ({ user_posts: 1 }),
+      browser: { flow: "instagram/posts" },
+    }),
+    route({
+      method: "GET",
       path: "/web/{username}",
       standing: {
         final:
@@ -612,6 +633,19 @@ export const instagram: SiteApi = {
       request: threadsSearch,
       meter: () => ({ threads_search: 1 }),
       browser: { flow: "instagram/threads-search" },
+    }),
+    route({
+      method: "GET",
+      path: "/web/threads/{username}/posts",
+      standing: { final: "the Threads API reads only our own account's posts" },
+      summary:
+        "Any Threads account's posts as its profile lists them, each post whole (`code`, `taken_at`, `media_type`, `like_count`, `text_post_app_info` with reply, repost, quote and reshare counts; no views, Threads shows them to the owner only), and the profile user whole (`pk`, `full_name`, `follower_count`): `{ username, found, user, pk, posts, pages }` (`max`, default 50). Threads signs in through Instagram. Reads only",
+      request: z.object({
+        username: z.string().regex(/^@?[\w.]{1,40}$/, "a Threads handle"),
+        max: z.coerce.number().int().min(1).max(300).optional(),
+      }),
+      meter: () => ({ threads_posts: 1 }),
+      browser: { flow: "instagram/threads-posts" },
     }),
     route({
       method: "POST",

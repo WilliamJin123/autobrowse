@@ -86,6 +86,7 @@ describe("browser service", () => {
       "instagram/people",
       "instagram/post",
       "instagram/post-comments",
+      "instagram/posts",
       "instagram/profile",
       "instagram/profile-name",
       "instagram/reels",
@@ -95,6 +96,7 @@ describe("browser service", () => {
       "instagram/threads-follow",
       "instagram/threads-following",
       "instagram/threads-like",
+      "instagram/threads-posts",
       "instagram/threads-reply",
       "instagram/threads-search",
       "intuit/connector-keys",
@@ -187,6 +189,7 @@ describe("browser service", () => {
       "x/search",
       "x/thread",
       "x/trending",
+      "x/user-posts",
       "youtube/transcript",
     ]);
     const svc = browserService({ runner: { run: async () => "ok" as never } });
