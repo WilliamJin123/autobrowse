@@ -2,7 +2,7 @@
  * X reads off the page's own GraphQL answers (OpenCLI port; their commands call the same
  * operations). Mapped live 2026-11-10 as x@wren: `Bookmarks`, `Followers`/`Following`,
  * `CombinedLists`, `ExplorePage` + `GenericTimelineById` (trending), `TweetDetail`, `Likes`,
- * `ListLatestTweetsTimeline`; `UserTweets` + `UserByScreenName` (a profile's posts, WA-1362). The page signs each call; the flow opens the page, keeps every
+ * `ListLatestTweetsTimeline`; `UserOriginalsTimeline` (11-12; `UserTweets` before) + `UserByScreenName` (a profile's posts, WA-1362). The page signs each call; the flow opens the page, keeps every
  * answer of the named operations while it scrolls, and returns each tweet, user, list or trend
  * whole (`tweet_results.result`, `user_results.result`, `list`, `trend`).
  */
@@ -264,7 +264,7 @@ export interface UserPosts extends Captured {
   seen?: string[];
 }
 
-/** One account's posts as its profile page lists them (`UserTweets`), newest first after a pinned post; retweets are kept whole. */
+/** One account's posts as its profile page lists them (`UserOriginalsTimeline`, `UserTweets` before 11-12), newest first after a pinned post; retweets are kept whole. */
 export const xUserPosts = defineFlow<{ username: string; max?: number }, UserPosts>({
   site: "x",
   name: "user-posts",
@@ -273,7 +273,7 @@ export const xUserPosts = defineFlow<{ username: string; max?: number }, UserPos
     const name = username.replace(/^@/, "");
     const c = await captureOps(fp, {
       url: `${WEB}/${handle(name)}`,
-      ops: ["UserTweets", "UserByScreenName"],
+      ops: ["UserOriginalsTimeline", "UserTweets", "UserByScreenName"],
       kind: "tweet",
       max: capOf(max, 50, 300),
     });

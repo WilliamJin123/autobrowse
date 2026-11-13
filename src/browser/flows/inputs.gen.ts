@@ -914,7 +914,7 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
     xUserPosts,
     z.object({ username: z.string(), max: z.number().optional() }),
     true,
-    "One account's posts as its profile page lists them (`UserTweets`), newest first after a pinned post; retweets are kept whole.",
+    "One account's posts as its profile page lists them (`UserOriginalsTimeline`, `UserTweets` before 11-12), newest first after a pinned post; retweets are kept whole.",
   ),
   entry(
     youtubeCommunityPost,
