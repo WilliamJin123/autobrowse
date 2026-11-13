@@ -93,6 +93,11 @@ export async function captureOps(
     // first answer holding `kind`: another op (UserByScreenName) can land first
     const has = () => got.some((b) => entitiesOf(b, o.kind).size > 0);
     for (let i = 0; i < 15 && !has(); i++) await fp.wait(700);
+    // same profile twice in one tab: X renders from memory, no call; a reload asks again
+    if (!has()) {
+      await fp.page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
+      for (let i = 0; i < 15 && !has(); i++) await fp.wait(700);
+    }
     if (o.scroll === false) return;
     await scrollCollect(fp, {
       read: async () => {
