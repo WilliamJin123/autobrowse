@@ -261,6 +261,8 @@ export interface IgSaved extends IgGrid {
   found: boolean;
   /** every collection, whole: a media's `saved_collection_ids` name these */
   collections: Array<Record<string, unknown>>;
+  /** the collections read failed; the saved read still ran */
+  collectionsError?: string;
 }
 
 /** Our own saved posts (all, or one collection by name): `feed/saved/posts` or `feed/collection/<id>/posts`. */
@@ -274,12 +276,20 @@ export const instagramSaved = defineFlow<SavedInput, IgSaved>({
     if (SIGNED_OUT.test(fp.url())) return signedOut(fp);
     let base = "/api/v1/feed/saved/posts/";
     type Lists = { items?: Array<Record<string, unknown>> };
-    const lists = await pageJson<Lists>(
-      fp,
-      `/api/v1/collections/list/?collection_types=${encodeURIComponent('["MEDIA","ALL_MEDIA_AUTO_COLLECTION"]')}`,
-      HEADERS,
-    );
-    const collections = lists.items ?? [];
+    let collections: Array<Record<string, unknown>> = [];
+    let collectionsError: string | undefined;
+    try {
+      const lists = await pageJson<Lists>(
+        fp,
+        `/api/v1/collections/list/?collection_types=${encodeURIComponent('["MEDIA","ALL_MEDIA_AUTO_COLLECTION"]')}`,
+        HEADERS,
+      );
+      collections = lists.items ?? [];
+    } catch (e) {
+      // names are extra; only a named collection needs them. Refusals still fail.
+      if (collection || !(e instanceof RungBroke)) throw e;
+      collectionsError = e.message;
+    }
     if (collection) {
       const hit = collections.find(
         (c) => String(c.collection_name ?? "").toLowerCase() === collection.toLowerCase(),
@@ -311,6 +321,7 @@ export const instagramSaved = defineFlow<SavedInput, IgSaved>({
       collection: collection ?? null,
       found: true,
       collections,
+      ...(collectionsError ? { collectionsError } : {}),
       media: [...seen.values()].slice(0, cap),
       pages,
     };
