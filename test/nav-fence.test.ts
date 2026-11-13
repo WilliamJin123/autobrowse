@@ -99,16 +99,16 @@ describe("navigation fence", () => {
   }, 60_000);
 });
 
-// The same server, a plain browser: what the fence lets through.
+// A plain browser: what the fence lets through, and what never leaves.
 describe("fenceNavigations", () => {
-  it("passes an iframe off the sites; blanks a popup that lands off them", async () => {
+  it("passes an iframe off the sites; a popup's first request never leaves; other contexts pass", async () => {
     const hits: string[] = [];
     const server = createServer((req, res) => {
-      hits.push(`${req.headers.host?.split(":")[0]}${req.url}`);
+      hits.push(`${req.headers.host?.split(":")[0]} ${req.method} ${req.url}`);
       res.writeHead(200, { "content-type": "text/html" });
       res.end(
         req.url === "/"
-          ? `<iframe src="${away}/frame"></iframe><a target="_blank" href="${away}/leak?popup">Pop</a>`
+          ? `<iframe src="${away}/frame"></iframe><a target="_blank" href="${away}/leak?popup">Pop</a><form action="${away}/leak?form" method="post" target="_blank"><input name="x" value="secret"><button>Send</button></form>`
           : "<p>x</p>",
       );
     });
@@ -116,6 +116,7 @@ describe("fenceNavigations", () => {
     const p = (server.address() as AddressInfo).port;
     const away = `http://localhost:${p}`;
     const browser = await chromium.launch({ headless: true });
+    const leaks = () => hits.filter((h) => h.includes("/leak"));
     try {
       const context = await browser.newContext();
       const page = await context.newPage();
@@ -127,13 +128,21 @@ describe("fenceNavigations", () => {
       );
       await page.goto(`http://127.0.0.1:${p}/`);
       await page.frameLocator("iframe").locator("p").waitFor();
-      expect(hits).toContain("localhost/frame");
-      const popup = context.waitForEvent("page");
-      await page.getByRole("link", { name: "Pop" }).click();
-      const opened = await popup;
-      await opened.waitForTimeout(500);
-      expect(opened.url()).not.toMatch(/localhost/);
+      expect(hits).toContain("localhost GET /frame");
+      for (const name of ["Pop", "Send"]) {
+        const popup = context.waitForEvent("page");
+        await page.getByRole(name === "Pop" ? "link" : "button", { name }).click();
+        const opened = await popup;
+        await opened.waitForTimeout(500);
+        expect(opened.url()).not.toMatch(/localhost/);
+      }
+      expect(leaks()).toEqual([]);
       expect(refused.some((u) => u.includes("leak?popup"))).toBe(true);
+      expect(refused.some((u) => u.includes("leak?form"))).toBe(true);
+      // the fence covers this context only
+      const other = await (await browser.newContext()).newPage();
+      await other.goto(`${away}/leak?other`);
+      expect(leaks()).toEqual(["localhost GET /leak?other"]);
     } finally {
       await browser.close();
       await new Promise<void>((r) => server.close(() => r()));
