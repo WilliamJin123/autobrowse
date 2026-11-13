@@ -80,6 +80,13 @@ export async function captureOps(
   o: { url: string; ops: readonly string[]; kind: Kind; max: number; scroll?: boolean },
 ): Promise<(Captured & { bodies: unknown[] }) | "signed_out"> {
   const seen = new Map<string, Record<string, unknown>>();
+  // what came instead, for the miss message
+  const ops = new Set<string>();
+  const onAny = (r: { url(): string; status(): number }) => {
+    const op = /\/graphql\/[^/]+\/(\w+)/.exec(r.url())?.[1];
+    if (op) ops.add(`${op} ${r.status()}`);
+  };
+  fp.page.on("response", onAny);
   const { bodies } = await captureJson(fp, { match: opsMatch(o.ops) }, async (got) => {
     await fp.open(o.url);
     if (SIGNED_OUT.test(fp.url())) return;
@@ -95,9 +102,12 @@ export async function captureOps(
       max: o.max,
       settleMs: 1_800,
     });
-  });
+  }).finally(() => fp.page.off("response", onAny));
   if (SIGNED_OUT.test(fp.url())) return "signed_out";
-  if (!bodies.length) throw new RungBroke(`no ${o.ops.join("/")} answer seen`);
+  if (!bodies.length)
+    throw new RungBroke(
+      `no ${o.ops.join("/")} answer seen (calls: ${[...ops].join(", ") || "none"}; ${fp.url()})`,
+    );
   for (const b of bodies) entitiesOf(b, o.kind, seen);
   return { items: [...seen.values()].slice(0, o.max), calls: bodies.length, bodies };
 }
