@@ -17,8 +17,8 @@ const SIGNED_OUT = /\/(i\/flow\/login|login)\b/;
 
 export type Kind = "tweet" | "user" | "list" | "trend";
 
-/** The timeline's last rendered cell into view (else a screen down): X asks for the next page there. */
-const LAST_CELL = `(() => { const c = [...document.querySelectorAll('[data-testid="cellInnerDiv"]')].at(-1); if (c) c.scrollIntoView({ block: "end", behavior: "smooth" }); else scrollBy(0, innerHeight); })()`;
+/** To the page's foot: X's list is virtual (only cells near the screen exist) but sized for every loaded post, so the foot is where it asks for the next page. */
+const TO_FOOT = `scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" })`;
 
 /** A GraphQL call of one of `ops`: `…/graphql/<queryId>/<Op>?…`. */
 export const opsMatch = (ops: readonly string[]) =>
@@ -111,7 +111,7 @@ export async function captureOps(
       max: o.max,
       // one answer is ~20 tall cells: screen-sized steps go idle before the next page loads
       scroll: async () => {
-        await fp.page.evaluate(LAST_CELL).catch(() => undefined);
+        await fp.page.evaluate(TO_FOOT).catch(() => undefined);
       },
       settleMs: 1_800,
     });
@@ -272,8 +272,8 @@ export interface UserPosts extends Captured {
   found: boolean;
   /** The profile user whole (`UserByScreenName`'s `data.user.result`): `rest_id`, followers in `relationship_counts.followers` (11-12; `legacy` before). */
   user: Record<string, unknown> | null;
-  /** Only with no posts: GraphQL calls seen, `<op> <status>`. */
-  seen?: string[];
+  /** GraphQL calls the page made, `<op> <status>`. */
+  seen: string[];
 }
 
 /** One account's posts as its profile page lists them (`UserOriginalsTimeline`, `UserTweets` before 11-12), newest first after a pinned post; retweets are kept whole. */
@@ -297,8 +297,8 @@ export const xUserPosts = defineFlow<{ username: string; max?: number }, UserPos
       user,
       items: c.items,
       calls: c.calls,
-      // no posts: the GraphQL calls the page made, to tell empty from renamed
-      ...(c.items.length ? {} : { seen: c.ops }),
+      // GraphQL calls the page made: tells empty or short from renamed
+      seen: c.ops,
     };
   },
 });

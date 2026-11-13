@@ -329,7 +329,7 @@ export const x: SiteApi = {
       path: "/web/{username}/posts",
       standing: { waits: "x-paid-reads" },
       summary:
-        "Any account's posts as its profile lists them (a pinned post first, retweets kept), each tweet whole as X's own GraphQL sends it (`tweet_results.result`: counts in `legacy`, views in `views.count`), and the profile user whole (`rest_id`, `relationship_counts.followers`, `tweet_counts`): `{ username, found, user, items, calls, seen? }` (`seen`: with no posts, the GraphQL calls the page made) (`max`, default 50). Reads only",
+        "Any account's posts as its profile lists them (a pinned post first, retweets kept), each tweet whole as X's own GraphQL sends it (`tweet_results.result`: counts in `legacy`, views in `views.count`), and the profile user whole (`rest_id`, `relationship_counts.followers`, `tweet_counts`): `{ username, found, user, items, calls, seen }` (`seen`: the GraphQL calls the page made) (`max`, default 50). Reads only",
       request: z.object({
         username: z.string().regex(/^@?\w{1,15}$/, "an X handle"),
         max: z.coerce.number().int().min(1).max(300).optional(),
