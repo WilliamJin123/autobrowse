@@ -52,6 +52,15 @@ export const missed = (err: unknown): boolean =>
     (err.name === "TimeoutError" ||
       /strict mode violation|resolved to 0 elements|no usable locator hints/.test(err.message)));
 
+/** A locator timeout in words: which target, how long; any other error as is. */
+export function missText(err: unknown, hints: unknown): string {
+  const first = (err instanceof Error ? err.message : String(err)).split("\n")[0] ?? "";
+  if (!(err instanceof Error) || err.name !== "TimeoutError" || !hints) return first;
+  const ms = /Timeout (\d+)ms/.exec(first)?.[1];
+  const after = ms ? ` after ${Math.round(Number(ms) / 1000)} s` : "";
+  return `no element matches ${JSON.stringify(hints)}${after}; pick one from marks`;
+}
+
 /** In one frame: each control in its view, top to bottom, tagged `attr`=`t<k>` until numbered. */
 const findScript = (attr: string, max: number) => `(() => {
 ${HINTS_JS}
@@ -361,13 +370,20 @@ ${HINTS_JS}
 
 /**
  * A ref from an `ai` aria snapshot (`e12`, `f1e3` in a frame) as hints a flow replays: the
- * element's own, its frame chain, `nth` among their matches. Refs die with the next snapshot.
+ * element's own, its frame chain, `nth` among their matches. A ref dies when its element goes or its role or name changes.
  */
 export async function refHints(page: Page, ref: string): Promise<Hints> {
-  const el = await page
-    .locator(`aria-ref=${ref}`)
-    .elementHandle({ timeout: 2_000 })
-    .catch(() => null);
+  const find = () =>
+    page
+      .locator(`aria-ref=${ref}`)
+      .elementHandle({ timeout: 2_000 })
+      .catch(() => null);
+  let el = await find();
+  if (!el) {
+    // any plain ariaSnapshot (meter, watch, flow) replaces the stored ai one; refs stick to their element, so a fresh ai snapshot brings a live ref back
+    await page.ariaSnapshot({ mode: "ai", timeout: 5_000 }).catch(() => null);
+    el = await find();
+  }
   if (!el) throw new StaleMark(`ref ${ref} is stale (the page changed): take aria again`);
   const attr = `data-r${randomBytes(4).toString("hex")}`;
   try {

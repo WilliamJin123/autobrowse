@@ -190,7 +190,9 @@ describe("explore mode", () => {
 
     const miss = await send({ cmd: "click", hints: { role: "button", name: "Purchase" } });
     expect(miss.status).toBe(500);
-    expect(miss.body.error).toMatch(/timeout|Timeout/);
+    expect(miss.body.error).toMatch(
+      /^no element matches \{"role":"button".* after \d+ s; pick one from marks$/,
+    );
 
     await send({ cmd: "fill", hints: { role: "textbox", name: "Domain" }, value: "x.com" });
     await send({
@@ -679,6 +681,8 @@ describe("explore mode", () => {
     };
     expect(since.added.join("\n")).toMatch(/button "Added"/);
     expect(since.gone).toBe(0);
+    // a plain snapshot between (meter, watch) replaces the stored ai one: refs still hold
+    await send({ cmd: "aria", refs: false });
     await send({ cmd: "click", hints: { ref: framed } });
     const { actions } = (await send({ cmd: "journal", last: 2 })).body as {
       actions: Array<{ target: Record<string, unknown> }>;

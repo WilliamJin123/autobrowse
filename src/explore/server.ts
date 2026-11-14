@@ -203,7 +203,7 @@ import {
 import { compactText, compactValue } from "./compact.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
-import { type Box, marksFor, missed, refHints } from "./marks.js";
+import { type Box, marksFor, missed, missText, refHints } from "./marks.js";
 import { overlayFor, traceRow } from "./overlay.js";
 import { COLLECT_SCRIPTS, type ScriptText, scanScripts } from "./script-scan.js";
 import {
@@ -3016,7 +3016,7 @@ async function serve(
           } catch (err) {
             // A payment gate answers the whole call, as it does a single act.
             if (err instanceof PaymentGate) throw err;
-            const error = err instanceof Error ? err.message.split("\n")[0] : String(err);
+            const error = missText(err, "hints" in one ? one.hints : undefined);
             const shot = "hints" in one && missed(err) ? await takeMarks().catch(() => null) : null;
             return answer({
               failed: { at: i, cmd: one.cmd, error },
@@ -3118,7 +3118,7 @@ async function serve(
       } catch (err) {
         res.statusCode = err instanceof PaymentGate ? (err.reason === "asked" ? 202 : 403) : 500;
         const detail = err instanceof Error ? err.message : String(err);
-        const error = detail.split("\n")[0];
+        const error = missText(err, "hints" in parsed ? parsed.hints : undefined);
         // A target the page lacks as named: the picture of what it has, numbered to act on.
         const shot =
           "hints" in parsed && parsed.hints && missed(err)
