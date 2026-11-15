@@ -516,7 +516,7 @@ function appLeg(leg: ApiLeg): ApiLeg {
 const IG_PROFILE =
   "id,ig_id,username,name,biography,website,profile_picture_url,followers_count,follows_count,media_count";
 const IG_MEDIA =
-  "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count";
+  "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count,view_count";
 /** Graph's own rate limits: app (4), user (17), call (32), custom (613), Instagram app (80002). */
 const RATE_CODES = new Set([4, 17, 32, 613, 80002]);
 /** One Instagram business account id per token, looked up once per process. */

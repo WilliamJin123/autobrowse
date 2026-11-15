@@ -541,7 +541,7 @@ describe("meta GET /instagram/{username}", () => {
     expect(calls.at(-1)?.pathname).toBe("/v23.0/1784");
     const fields = calls.at(-1)?.searchParams.get("fields") ?? "";
     expect(fields).toMatch(
-      /^business_discovery\.username\(acme\.recruit\)\{id,ig_id,username,name,biography,website,profile_picture_url,followers_count,follows_count,media_count,media\.limit\(25\)\{id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count\}\}$/,
+      /^business_discovery\.username\(acme\.recruit\)\{id,ig_id,username,name,biography,website,profile_picture_url,followers_count,follows_count,media_count,media\.limit\(25\)\{id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count,view_count\}\}$/,
     );
   });
 
