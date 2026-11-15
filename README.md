@@ -824,7 +824,9 @@ made. The desk serves all four, and the Console flow needs the desk's browser.
 fetch, then Chrome's TLS fingerprint (`impit`), then a stealth browser (profile
 `fetch`), then that browser out of an exit (profile `fetch@exit`, set with
 `EGRESS_SITES=fetch@exit:<name>`). A block (Cloudflare, Turnstile, Akamai, 403,
-429, a JS shell) is data in the answer, not an error. One request per host every
+429, a JS shell) is data in the answer, not an error. At the browser rungs a wall that
+outlives a 15 s wait goes to the captcha solver the flows use (checkboxes always, pictures when
+the eyes model can see), up to `captchaAttempts` tries. One request per host every
 2 s; 1500 a day. Wren's batch render pass is the caller. Code:
 `src/reach/ladder.ts`, `src/browser/render.ts`.
 
