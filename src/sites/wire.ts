@@ -179,7 +179,7 @@ export async function profileOf(
     if (same(c.username, account)) return name;
     mine.push([name, c]);
   }
-  // A handle login (X's `wren_automation`) is the account whose mail it gets: one match only.
+  // A handle login (X's `itswilljin`) is the account whose mail it gets: one match only.
   const byInbox = mine.filter(([, c]) => c.codesInbox && same(c.codesInbox, account));
   if (byInbox.length) return byInbox.length === 1 ? (byInbox[0]?.[0] ?? null) : null;
   // the site's own handle login (npm's), when no labeled login claims the inbox
