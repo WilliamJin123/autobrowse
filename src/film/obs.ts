@@ -56,6 +56,16 @@ async function connect(): Promise<Obs> {
   for (;;) {
     try {
       await obs.connect(login.url, login.password);
+      // OBS answers 207 "not ready" until its scenes load: just after a launch.
+      while (
+        (await obs.call("GetSceneList").then(
+          () => 0,
+          (e: { code?: number }) => e.code,
+        )) === 207
+      ) {
+        if (Date.now() > until) throw new Error("obs: OBS did not finish starting");
+        await new Promise((r) => setTimeout(r, 1_000));
+      }
       return obs;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
