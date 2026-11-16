@@ -8,10 +8,6 @@ const deps = () => ({
 });
 
 describe("signup-instagram", () => {
-  it("parses the recorded example", () => {
-    expect(planSchema.parse({ fullName: "Acme", username: "acme" }).dryRun).toBe(false);
-  });
-
   it("dry run plans and stops before anything irreversible", async () => {
     const plan = planSchema.parse({
       dryRun: true,

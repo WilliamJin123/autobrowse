@@ -167,11 +167,8 @@ describe("reddit request shapes", () => {
     expect(parsed(...SUBMIT, self)).toMatchObject({ api_type: "json", sendreplies: true });
   });
 
-  it("submit: sendreplies false stays false", () => {
+  it('submit: sendreplies false, or "false" (a form value), stays false', () => {
     expect(parsed(...SUBMIT, { ...self, sendreplies: false }).sendreplies).toBe(false);
-  });
-
-  it('submit: sendreplies "false" (a form value) stays false', () => {
     expect(parsed(...SUBMIT, { ...self, sendreplies: "false" }).sendreplies).toBe(false);
   });
 

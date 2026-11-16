@@ -5,11 +5,8 @@ import { describe, expect, it } from "vitest";
 import { RENDER_PARTS, renderArgs, wrenCheckout, wrenIn } from "./service.js";
 
 describe("studio", () => {
-  it("renders with the cut pass first", () => {
+  it("renders with the cut pass first, narrowed to one part on ask", () => {
     expect(renderArgs(12)).toEqual(["video", "render", "12", "--cut"]);
-  });
-
-  it("narrows a render to one part", () => {
     expect(renderArgs(12, "shorts")).toEqual([
       "video",
       "render",

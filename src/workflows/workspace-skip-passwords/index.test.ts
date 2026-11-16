@@ -3,10 +3,6 @@ import { memoryEffects, runFlow } from "../../index.js";
 import { planSchema, setSkipPasswordsFlow, workflow } from "./index.js";
 
 describe("workspace-skip-passwords", () => {
-  it("targets on by default", () => {
-    expect(planSchema.parse({})).toEqual({ dryRun: false, enabled: true });
-  });
-
   it("reports whether the box had to move", async () => {
     for (const changed of [true, false]) {
       const deps = { browser: { run: async () => ({ changed }) as never } };

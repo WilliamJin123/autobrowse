@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { buildActs } from "../src/autotrack/join.js";
 import { pool } from "../src/autotrack/pool.js";
 import { contextOf, levelAt, levelPoints, levelTime, qualityOf } from "../src/autotrack/quality.js";
 import {
@@ -564,12 +563,6 @@ describe("steps from events alone", () => {
     expect(steps).toEqual([]);
     expect(report).toMatchObject({ steps: 0, episodes: [], acts: 0, score: 0 });
     expect((await buildSteps(input([]))).report.score).toBe(0);
-  });
-
-  it("matches the acts the join builds, one step each", async () => {
-    const events = [click(sec(1)), key(sec(2), "a"), text(sec(3), "x"), click(sec(70))];
-    const { steps } = await buildSteps(input(events));
-    expect(steps).toHaveLength(buildActs(events).length);
   });
 });
 

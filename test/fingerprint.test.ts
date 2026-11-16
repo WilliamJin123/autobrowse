@@ -304,9 +304,12 @@ describe("browser time zones in settings", () => {
   const base = { RESTATE_INGRESS_URL: "http://127.0.0.1:8080" };
   const zone = (v: string) => loadSettings({ ...base, BROWSER_TIMEZONE: v });
 
-  it("takes IANA zones and UTC; unset is unset", () => {
+  it("takes IANA zones and UTC, ipinfo's names too (Asia/Kolkata, Europe/Kyiv, Etc/UTC); unset is unset", () => {
     expect(zone("America/New_York").browserTimezone).toBe("America/New_York");
     expect(zone("UTC").browserTimezone).toBe("UTC");
+    expect(zone("Asia/Kolkata").browserTimezone).toBe("Asia/Kolkata");
+    expect(zone("Europe/Kyiv").browserTimezone).toBe("Europe/Kyiv");
+    expect(zone("Etc/UTC").browserTimezone).toBe("Etc/UTC");
     expect(loadSettings(base).browserTimezone).toBeUndefined();
     expect(loadSettings({ ...base, BROWSER_TIMEZONE: "" }).browserTimezone).toBeUndefined();
   });
@@ -314,16 +317,6 @@ describe("browser time zones in settings", () => {
   it("refuses a typo, naming the key, not a guess", () => {
     expect(() => zone("America/New_Yrok")).toThrow(/BROWSER_TIMEZONE: not an IANA time zone/);
     expect(() => zone("america/new_york")).toThrow(/not an IANA/);
-  });
-
-  it("takes Asia/Kolkata, the name ipinfo gives", () => {
-    expect(zone("Asia/Kolkata").browserTimezone).toBe("Asia/Kolkata");
-  });
-  it("takes Europe/Kyiv", () => {
-    expect(zone("Europe/Kyiv").browserTimezone).toBe("Europe/Kyiv");
-  });
-  it("takes Etc/UTC", () => {
-    expect(zone("Etc/UTC").browserTimezone).toBe("Etc/UTC");
   });
 });
 

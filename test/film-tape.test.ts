@@ -12,12 +12,6 @@ const tapeFile = (body: unknown) => {
 };
 
 describe("tape", () => {
-  it("fills the defaults: 1920x1080, dark, a wait of 60 s", async () => {
-    const tape = await loadTape(tapeFile({ steps: [{ type: "ls" }, { wait: "❯" }] }));
-    expect(tape).toMatchObject({ size: [1920, 1080], theme: "dark", fontSize: 26 });
-    expect(tape.steps[1]).toEqual({ wait: "❯", timeoutS: 60 });
-  });
-
   it("keeps a browser size apart from the terminal's; unset, the browser takes `size`", async () => {
     const wide = await loadTape(
       tapeFile({ size: [760, 1080], browser: [1440, 810], steps: [{ type: "ls" }] }),

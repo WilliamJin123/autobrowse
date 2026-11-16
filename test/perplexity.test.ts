@@ -8,7 +8,6 @@ import {
   sourcesOf,
   titleOf,
 } from "../src/browser/flows/perplexity-ask.js";
-import { BROWSER_FLOWS } from "../src/engine/browser-service.js";
 import { PERPLEXITY_API, perplexity, SITES } from "../src/sites/index.js";
 import { completionOf, questionOf } from "../src/sites/perplexity.js";
 
@@ -19,16 +18,13 @@ const route = () => {
 };
 
 describe("perplexity card titles", () => {
-  it("strips a › breadcrumb of the host and every path segment", () => {
+  it("strips a › or · breadcrumb of the host and every path segment", () => {
     expect(
       titleOf(
         "churnkey.co › guides › reactivation-campaignsWhat is a reactivation campaign?",
         "https://churnkey.co/guides/reactivation-campaigns",
       ),
     ).toBe("What is a reactivation campaign?");
-  });
-
-  it("strips a · breadcrumb the same way", () => {
     expect(titleOf("x.test · blog · postThe Post", "https://x.test/blog/post")).toBe("The Post");
   });
 
@@ -106,10 +102,6 @@ describe("perplexity ask flow", () => {
   it("page scripts parse as expressions", () => {
     expect(() => new Function(`return ${ANSWER_SCRIPT}`)).not.toThrow();
     expect(() => new Function(`return ${SOURCES_SCRIPT}`)).not.toThrow();
-  });
-
-  it("is served as perplexity/ask", () => {
-    expect(BROWSER_FLOWS["perplexity/ask"]?.name).toBe("ask");
   });
 });
 

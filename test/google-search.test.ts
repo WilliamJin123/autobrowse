@@ -10,7 +10,6 @@ import {
   serpOf,
   targetOf,
 } from "../src/browser/flows/google-search.js";
-import { BROWSER_FLOWS } from "../src/engine/browser-service.js";
 
 /** A resolver that answers from a table and records what it was asked. */
 function resolverOf(table: Record<string, string | null>) {
@@ -41,21 +40,18 @@ const page = (p: Partial<RawSerp>): RawSerp => ({
 });
 
 describe("google search url", () => {
-  it("asks in English by default, page 0 has no start", () => {
+  it("asks in English by default, page 0 has no start; carries hl, gl and the page offset", () => {
     const u = new URL(searchUrl({ q: "cold email tools" }));
     expect(u.origin + u.pathname).toBe(`${GOOGLE}/search`);
     expect(u.searchParams.get("q")).toBe("cold email tools");
     expect(u.searchParams.get("hl")).toBe("en");
     expect(u.searchParams.has("gl")).toBe(false);
     expect(u.searchParams.has("start")).toBe(false);
-  });
-
-  it("carries hl, gl and the page offset", () => {
-    const u = new URL(searchUrl({ q: "a&b", hl: "fr", gl: "ca" }, 2));
-    expect(u.searchParams.get("q")).toBe("a&b");
-    expect(u.searchParams.get("hl")).toBe("fr");
-    expect(u.searchParams.get("gl")).toBe("ca");
-    expect(u.searchParams.get("start")).toBe("20");
+    const v = new URL(searchUrl({ q: "a&b", hl: "fr", gl: "ca" }, 2));
+    expect(v.searchParams.get("q")).toBe("a&b");
+    expect(v.searchParams.get("hl")).toBe("fr");
+    expect(v.searchParams.get("gl")).toBe("ca");
+    expect(v.searchParams.get("start")).toBe("20");
   });
 });
 
@@ -123,7 +119,7 @@ describe("google redirect target", () => {
     ).toBe("https://a.test/?x=1");
   });
 
-  it("reads a meta refresh, &amp; unescaped", () => {
+  it("reads a meta refresh, &amp; unescaped, attributes in any order", () => {
     expect(
       redirectTarget(
         undefined,
@@ -133,9 +129,7 @@ describe("google redirect target", () => {
     expect(
       redirectTarget(undefined, "<META HTTP-EQUIV=refresh CONTENT=0;URL=https://a.test/p>"),
     ).toBe("https://a.test/p");
-  });
-
-  it("reads a meta refresh whose content comes before http-equiv", () => {
+    // content before http-equiv
     expect(
       redirectTarget(undefined, '<meta content="0;url=https://a.test/p" http-equiv="refresh">'),
     ).toBe("https://a.test/p");
@@ -300,9 +294,5 @@ describe("google no-match page", () => {
 describe("google page script", () => {
   it("parses as an expression", () => {
     expect(() => new Function(`return ${SERP_SCRIPT}`)).not.toThrow();
-  });
-
-  it("is served as web/google", () => {
-    expect(BROWSER_FLOWS["web/google"]?.name).toBe("google");
   });
 });

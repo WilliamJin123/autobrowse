@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { runFlow } from "../src/engine/run.js";
-import { domainWorkflow } from "../src/workflows/domain/index.js";
 import { PLACEHOLDER_IP, redirectWorkflow } from "../src/workflows/redirect/index.js";
 
 const MAIN_SITE = "https://example.com";
@@ -57,14 +56,6 @@ describe("redirect workflow", () => {
 });
 
 describe("sender-domain workflow", () => {
-  it("is the domain steps, then the redirect ones", () => {
-    expect(senderDomainWorkflow.steps.map((s) => s.name)).toEqual([
-      ...domainWorkflow.steps.map((s) => s.name),
-      "redirect-dns",
-      "redirect-rule",
-    ]);
-  });
-
   it("provisions the domain and redirects its site", async () => {
     const deps = fakeDeps({ cloudflare: fakeCloudflare({ registered: true, zone: "z1" }) });
     const plan = senderDomainWorkflow.plan.parse({

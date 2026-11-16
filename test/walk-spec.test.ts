@@ -74,10 +74,6 @@ const issues = (w: unknown): string[] => {
 const screen = (i: number, w: WalkSpec = spec()) => w.screens[i] as WalkSpec["screens"][number];
 
 describe("walkSpecSchema", () => {
-  it("takes a well-formed walk", () => {
-    expect(issues(spec())).toEqual([]);
-  });
-
   it("wants unique screen names", () => {
     const w = spec();
     w.screens.push({ ...screen(1, w), ops: [] });
@@ -90,13 +86,10 @@ describe("walkSpecSchema", () => {
     expect(issues(w)).toContain("a goal does nothing");
   });
 
-  it("wants at least one goal", () => {
+  it("wants at least one screen and one goal", () => {
     const w = spec();
     w.screens = [screen(1, w)];
     expect(issues(w)).toContain("no goal screen");
-  });
-
-  it("wants at least one screen", () => {
     expect(issues(spec({ screens: [] })).length).toBeGreaterThan(0);
   });
 

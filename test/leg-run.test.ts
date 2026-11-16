@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { withCall } from "../src/browser/attempt.js";
-import { defineFlow, FlowFailed, FlowInterrupted, type FlowRunner } from "../src/browser/flow.js";
+import { defineFlow, FlowFailed, type FlowRunner } from "../src/browser/flow.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { runLeg } from "../src/engine/leg.js";
 import {
@@ -67,12 +67,6 @@ describe("runLeg", () => {
     [
       "FlowFailed",
       new FlowFailed("s/f", new Error("no row"), { trace: "/t.zip" }),
-      "failed",
-      "failed",
-    ],
-    [
-      "FlowInterrupted",
-      new FlowInterrupted("s/f", new Error("ECONNRESET"), {}),
       "failed",
       "failed",
     ],

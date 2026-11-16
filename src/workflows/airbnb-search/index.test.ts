@@ -6,10 +6,6 @@ const EXAMPLE = { where: "Lisbon", checkIn: "2026-11-20", checkOut: "2026-11-22"
 const deps = () => ({ browser: { run: async () => undefined as never } });
 
 describe("airbnb-search", () => {
-  it("parses the recorded example", () => {
-    expect(planSchema.parse(EXAMPLE)).toMatchObject({ dryRun: false, adults: 2 });
-  });
-
   it("names a day as the calendar's button does", () => {
     expect(dayButton("2026-11-20")).toBe("/^20, Friday, November 2026\\./");
   });

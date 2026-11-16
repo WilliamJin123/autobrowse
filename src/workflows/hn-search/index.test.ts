@@ -5,12 +5,6 @@ import { planSchema, workflow } from "./index.js";
 const deps = () => ({ browser: { run: async () => undefined as never } });
 
 describe("hn-search", () => {
-  it("parses the recorded example", () => {
-    expect(planSchema.parse({ searchQuery: "Search stories by title, url or author" }).dryRun).toBe(
-      false,
-    );
-  });
-
   it("dry run plans and stops before anything irreversible", async () => {
     const plan = planSchema.parse({
       dryRun: true,

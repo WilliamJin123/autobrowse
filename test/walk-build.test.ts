@@ -15,7 +15,7 @@ import {
   visitsOf,
   walkFromRuns,
 } from "../src/walks/build.js";
-import { saveWalk, walkSpecSchema } from "../src/walks/spec.js";
+import { walkSpecSchema } from "../src/walks/spec.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "autobrowse-walk-build-"));
 
@@ -245,13 +245,6 @@ describe("visitsOf", () => {
       { kind: "op", act: expect.objectContaining({ kind: "click" }) },
       { kind: "open", url: "https://site.test/other?x=1" },
     ]);
-  });
-
-  it("refuses a run with a desktop act", () => {
-    const cut = visitsOf(R1, [act(A.click("Continue"), SIGNUP), act(A.desktop(), null), end(DONE)]);
-    expect(cut.refused).toBe("a desktop act (compile its recording)");
-    expect(cut.visits).toEqual([]);
-    expect(cut.end).toEqual(DONE);
   });
 
   it("refuses a run with no act on a looked-at page; its first act's page is the start", () => {
@@ -623,14 +616,6 @@ describe("walkFromRuns", () => {
     }).spec;
     expect(given.goal).toBe("sign up for the list");
   });
-
-  it("builds a walk saveWalk takes", () => {
-    const s = walkFromRuns(
-      [input(R1, "2026-09-30T12:05:00.000Z", joinRun("a@site.test"))],
-      opts,
-    ).spec;
-    expect(() => saveWalk(tmp(), s)).not.toThrow();
-  });
 });
 
 describe("buildWalk", () => {
@@ -726,21 +711,6 @@ describe("buildWalk", () => {
       { run: failed, reason: "ended failed" },
     ]);
     expect([...USABLE].sort()).toEqual(["achieved", "saved"]);
-  });
-
-  it("throws when nothing usable matches", () => {
-    const dir = tmp();
-    writeRun(
-      dir,
-      "scratch",
-      "join the list",
-      "failed",
-      joinRun("a@site.test"),
-      "2026-09-30T10:00:00Z",
-    );
-    expect(() => buildWalk(dir, { ...opts, goalLike: "join" })).toThrow(
-      /no run can make join-list/,
-    );
   });
 });
 

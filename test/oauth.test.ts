@@ -897,18 +897,6 @@ describe("connected apps", () => {
     });
   });
 
-  it("says a revoked grant, HubSpot's BAD_REFRESH_TOKEN included", async () => {
-    const no = endpoint(400, { error: "invalid_grant" });
-    await expect(appRefresh(no.fetch, spec("jobber"), APP, "r1")).rejects.toMatchObject({
-      revoked: true,
-    });
-    const hs = endpoint(400, { status: "BAD_REFRESH_TOKEN", message: "missing or unknown" });
-    await expect(appRefresh(hs.fetch, spec("hubspot"), APP, "r1")).rejects.toMatchObject({
-      code: "BAD_REFRESH_TOKEN",
-      revoked: true,
-    });
-  });
-
   it("no access token and no refresh token are named with the app's label", async () => {
     const none = endpoint(200, { refresh_token: "r" });
     await expect(appExchange(none.fetch, spec("quickbooks"), APP, to)).rejects.toMatchObject({

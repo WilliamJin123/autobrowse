@@ -75,12 +75,9 @@ const cmd = (chars: number, full: number | null, name = "click") => ({
 });
 
 describe("newRunId", () => {
-  it("is the UTC day and time, then four hex", () => {
+  it("is the UTC day and time, then four hex; differs for two runs in the same second", () => {
     const id = newRunId(new Date("2026-09-30T23:15:07.123Z"));
     expect(id).toMatch(/^20260930-231507-[0-9a-f]{4}$/);
-  });
-
-  it("differs for two runs in the same second", () => {
     const d = new Date("2026-09-30T23:15:07.000Z");
     const ids = new Set(Array.from({ length: 20 }, () => newRunId(d)));
     expect(ids.size).toBeGreaterThan(1);
@@ -314,12 +311,9 @@ describe("listRuns", () => {
     full: 0,
   });
 
-  it("is empty with no index", () => {
-    expect(listRuns(tmp())).toEqual([]);
-  });
-
-  it("keeps a run's last line, newest last, and skips torn lines", () => {
+  it("keeps a run's last line, newest last, and skips torn lines; empty with no index", () => {
     const dir = tmp();
+    expect(listRuns(dir)).toEqual([]);
     const a = "20260930-120000-aaaa";
     const b = "20260930-120001-bbbb";
     writeFileSync(
@@ -341,12 +335,9 @@ describe("listRuns", () => {
 });
 
 describe("openRuns", () => {
-  it("is empty for a missing folder", () => {
-    expect(openRuns(join(tmp(), "nope"))).toEqual([]);
-  });
-
-  it("finds runs with no end by their files, and ignores other files", () => {
+  it("finds runs with no end by their files, and ignores other files; empty for a missing folder", () => {
     const dir = tmp();
+    expect(openRuns(join(dir, "nope"))).toEqual([]);
     const done = runLog(dir, "scratch", { now: clock() });
     done.start(startBody(null));
     done.end({ outcome: "achieved", summary: null, look: null });

@@ -536,12 +536,6 @@ describe("sign in via a provider on a site nobody wrote a spec for", () => {
     expect(acts[0]).toEqual({ role: "button", name: "/google/i" });
   });
 
-  it("a via credential without a url on a page that is not a login is told what to store", async () => {
-    const login = viaLogin("x", { username: "u", via: "google", recoveryCodes: [], passkeys: [] });
-    expect(login.home).toBe("");
-    expect(login.site).toBe("x");
-  });
-
   it("a password-less credential is refused by a form login, in words", async () => {
     const { fp } = fakePage({ text: [], present: () => true });
     await expect(

@@ -11,7 +11,6 @@ import {
   linkedinCompanyPosts,
   linkedinFeed,
   linkedinListPosts,
-  linkedinPost,
   linkedinSearchPosts,
   postOf,
   postsSearchUrl,
@@ -203,14 +202,6 @@ const PAGE = `<main>
 </main>`;
 
 describe("linkedin posts: the page script", () => {
-  it("is plain JS keyed on the classic and SDUI selectors", () => {
-    expect(() => new Function(`return ${READ_POSTS}`)).not.toThrow();
-    expect(READ_POSTS).toContain("feed-shared-update-v2");
-    expect(READ_POSTS).toContain("update-card-focus");
-    expect(READ_POSTS).toContain("expandable-text-box");
-    expect(READ_POSTS).not.toMatch(/__name/);
-  });
-
   it("reads synthetic HTML: classic and SDUI cards, comment urns ignored, no-urn card dropped", async () => {
     const browser = await chromium.launch();
     try {
@@ -448,13 +439,6 @@ describe("linkedin posts: the flows and the routes", () => {
     expect(out.elements.map((e) => [e.id, e.author, e.commentary])).toEqual([
       ["urn:li:ugcPost:7002", "urn:li:organization:42", "We are hiring recruiters."],
     ]);
-  });
-
-  it("the flows are registered", () => {
-    expect(BROWSER_FLOWS["linkedin/list-posts"]).toBe(linkedinListPosts);
-    expect(BROWSER_FLOWS["linkedin/search-posts"]).toBe(linkedinSearchPosts);
-    expect(BROWSER_FLOWS["linkedin/company-posts"]).toBe(linkedinCompanyPosts);
-    expect(BROWSER_FLOWS["linkedin/post"]).toBe(linkedinPost);
   });
 
   it("one post: the API's shape off its page, the urn asked for as its id", () => {

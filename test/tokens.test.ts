@@ -298,7 +298,7 @@ describe("readCmds", () => {
     ]);
   });
 
-  it("keeps a day's slack across a month start", () => {
+  it("keeps a day's slack across a month start and a year start", () => {
     const dir = tmp();
     mkdirSync(join(dir, "scratch"));
     writeFileSync(
@@ -310,16 +310,13 @@ describe("readCmds", () => {
     );
     const got = readCmds(dir, "2026-10-01T00:00:00Z");
     expect(got.map((c) => c.cmd)).toEqual(["look"]);
-  });
-
-  it("keeps a day's slack across a year start", () => {
-    const dir = tmp();
-    mkdirSync(join(dir, "scratch"));
+    const year = tmp();
+    mkdirSync(join(year, "scratch"));
     writeFileSync(
-      join(dir, "scratch", "20261231-235000-aaaa.jsonl"),
+      join(year, "scratch", "20261231-235000-aaaa.jsonl"),
       rows(cmdRow("2027-01-01T00:00:05.000Z", "look")),
     );
-    expect(readCmds(dir, "2027-01-01T00:00:00.000Z").map((c) => c.cmd)).toEqual(["look"]);
+    expect(readCmds(year, "2027-01-01T00:00:00.000Z").map((c) => c.cmd)).toEqual(["look"]);
   });
 
   it("skips run files that started more than a day before the window (the slack is one day)", () => {

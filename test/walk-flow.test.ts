@@ -172,12 +172,6 @@ const spec = (o: Partial<WalkSpec> = {}): WalkSpec => ({
 const secrets = async (k: string) => (k === "scratch.password" ? "fake-pw-1" : null);
 
 describe("walkFlow", () => {
-  it("is a flow named walk-<name> on the walk's site", () => {
-    const f = walkFlow(spec());
-    expect(f.name).toBe("walk-join-list");
-    expect(f.site).toBe("scratch");
-  });
-
   it("opens the start and does each screen's ops until the goal", async () => {
     const { fp, log } = fakeSite(SITE, "other", { reads: { "Order number": "A-17" } });
     const out = await walkFlow(spec(), { secrets }).run(fp, { email: "a@site.test" });

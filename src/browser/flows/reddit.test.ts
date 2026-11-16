@@ -37,22 +37,17 @@ describe("reddit slimming", () => {
     expect(replies.data.children[0]?.data).toEqual({ id: "b", body: "back" });
   });
 
-  it("slims a listing of things", () => {
-    const out = slimListing({
-      data: { children: [{ kind: "t3", data: { id: "p", title: "t", modhash: "no" } }] },
-    }) as { data: { children: Array<{ data: Record<string, unknown> }> } };
-    expect(out.data.children[0]?.data).toEqual({ id: "p", title: "t" });
-  });
-
-  it("keeps who wrote a thing (`author_fullname`) and the title a comment sits under", () => {
+  it("slims a listing; keeps who wrote a thing (`author_fullname`) and a comment's post title", () => {
     const out = slimListing({
       data: {
         children: [
+          { kind: "t3", data: { id: "p", title: "t", modhash: "no" } },
           { kind: "t1", data: { id: "c", author_fullname: "t2_x", link_title: "Hi", ups: 3 } },
         ],
       },
     }) as { data: { children: Array<{ data: Record<string, unknown> }> } };
-    expect(out.data.children[0]?.data).toEqual({
+    expect(out.data.children[0]?.data).toEqual({ id: "p", title: "t" });
+    expect(out.data.children[1]?.data).toEqual({
       id: "c",
       author_fullname: "t2_x",
       link_title: "Hi",

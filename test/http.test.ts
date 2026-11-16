@@ -102,11 +102,10 @@ describe("httpClient", () => {
 });
 
 describe("backoff", () => {
-  it("uses Retry-After seconds when present, capped", () => {
+  it("uses Retry-After seconds when present, capped; else grows with jitter", () => {
     expect(backoff(1, "2")).toBe(2000);
     expect(backoff(1, "600")).toBe(10_000);
-  });
-  it("grows with jitter otherwise", () => {
+    // no Retry-After: grows with jitter
     expect(backoff(1, null, () => 1)).toBe(500);
     expect(backoff(3, null, () => 1)).toBe(2000);
     expect(backoff(9, null, () => 1)).toBe(10_000);

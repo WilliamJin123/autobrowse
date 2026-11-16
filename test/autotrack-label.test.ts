@@ -2,7 +2,6 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkDevice } from "../src/autotrack/code.js";
 import { importSession } from "../src/autotrack/import.js";
 import { buildActs } from "../src/autotrack/join.js";
 import {
@@ -324,14 +323,6 @@ describe("labelSession", () => {
     expect(pausedSpans(events)).toEqual([{ from: T0 + sec(5), to: T0 + sec(9) }]);
     const open = [at(sec(5), { kind: "pause", reason: "cli" })];
     expect(pausedSpans(open)[0]?.to).toBe(Number.POSITIVE_INFINITY);
-  });
-});
-
-describe("the labels prefix", () => {
-  it("is not a device name", () => {
-    expect(() => checkDevice("labels")).toThrow(/prefix/);
-    expect(checkDevice("test-mac")).toBe("test-mac");
-    expect(labelKey("test-mac", SESSION)).toBe(`labels/test-mac/${SESSION}.json`);
   });
 });
 

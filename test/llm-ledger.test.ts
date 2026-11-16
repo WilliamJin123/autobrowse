@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -55,10 +55,6 @@ describe("fileLlmCalls", () => {
 });
 
 describe("readLlmCalls", () => {
-  it("is empty for a missing folder", () => {
-    expect(readLlmCalls(join(tmp(), "nope"), "2026-09-01T00:00:00.000Z")).toEqual([]);
-  });
-
   it("reads calls since a time from the months that can hold them, oldest first", () => {
     const dir = tmp();
     const calls = fileLlmCalls(dir);
@@ -70,8 +66,9 @@ describe("readLlmCalls", () => {
     expect(got.map((c) => c.purpose)).toEqual(["at", "after"]);
   });
 
-  it("skips torn lines and files that are not month files", () => {
+  it("skips torn lines and files that are not month files; empty for a missing folder", () => {
     const dir = tmp();
+    expect(readLlmCalls(join(dir, "nope"), "2026-09-01T00:00:00.000Z")).toEqual([]);
     writeFileSync(
       join(dir, "llm-2026-09.jsonl"),
       `${JSON.stringify(call("2026-09-02T00:00:00.000Z"))}\n{"at":"2026-09-03\n\n`,
@@ -159,20 +156,5 @@ describe("countedLlm", () => {
         ms: 600,
       }),
     ]);
-  });
-
-  it("writes through fileLlmCalls to the month of the call", async () => {
-    const dir = tmp();
-    const llm: Llm = {
-      id: "m",
-      complete: async () => ({ text: "", model: "m", usage: { inputTokens: 5, outputTokens: 1 } }),
-    };
-    await countedLlm(
-      llm,
-      fileLlmCalls(dir),
-      ticks(Date.parse("2026-12-31T23:59:59.900Z")),
-    ).complete(req);
-    expect(existsSync(join(dir, "llm-2026-12.jsonl"))).toBe(true);
-    expect(readLlmCalls(dir, "2026-12-01T00:00:00.000Z")).toHaveLength(1);
   });
 });

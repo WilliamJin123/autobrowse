@@ -57,7 +57,7 @@ describe("youtube upload shape", () => {
     return calls.find((c) => c.url.includes("/upload/youtube/v3/videos?"));
   }
 
-  it("sends notifySubscribers as a query param, never in the body", async () => {
+  it("sends notifySubscribers as a query param, never in the body; leaves it off when unset", async () => {
     const c = await start({
       notifySubscribers: false,
       snippet: { title: "t", defaultAudioLanguage: "en" },
@@ -68,12 +68,10 @@ describe("youtube upload shape", () => {
     expect(body).not.toHaveProperty("notifySubscribers");
     expect(body.snippet.defaultAudioLanguage).toBe("en");
     expect(body.status.containsSyntheticMedia).toBe(true);
-  });
-
-  it("leaves the param off when unset", async () => {
-    const c = await start({});
-    expect(new URL(c?.url ?? "").searchParams.has("notifySubscribers")).toBe(false);
-    expect(json(c).status).not.toHaveProperty("containsSyntheticMedia");
+    // unset: param off
+    const bare = await start({});
+    expect(new URL(bare?.url ?? "").searchParams.has("notifySubscribers")).toBe(false);
+    expect(json(bare).status).not.toHaveProperty("containsSyntheticMedia");
   });
 });
 
