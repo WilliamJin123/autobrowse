@@ -5,17 +5,17 @@
 import { createWriteStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
-import type { AwsConfig } from "../owner.js";
+import { type AwsConfig, s3Aws } from "../owner.js";
 import type { BlobStore } from "./ship.js";
 import type { TraceStore } from "./traces.js";
 
 export function s3BlobStore(o: { bucket: string; aws: AwsConfig; endpoint?: string }): BlobStore {
   // The SDK loads on the first put, not at every CLI start.
   const client = import("@aws-sdk/client-s3").then(({ S3Client, PutObjectCommand }) => ({
-    s3: new S3Client({
-      ...o.aws,
-      ...(o.endpoint ? { region: "auto", endpoint: o.endpoint } : {}),
-    }),
+    // R2 (`endpoint`) keeps its own keys from the AWS names
+    s3: new S3Client(
+      o.endpoint ? { ...o.aws, region: "auto", endpoint: o.endpoint } : s3Aws(o.aws),
+    ),
     PutObjectCommand,
   }));
   return {
@@ -31,7 +31,7 @@ export function s3BlobStore(o: { bucket: string; aws: AwsConfig; endpoint?: stri
 /** Traces, streamed (one can be hundreds of MB), in Glacier Instant Retrieval; the bucket encrypts at rest. */
 export function s3TraceStore(o: { bucket: string; prefix: string; aws: AwsConfig }): TraceStore {
   const client = import("@aws-sdk/client-s3").then((sdk) => ({
-    s3: new sdk.S3Client(o.aws),
+    s3: new sdk.S3Client(s3Aws(o.aws)),
     ...sdk,
   }));
   return {

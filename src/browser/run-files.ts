@@ -17,7 +17,7 @@ import { basename, extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
-import { type AwsConfig, awsConfigFromEnv, operator, ownerKeys } from "../owner.js";
+import { type AwsConfig, awsConfigFromEnv, operator, ownerKeys, s3Aws } from "../owner.js";
 
 export const INPUTS_PREFIX = ownerKeys(operator()).inputs;
 
@@ -86,7 +86,7 @@ export interface RemoteReaders {
 const s3Read = async (bucket: string, key: string) => {
   const { S3Client, GetObjectCommand } = await import("@aws-sdk/client-s3");
   // The worker's owner reads with its own session: the box role may not read another owner's inputs.
-  const s3 = new S3Client({ ...awsConfigFromEnv(), followRegionRedirects: true });
+  const s3 = new S3Client({ ...s3Aws(awsConfigFromEnv()), followRegionRedirects: true });
   const got = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
   if (!got.Body) throw new Error(`s3://${bucket}/${key}: empty`);
   return got.Body.transformToWebStream() as ReadableStream<Uint8Array>;
@@ -212,7 +212,7 @@ export async function sweepFileCache(
 /** The shots bucket as the input store: refs are `s3://<bucket>/inputs/…`. */
 export function s3InputStore(bucket: string, aws: AwsConfig): InputStore {
   const client = import("@aws-sdk/client-s3").then(({ S3Client, PutObjectCommand }) => ({
-    s3: new S3Client(aws),
+    s3: new S3Client(s3Aws(aws)),
     PutObjectCommand,
   }));
   return {

@@ -22,6 +22,7 @@ One process serves one owner, so isolation is decided once at startup (`boot`), 
 - Setting classes: `OWNER_SETTINGS`, `PROCESS_SETTINGS`, `OPERATOR_TOOL_KEYS`; everything else is the operator's — `src/app/owner.ts:27-64`
 - `enterOwner` drops the operator's accounts from the env, then reads `<ownersDir>/<o>/.env`; a key that is the operator's or a fixed path throws — `src/app/owner.ts:132`; `boot()`, every entry point's first line — `:164`; `ownerFromArgv` — `:177`
 - Files: `OWNER_PATHS`, `ownerDir` — `src/app/config.ts:434`, `:455`; Keychain `autobrowse-owner-<o>` (`keychainOf`) — `src/auth/keep.ts:14`
+- `s3Aws`: S3 clients only (shots, inputs and `s3Read`, traces, track; not the papers bucket, whose policy admits only William's user) take the default owner's static key `S3_STORE_ACCESS_KEY_ID`/`S3_STORE_SECRET_ACCESS_KEY` (IAM user mac-s3-store, source SSM `/wren/mac-s3-store`, in the desk's env file only, not the env store the box reads), so a lapsed login stops no upload; SSM and the rest keep the login; an owner's role and an R2 `endpoint` win (2026-11-15) — `src/owner.ts`
 - AWS side: role `autobrowse-prod-owners`, session tag `owner` scopes SSM and S3 — `deploy/terraform/owners.tf:43`
 
 Citations: `src/owner.ts:11`, `src/app/owner.ts:132`, `src/app/config.ts:434`, `src/auth/keep.ts:14`, `deploy/terraform/owners.tf:43`

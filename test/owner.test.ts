@@ -28,7 +28,7 @@ import { KEYCHAIN, keychainOf, WALLET_KEYCHAIN } from "../src/auth/keep.js";
 import { makeRunObject } from "../src/engine/object.js";
 import { runsRegistryFor } from "../src/engine/registry.js";
 import { runFlow } from "../src/engine/run.js";
-import { awsConfig, named, ownerKeys } from "../src/owner.js";
+import { awsConfig, named, ownerKeys, s3Aws } from "../src/owner.js";
 import { makeCompiledRunObject } from "../src/workflows/compiled.js";
 import { domainWorkflow, parsePlan } from "../src/workflows/domain/index.js";
 import { fakeBrowser, fakeDeps, fakeEffects, fakeHost, scriptedAnswers } from "./fakes.js";
@@ -97,6 +97,19 @@ describe("names", () => {
 });
 
 describe("AWS", () => {
+  it("S3 clients take the S3 key for the default owner only, never over an owner's role", () => {
+    const key = { S3_STORE_ACCESS_KEY_ID: "id", S3_STORE_SECRET_ACCESS_KEY: "secret" };
+    const me = awsConfig({ owner: "me", region: "us-east-1" });
+    expect(s3Aws(me, key)).toEqual({
+      region: "us-east-1",
+      credentials: { accessKeyId: "id", secretAccessKey: "secret" },
+    });
+    expect(s3Aws(me, {})).toBe(me);
+    expect(s3Aws(me, { S3_STORE_ACCESS_KEY_ID: "id" })).toBe(me);
+    const acme = awsConfig({ owner: "acme", ownerRoleArn: ROLE, region: "us-east-1" });
+    expect(s3Aws(acme, key)).toBe(acme);
+  });
+
   it("the default owner uses the process's credentials", () => {
     expect(awsConfig({ owner: "me", region: "us-east-1" })).toEqual({ region: "us-east-1" });
   });

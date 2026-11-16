@@ -35,7 +35,20 @@ export function ownerKeys(owner: string) {
 
 export interface AwsConfig {
   region: string;
-  credentials?: ReturnType<typeof ownerCredentials>;
+  credentials?:
+    | ReturnType<typeof ownerCredentials>
+    | { accessKeyId: string; secretAccessKey: string };
+}
+
+/**
+ * S3 clients only: the default owner's S3 key (`S3_STORE_*`, IAM user mac-s3-store) in place of the
+ * expiring login session. Never process-wide: SSM and the rest keep the login. An owner's role wins.
+ */
+export function s3Aws(aws: AwsConfig, env: NodeJS.ProcessEnv = process.env): AwsConfig {
+  const accessKeyId = env.S3_STORE_ACCESS_KEY_ID;
+  const secretAccessKey = env.S3_STORE_SECRET_ACCESS_KEY;
+  if (aws.credentials || !accessKeyId || !secretAccessKey) return aws;
+  return { ...aws, credentials: { accessKeyId, secretAccessKey } };
 }
 
 const sessions = new Map<string, ReturnType<typeof ownerCredentials>>();

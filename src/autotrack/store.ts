@@ -11,7 +11,7 @@
  *   <device>/<session>/<segment>/stats.json          (what the recorder did in the segment)
  * Only William's AWS user lists and reads; a device's own key can only put.
  */
-import type { AwsConfig } from "../owner.js";
+import { type AwsConfig, s3Aws } from "../owner.js";
 
 export interface TrackObject {
   key: string;
@@ -102,7 +102,10 @@ export interface TrackWriter extends TrackStore {
 }
 
 export function s3TrackStore(o: { bucket: string; aws: AwsConfig }): TrackWriter {
-  const client = import("@aws-sdk/client-s3").then((sdk) => ({ s3: new sdk.S3Client(o.aws), sdk }));
+  const client = import("@aws-sdk/client-s3").then((sdk) => ({
+    s3: new sdk.S3Client(s3Aws(o.aws)),
+    sdk,
+  }));
   return bundled<TrackWriter>({
     async list(prefix) {
       const { s3, sdk } = await client;
