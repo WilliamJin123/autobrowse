@@ -15,6 +15,8 @@ A model exploring a site toward a goal, a batch of acts per model call (one scre
 
 Play-pause: a human or the model drives, every act is journaled the same way, so a session can be paused, taken over, resumed and saved. A session that dies is resumed from its ledger rows (`prior`).
 
+The panel (WA-1406): notes and a person's acts under the panel's Pause go into the next prompt as THE PERSON WATCHING (`heard`, `src/agent/explorer.ts:265`); a look (`url`, `aria`) the Pause refused runs again once (`look`, `:272`); a refused act shows as NOT RUN.
+
 Batches: the model plans 1 to `maxBatch` (6) acts for the screen it read; the code, not the model, ends a batch. A button or link click, press, open, key, captcha, keep or os is always last; between acts the code checks the URL, new dialogs, alerts and invalid fields, and the next target (found, shown, enabled). A miss (`gone`, `navigated`, `dialog`, `invalid`, `error`) re-reads the page; the acts left show to the model as NOT RUN. Each act is still one journal entry, so compile does not change. Design: `designs/2026-10-20-batched-plans-and-resume.md` §1.
 
 ## Shape

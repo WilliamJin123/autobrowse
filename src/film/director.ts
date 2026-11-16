@@ -13,8 +13,8 @@ import { chromium, type Page } from "playwright";
 import {
   assertNeeds,
   filmGeometry,
-  filmLog,
   filmPage,
+  handsLog,
   type Recorder,
   takePanes,
 } from "../browser/film.js";
@@ -84,7 +84,7 @@ export async function filmTape(
     await open(page, port, tape.theme);
     rec = await filmPage(page, dir, "term", { width, height });
     say(`filming ${dir}`);
-    const hands = handsFor(FILM_PACE, Math.random, filmLog, holdsSecret);
+    const hands = handsFor(FILM_PACE, Math.random, handsLog, holdsSecret);
     await page.locator("textarea.xterm-helper-textarea").focus();
     await page.waitForTimeout(800);
     // What the terminal showed before the last key: a wait looks only past it.

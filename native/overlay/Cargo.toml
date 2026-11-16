@@ -15,7 +15,7 @@ objc2 = "0.6"
 dispatch2 = "0.3"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
-  "std", "objc2-core-foundation", "NSApplication", "NSRunningApplication", "NSColor", "NSEvent",
+  "std", "libc", "objc2-core-foundation", "NSApplication", "NSRunningApplication", "NSColor", "NSEvent",
   "NSGraphics", "NSPanel", "NSResponder", "NSScreen", "NSView", "NSWindow",
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [

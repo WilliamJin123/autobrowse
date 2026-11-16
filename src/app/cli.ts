@@ -851,7 +851,7 @@ registerWatchedCommands(program, settings);
 registerModsCommands(program, settings);
 registerRunsCommands(program, settings, local);
 registerTeachCommand(program, settings);
-registerFilmCommand(program);
+registerFilmCommand(program, () => expandHome(settings.profilesDir));
 registerRepairsCommands(program, settings);
 registerScreensCommands(program, settings);
 program

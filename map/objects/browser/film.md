@@ -19,10 +19,11 @@ Filming is a session option, so every runner films with no change (`AUTOBROWSE_F
 
 - `filmPage(page, dir, kind, size)` — `src/browser/film.ts:196`: fits the window (`fitWindow`, `:290`), screencasts JPEGs at 2x, writes `<pane>.json` (`filming: true` until done), encodes `<pane>.mp4` on stop (`encode`, `:347`: VFR on a 1/60 s clock, `-bf 0`)
 - `filmContext` — `:383`: films each page of a context; the session sets `Session.filmed` (`src/browser/session.ts:145`), and the trace then takes no screenshots
-- Events from the hands: `HandsLog` (`src/browser/human/index.ts:147`) fed by `filmLog`; `FILM_PACE` (`:111`) whenever a film is on (`paceFor`, `src/app/services-signin.ts:294`)
+- Events from the hands: `HandsLog` (`src/browser/human/index.ts:196`) fed by `handsLog` (`src/browser/film.ts:135`), which goes to the page's film and its watcher (`watchHands`, `:129`: the overlay's live cursor); `FILM_PACE` (`:111`) whenever a film is on (`paceFor`, `src/app/services-signin.ts:294`)
 - `filmTape` — `src/film/director.ts:38`: ttyd in headless Chrome as the `term` pane; `wait` counts only output after the last key (`showsAnew`, `:149`); writes `take.json`
 - Contact sheets (WA-1348): after each mp4, `contactSheet` tiles the first frame and each scene change (ffmpeg `select=gt(scene,SHEET_SCENE)`, `tile=4x4`) into `<pane>-sheet-NN.png`, listed in the pane's `sheets`; a failed sheet never fails the take. `autobrowse film-sheet <video>` makes them for any video
 - Needs: `FILM_NEEDS` (ffmpeg, ttyd), checked at start and in `doctor`
+- Screen recording (WA-1406): `screenRecord` — `src/film/screen.ts:220`: refuses a locked screen (`screenLocked`, CGSession); ffmpeg avfoundation "Capture screen 0" with the real cursor and clicks, stopped by `q`; crops to the union of Chrome's windows read by JXA from CoreGraphics at the end (`cropOf`, `:64`); `--music` loops a bed under it and fades it (`finishArgs`, `:80`). The default bed is Kevin MacLeod's "Local Forecast - Elevator" (CC BY 4.0), cached in `~/Library/Caches/autobrowse/music/`; its credit goes to `<out>.credits.txt`
 
 ## Connected to
 
@@ -40,10 +41,11 @@ Filming is a session option, so every runner films with no change (`AUTOBROWSE_F
 |---|---|
 | `autobrowse film <tape> --out <dir>` | films a tape |
 | `autobrowse film-sheet <video>` | contact sheets of a video |
+| `autobrowse screen-record --out <mp4>` | the main screen, cropped to Chrome, music optional |
 | `AUTOBROWSE_FILM=<dir>` on any command | films its browsers |
 | `autobrowse doctor` | the `film` row |
 
 ## See
 
 - Source: `src/browser/film.ts`, `src/film/`
-- Tests: `test/film.test.ts`, `test/film-tape.test.ts`
+- Tests: `test/film.test.ts`, `test/film-tape.test.ts`, `test/screen-record.test.ts`

@@ -43,7 +43,7 @@ import { fetchFile } from "../browser/download.js";
 import { watchDownloads } from "../browser/downloads.js";
 import { collectWhenIdle, holdCollect } from "../browser/driver-memory.js";
 import { extrasOf } from "../browser/extras.js";
-import { filmLog } from "../browser/film.js";
+import { handsLog } from "../browser/film.js";
 import {
   type BrowserFlow,
   chooseOption,
@@ -204,7 +204,7 @@ import { compactText, compactValue } from "./compact.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
 import { type Box, marksFor, missed, missText, refHints } from "./marks.js";
-import { overlayFor, traceRow } from "./overlay.js";
+import { handColour, type OverlayDeps, overlayFor, traceRow } from "./overlay.js";
 import { COLLECT_SCRIPTS, type ScriptText, scanScripts } from "./script-scan.js";
 import {
   applyKeep,
@@ -385,6 +385,8 @@ export interface ExploreOptions {
   desktop?: Desktop;
   /** Draw the overlay (ref boxes, the act's target, the agent's goal and thought); default: when headed. */
   overlay?: boolean;
+  /** The overlay's window and geometry (tests); default the native host. */
+  overlayDeps?: OverlayDeps;
   /** Only commands that read the page or go to a URL (`LOOK_ONLY`); the rest are refused. */
   lookOnly?: boolean;
   /** Hosts the top frame may load (`browser/nav-fence`); any other navigation fails unsent. Absent: any. */
@@ -758,10 +760,14 @@ async function serve(
   // A film stays clean: its rows go to the pane json.
   const overlay = overlayFor(
     opts.overlay ?? (opts.browser.headless === false && !opts.browser.film),
+    opts.overlayDeps,
   );
   // A new document wipes the layer: the panel comes back on it.
   page.on("load", (p) => void overlay.loaded(p));
+  overlay.who(opts.site, handColour(opts.port));
   let paused = false;
+  /** Who paused: the agent's own `pause`, or the person's Pause on the panel (only they resume it). */
+  let pausedBy: "agent" | "person" | null = null;
   let waiters: Array<() => void> = [];
   /** Acts a person did by hand since the last `pause`. */
   let handActs = 0;
@@ -792,6 +798,7 @@ async function serve(
   const byHand = () => paused || (busy === 0 && now() >= quietAt);
   const resume = () => {
     paused = false;
+    pausedBy = null;
     for (const w of waiters) w();
     waiters = [];
   };
@@ -1244,8 +1251,10 @@ async function serve(
     .exposeBinding(BINDING, (src, raw: RawAction) => {
       if (raw.kind === "pageerror") return pageErrors.push(raw, src.page.url());
       if (!byHand()) return;
-      if (paused) handActs++;
-      else helpedActs++;
+      // the agent's own late events (a fill's change) are not the person's
+      if (paused) {
+        if (now() >= quietAt) handActs++;
+      } else helpedActs++;
       runHandActs++;
       // before the redaction: the held value goes nowhere but the store
       heldFrom(raw, src.page);
@@ -1338,7 +1347,7 @@ async function serve(
   /** Instant for a console; a person's hands when an agent drives (`pace`), on the session's seed. */
   const seed = seedOf() ?? freshSeed();
   if (opts.pace) overlay.tag(`seed ${seed}`);
-  const hands = handsFor(opts.pace ?? null, seeded(seed), filmLog, holdsSecret);
+  const hands = handsFor(opts.pace ?? null, seeded(seed), handsLog, holdsSecret);
   const gate = async (act: "fill" | "select" | "click", t: Target, wait: boolean) => {
     // A click is judged by what the button says too: `#checkout` or `.btn` alone names nothing.
     const said =
@@ -1739,10 +1748,11 @@ async function serve(
   };
   const run = (c: Command, wait = false): Promise<unknown> => {
     touch();
+    const arrived = now();
     // After a `done`, the next command that works the page (or names a goal) starts the next run.
     if (c.cmd === "goal" || !IMMEDIATE.has(c.cmd)) openRun();
     if (IMMEDIATE.has(c.cmd)) return runOne(c, wait);
-    const next = chain.then(() => runOne(c, wait));
+    const next = chain.then(() => runOne(c, wait, arrived));
     chain = next.catch(() => undefined);
     return next;
   };
@@ -1752,9 +1762,12 @@ async function serve(
       .split("\n")
       .filter(Boolean)
       .map((r) => redactRow(r));
-  const runOne = async (c: Command, wait: boolean): Promise<unknown> => {
+  const runOne = async (c: Command, wait: boolean, arrived = now()): Promise<unknown> => {
     page = fp.page;
     if (IMMEDIATE.has(c.cmd)) return act(c, wait);
+    // the person's Pause holds it before it starts: the panel never says Running while held
+    const steer = await heldAnswer(arrived);
+    if (steer) return steer;
     busy++;
     holdCollect();
     const began = now();
@@ -1780,8 +1793,14 @@ async function serve(
       const plain = out.answer && typeof out.answer === "object" && !Array.isArray(out.answer);
       // only an object answer can carry it: the next one gets it otherwise
       const tools = plain ? await newSiteTools().catch(() => null) : null;
-      return plain && (helped || tools)
-        ? { ...(helped ? { helped } : {}), ...(out.answer as object), ...(tools ? { tools } : {}) }
+      const notes = plain ? overlay.takeNotes() : [];
+      return plain && (helped || tools || notes.length)
+        ? {
+            ...(helped ? { helped } : {}),
+            ...(notes.length ? { notes } : {}),
+            ...(out.answer as object),
+            ...(tools ? { tools } : {}),
+          }
         : out.answer;
     } catch (err) {
       failed = err;
@@ -1793,6 +1812,8 @@ async function serve(
       );
       busy--;
       if (busy === 0) collectWhenIdle();
+      // Pause pressed mid-command takes hold now, before the next one starts.
+      if (busy === 0 && holdArmed) await personPause();
       // Idle counts from a command's end: a long one is someone driving.
       touch();
       quietAt = now() + HAND_GRACE_MS;
@@ -1946,6 +1967,99 @@ async function serve(
     };
     left = { url: page.url(), rows: now_ };
     return out;
+  };
+  /** The panel's Pause holds a command at most this long: under cmd.sh's 900 s resend. */
+  const HOLD_MS = 600_000;
+  /** Pause pressed while a command ran: it takes hold when that command ends (a flow or batch included). */
+  let holdArmed = false;
+  /** The page when the person paused: what their resume compares. */
+  let holdFrom: { since: number; url: string; rows: string[] | null } | null = null;
+  /** The last person pause, resumed: a command sent before `at` answers with it instead of running. */
+  let steered: { at: number; acted: boolean; view: Record<string, unknown> } | null = null;
+  const personPause = async () => {
+    holdArmed = false;
+    paused = true;
+    pausedBy = "person";
+    handActs = 0;
+    const since = now();
+    holdFrom = { since, url: page.url(), rows: await rows().catch(() => null) };
+    journal({ kind: "pause" });
+    journal({ kind: "note", text: "a person paused the agent from the panel" });
+    await overlay.held(page, { since, arming: false });
+  };
+  const personResume = async () => {
+    if (holdArmed && !paused) {
+      holdArmed = false;
+      await overlay.held(page, null);
+      return;
+    }
+    if (pausedBy !== "person") return;
+    const from = holdFrom ?? { since: now(), url: page.url(), rows: null };
+    holdFrom = null;
+    const url = page.url();
+    const after = from.rows ? await rows().catch(() => null) : null;
+    const changed = from.rows && after ? pageChange(from.rows, after) : null;
+    const moved = url !== from.url;
+    steered = {
+      at: now(),
+      acted: handActs > 0 || moved,
+      view: {
+        pausedS: Math.round((now() - from.since) / 1000),
+        acts: handActs,
+        ...(moved ? { from: shortUrl(from.url) } : {}),
+        url: shortUrl(url),
+        ...(changed ? { changed } : {}),
+      },
+    };
+    journal({ kind: "resume" });
+    resume();
+    await overlay.held(page, null);
+  };
+  overlay.onSteer((s) => {
+    if ("note" in s) {
+      journal({ kind: "note", text: `person: ${redactText(s.note)}` });
+      return;
+    }
+    if (!s.pause) return void personResume();
+    if (paused) {
+      // the agent's own pause becomes the person's: only they resume it now
+      pausedBy = "person";
+      holdFrom ??= { since: now(), url: page.url(), rows: null };
+      void overlay.held(page, { since: now(), arming: false });
+    } else if (busy > 0) {
+      holdArmed = true;
+      void overlay.held(page, { since: now(), arming: true });
+    } else void personPause();
+  });
+  /** A command under the person's Pause: held until Resume, then refused if they changed things. */
+  const heldAnswer = async (arrived: number): Promise<unknown | null> => {
+    if (pausedBy === "person") {
+      const since = holdFrom?.since ?? now();
+      const go = await Promise.race([
+        unpaused().then(() => true),
+        new Promise<false>((r) => setTimeout(() => r(false), HOLD_MS).unref()),
+      ]);
+      if (!go)
+        return {
+          ok: false,
+          held: true,
+          steer: {
+            pausedS: Math.round((now() - since) / 1000),
+            note: "A person paused you from the panel and has not resumed in 10 min. Your command did not run; send it again later.",
+          },
+        };
+    }
+    if (!steered || arrived >= steered.at) return null;
+    const notes = overlay.takeNotes();
+    if (!steered.acted && !notes.length) return null;
+    return {
+      ran: false,
+      steer: {
+        ...steered.view,
+        ...(notes.length ? { notes } : {}),
+        note: "A person paused you from the panel and acted or wrote to you. Your command did not run. Read the page and their notes, then go on from where they left it.",
+      },
+    };
   };
   /** A script that clicks, on a page that shows a spending button, needs the click's yes first. */
   const scriptGate = async (js: string, wait: boolean) => {
@@ -2354,7 +2468,8 @@ async function serve(
       );
     switch (c.cmd) {
       case "overlay": {
-        const { cmd: _, refs, on, ...fields } = c;
+        const { cmd: _, refs, on, name, color, ...fields } = c;
+        if (name !== undefined || color !== undefined) overlay.who(name, color);
         if (on !== undefined) await overlay.toggle(page, on);
         if (on === false) return { drawn: false };
         return overlay.set(page, {
@@ -2957,12 +3072,20 @@ async function serve(
         return result;
       }
       case "pause":
+        if (pausedBy === "person") return { paused: true, by: "person" };
         paused = true;
+        pausedBy = "agent";
         handActs = 0;
         if (history) lookBefore = await lookAt(page).catch(() => null);
         journal({ kind: "pause" });
         return { paused: true };
       case "resume": {
+        if (pausedBy === "person")
+          return {
+            paused: true,
+            by: "person",
+            note: "A person paused you from the panel; only they resume it. Your next command waits for them.",
+          };
         journal({ kind: "resume" });
         resume();
         return { paused: false, handActs };

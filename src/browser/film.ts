@@ -123,8 +123,19 @@ export function filmSizeOf(s: string | undefined): FilmOptions["size"] {
 /** The page each pane films: the hands' log goes to it. */
 const filming = new WeakMap<Page, Recorder>();
 
-/** The hands' log for every filmed page; a page no one films drops it. */
-export const filmLog: HandsLog = (page, e) => filming.get(page)?.note(e);
+/** A live watcher per page: the overlay's cursor. */
+const watching = new WeakMap<Page, (e: HandEvent) => void>();
+/** Watch a page's hands; null stops. One watcher a page: the newest wins. */
+export function watchHands(page: Page, fn: ((e: HandEvent) => void) | null): void {
+  if (fn) watching.set(page, fn);
+  else watching.delete(page);
+}
+
+/** The hands' log for every page: its film and its watcher; a page with neither drops it. */
+export const handsLog: HandsLog = (page, e) => {
+  filming.get(page)?.note(e);
+  watching.get(page)?.(e);
+};
 /** A step's row into the page's film; no-op when unfilmed. */
 export const filmStep = (page: Page, e: StepEvent) => filming.get(page)?.note(e);
 

@@ -33,7 +33,7 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const EXE = process.platform === "win32" ? "overlay-host.exe" : "overlay-host";
 const CRATE = join(ROOT, "native", "overlay");
 
-function cacheDir(): string {
+export function cacheDir(): string {
   if (process.platform === "darwin") return join(homedir(), "Library", "Caches", "autobrowse");
   if (process.platform === "win32")
     return join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "autobrowse");

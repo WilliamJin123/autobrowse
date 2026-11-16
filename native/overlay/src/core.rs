@@ -1,5 +1,6 @@
 //! The OS-free half: protocol, panel state, follow and pointer logic. Ported from host.swift.
 //! in:  {t:"html",html} {t:"js",js} {t:"target",pid,x,y,w,h} {t:"view",outerW,outerH,innerW,innerH,dpr} {t:"hide"} {t:"show"}
+//! ipc: the panel's postMessage; `rect` sets the hit box, `key` takes or gives back key
 //! out: {t:"ready"} {t:"found"} {t:"lost"} {t:"moved"} {t:"js",...} (the panel's postMessage, less `rect`)
 use serde_json::{Map, Value, json};
 use std::collections::VecDeque;
@@ -44,6 +45,8 @@ pub trait Os {
     fn cursor(&self) -> (f64, f64, bool);
     fn ignoring(&self) -> bool;
     fn ignore(&mut self, on: bool);
+    /// Take key (the note box types) or give it back to `pid`'s window.
+    fn key(&mut self, _on: bool, _pid: u32) {}
 }
 
 pub fn emit(v: &Value) {
@@ -200,6 +203,8 @@ impl<O: Os> Host<O> {
             }
             Some("hide") => {
                 self.shown = false;
+                // a hidden note box never keeps the keyboard
+                self.os.key(false, self.pid);
                 self.os.hide();
             }
             Some("show") => {
@@ -220,6 +225,13 @@ impl<O: Os> Host<O> {
                 (x.as_f64(), y.as_f64(), w.as_f64(), h.as_f64())
         {
             self.hit = Rect { x, y, w, h };
+        }
+        // the note box: focus takes key, blur gives it back; never forwarded
+        if let Some(Value::Bool(on)) = o.remove("key") {
+            self.os.key(on, self.pid);
+            if on {
+                let _ = self.web.focus();
+            }
         }
         o.insert("t".into(), "js".into());
         if o.len() > 1 {

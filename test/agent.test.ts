@@ -100,6 +100,36 @@ describe("exploreWithAgent", () => {
     expect(llm.requests[1]?.prompt).toContain("FAILED: locator.click");
     expect(r.summary).toMatch(/no verdict after 2 steps/);
   });
+  it("the panel's notes and a person's acts under Pause reach the next prompt; a refused look runs again", async () => {
+    const { ex, calls } = fakeExplorer(['- button "Go"', '- heading "Done"']);
+    const exec = ex.exec.bind(ex);
+    let urls = 0;
+    let clicks = 0;
+    ex.exec = async (c) => {
+      if (c.cmd === "url" && ++urls === 1) {
+        calls.push(c);
+        return { ran: false, steer: { acts: 1, notes: ["use the second account"] } };
+      }
+      if (c.cmd === "click" && ++clicks === 1) {
+        calls.push(c);
+        return { ran: false, steer: { acts: 2 } };
+      }
+      return exec(c);
+    };
+    const llm = fakeLlm([
+      { thought: "go", action: { cmd: "click", ref: 1, goal: "go" } },
+      { thought: "ok", action: { cmd: "done", summary: "s", achieved: true } },
+    ]);
+    const r = await exploreWithAgent({ explorer: ex, llm, goal: "g" });
+    expect(calls.filter((c) => c.cmd === "url").length).toBeGreaterThanOrEqual(3);
+    expect(llm.requests[0]?.prompt).toContain("THE PERSON WATCHING: paused you and acted");
+    expect(llm.requests[0]?.prompt).toContain('- "use the second account"');
+    expect(llm.requests[0]?.system).toContain("THE PERSON WATCHING lines");
+    expect(llm.requests[1]?.prompt).toContain("NOT RUN: a person paused you from the panel");
+    expect(llm.requests[1]?.prompt).toContain("THE PERSON WATCHING: paused you");
+    expect(llm.requests[1]?.prompt).not.toContain("second account");
+    expect(r.achieved).toBe(true);
+  });
   it("with desktop off, offers no os act and refuses one sent", async () => {
     const { ex, calls } = fakeExplorer(['- button "Only"']);
     const llm = fakeLlm([

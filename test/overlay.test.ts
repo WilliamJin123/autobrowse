@@ -1,7 +1,8 @@
 import { type Browser, chromium, type Page } from "playwright";
 import { describe, expect, it } from "vitest";
+import { handsLog } from "../src/browser/film.js";
 import type { Command } from "../src/explore/commands.js";
-import { type Geometry, overlayFor, traceRow } from "../src/explore/overlay.js";
+import { type Geometry, overlayFor, type Steer, traceRow } from "../src/explore/overlay.js";
 import type { HostEvent, OverlayHost } from "../src/explore/overlay-host.js";
 
 const PAGE = `<button onclick="this.textContent='Hit'">Save</button><a href="#x">Docs</a>`;
@@ -16,12 +17,14 @@ async function webHost(browser: Browser) {
   const sent: Array<{ t: string; [k: string]: unknown }> = [];
   const fns: Array<(e: HostEvent) => void> = [];
   const rects: number[][] = [];
+  const posts: Array<Record<string, unknown>> = [];
   let chain: Promise<unknown> = Promise.resolve();
   let made = 0;
   let closed = false;
   await view.exposeBinding("__post", (_s, m: { rect: number[]; [k: string]: unknown }) => {
     const { rect, ...rest } = m;
     rects.push(rect);
+    posts.push(rest);
     for (const fn of fns) fn({ t: "js", ...rest });
   });
   await view.addInitScript(
@@ -57,6 +60,8 @@ async function webHost(browser: Browser) {
     view,
     sent,
     rects,
+    /** What the panel posted, as the native host reads it (`key` is the host's own). */
+    posts,
     emit: (e: HostEvent) => {
       for (const fn of fns) fn(e);
     },
@@ -194,7 +199,7 @@ describe("headed overlay, out of the page", () => {
         await h.view.evaluate(
           "[...ui.tuiEl.querySelectorAll('.bar [data-a]')].map((e) => e.getAttribute('data-a'))",
         ),
-      ).toEqual(["look", "marks", "theme", "min"]);
+      ).toEqual(["hold", "look", "marks", "theme", "min"]);
       expect(await h.view.evaluate("getComputedStyle(ui.tuiEl).borderRadius")).toBe("14px");
       // A page that breaks the DOM and JSON for everyone, frame-busts, and goes full screen.
       // a navigation: the last page's Trusted Types would refuse setContent's write
@@ -323,6 +328,111 @@ describe("headed overlay, out of the page", () => {
       // unanswered in time: null
       expect(await o.ask(page, "late?", { ms: 50 })).toBeNull();
       expect(await overlayFor(false, { host: h.factory }).ask(page, "x")).toBeNull();
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("the cursor follows the page's hands: a glide, a ripple on release, a focus ring, a name pill; keys never cross", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      o.who("Ada", "#ff5a1f");
+      await o.set(page, { goal: "save the form" });
+      await h.idle();
+      const t = Date.now();
+      handsLog(page, { kind: "move", t, x: 40, y: 50 });
+      handsLog(page, { kind: "move", t, x: 120, y: 90 });
+      handsLog(page, { kind: "focus", t, box: { x: 100, y: 80, w: 60, h: 24 } });
+      handsLog(page, { kind: "down", t, x: 120, y: 90 });
+      handsLog(page, { kind: "up", t, x: 120, y: 90 });
+      handsLog(page, { kind: "key", t, key: "s" });
+      handsLog(page, { kind: "scroll", t, dy: 300 });
+      await expect.poll(() => h.view.evaluate("ui.hx")).toBe(120);
+      await h.idle();
+      const hand = await h.view.evaluate<{
+        shown: boolean;
+        pill: string;
+        colour: string;
+        at: string;
+        down: boolean;
+      }>(
+        `(() => { const n = document.querySelector('.hand'); return { shown: n.style.display !== 'none', pill: n.querySelector('.pill').textContent, colour: n.style.getPropertyValue('--hand'), at: n.style.transform, down: n.classList.contains('down') }; })()`,
+      );
+      expect(hand).toEqual({
+        shown: true,
+        pill: "Ada",
+        colour: "#ff5a1f",
+        at: "translate(120px, 90px)",
+        down: false,
+      });
+      expect(await h.view.evaluate("document.querySelectorAll('.hands .ripple').length")).toBe(1);
+      expect(await h.view.evaluate("document.querySelectorAll('.hands .focus').length")).toBe(1);
+      // moves batch into one line; keys and scrolls are never sent
+      const lines = h.sent.filter((m) => m.t === "js" && String(m.js).startsWith("ui.hand("));
+      const sentHands = lines.flatMap(
+        (m) => JSON.parse(String(m.js).slice(8, -1)) as Array<{ kind: string }>,
+      );
+      expect(sentHands.map((e) => e.kind)).toEqual(["move", "focus", "down", "up"]);
+      expect(JSON.stringify(h.sent)).not.toContain('"key":"s"');
+      // another page's hands are not ours
+      handsLog(await browser.newPage(), { kind: "move", t, x: 500, y: 500 });
+      await new Promise((r) => setTimeout(r, 60));
+      expect(await h.view.evaluate("ui.hx")).toBe(120);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("Pause and Resume steer the agent; a note is Queued, then Read once an answer took it", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const got: Steer[] = [];
+      o.onSteer((s) => got.push(s));
+      await o.set(page, { goal: "save the form" });
+      await h.idle();
+      await settled(h.view);
+      const p = await btnAt(h.view, "hold");
+      await h.view.mouse.click(p.x, p.y);
+      await expect.poll(() => got).toEqual([{ pause: true }]);
+      await o.held(page, { since: Date.now(), arming: false });
+      await h.idle();
+      expect(await h.view.evaluate("ui.tuiEl.querySelector('.held .q').textContent")).toMatch(
+        /^Paused/,
+      );
+      // the held line's Resume
+      const r = await h.view.evaluate<{ x: number; y: number }>(
+        "(() => { const b = ui.tuiEl.querySelector('.held .go').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()",
+      );
+      await h.view.mouse.click(r.x, r.y);
+      await expect.poll(() => got).toEqual([{ pause: true }, { pause: false }]);
+      await o.held(page, null);
+      await h.idle();
+      expect(await h.view.evaluate("!!ui.tuiEl.querySelector('.held')")).toBe(false);
+      // the note box: asks for the keyboard, sends on Enter, shows Queued
+      await h.view.click(".say");
+      await expect.poll(() => h.posts.some((m) => m.key === true)).toBe(true);
+      await h.view.keyboard.type("use the second account");
+      await h.view.keyboard.press("Enter");
+      await expect.poll(() => got.at(-1)).toEqual({ note: "use the second account" });
+      await h.view.keyboard.press("Escape");
+      await expect.poll(() => h.posts.at(-1)?.key).toBe(false);
+      expect(await h.view.evaluate("document.querySelector('.say').value")).toBe("");
+      const st = () =>
+        h.view.evaluate<string[]>(
+          "[...document.querySelectorAll('.notes .st')].map((n) => n.textContent)",
+        );
+      expect(await st()).toEqual(["Queued"]);
+      expect(o.takeNotes()).toEqual(["use the second account"]);
+      expect(o.takeNotes()).toEqual([]);
+      await o.end(page, row);
+      await h.idle();
+      expect(await st()).toEqual(["Read"]);
     } finally {
       await browser.close();
     }

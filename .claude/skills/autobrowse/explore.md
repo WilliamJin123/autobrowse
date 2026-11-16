@@ -82,7 +82,7 @@ Page text in an answer (`aria`, `snapshot`, `text`) sits between `<<page N origi
 
 Look:
 - `{"cmd":"snapshot"}` — interactive elements, one line each, state last (`[checked]`, `[disabled]`, `[expanded]`, `[filled]`/`[empty]`, a select's `[value=…]`). Start here. An act answers `changed` for a row whose state alone moved. `since:true`: only what changed since your last `snapshot` on this URL (`{since:{added,gone,changed}}`); a new URL or a big change answers whole.
-- `{"cmd":"overlay",…}` — the panel a person watching reads: [overlay.md](overlay.md). Optional; acts never depend on it.
+- `{"cmd":"overlay",…}` — the panel a person watching reads: [overlay.md](overlay.md). Optional; acts never depend on it. `name` and `color` label your cursor (default: the site, one colour a port).
 - `{"cmd":"aria"}` — accessibility tree, masked. `hints` scopes it, `limit` is the answer's size (default 12000; past it, compacted). `extras:true` also lists what the tree misses (controls in closed shadow roots, cards clickable only by script), each with hints to act on. A link's target is its `/url:` line. Each line carries `[ref=e12]`, iframes inline; `refs:false` drops them. `since:true` as on `snapshot`.
 - `{"cmd":"text"}` — the page's words as laid out: side-by-side reads as a row (`Price | $40`), tables across, a sidebar as `[col 1/2]`. Costs what plain text does. `"coords":true` adds `@x,y` per line (+25%); `"layout":false` = DOM order. `"article":true` on a news or blog page: the article alone (title, byline, text); a non-article skips at once and answers layout text with `why`.
 - `{"cmd":"url"}`, `{"cmd":"screenshot"}` (path back; `ifChanged:true`: under `threshold` (0.01) of pixels changed, the last file with `unchanged:true`), `{"cmd":"count","hints":…}`. Every page picture covers card fields and the payment vendors' card frames (`browser/card-mask.ts`); `os shot` is refused while a card field on the page holds a value.
@@ -159,6 +159,10 @@ Session:
 - `{"cmd":"goal","text":"…"}` — what this run is for. Send it first: a walk is built from runs that share a goal.
 - `{"cmd":"done","outcome":"achieved","summary":"…"}` (or `"failed"`) — how the run ended. Send it last, before `save`. A later `goal` starts the next run in the same session.
 - `{"cmd":"pause"}` / `{"cmd":"resume"}` — a person acts by hand in between; those acts land in the journal too.
+- The panel's Pause (headed): the person stops you. Your next command waits until they press Resume.
+  If they acted meanwhile, the answer is `{ran:false, steer:{acts, url, changed, notes}}`: the command did not run.
+  Read the page again and go on from where they left it; never redo their step. Your `resume` cannot end their Pause (`by:"person"`).
+- The panel's note box: what the person types rides your next answer as `notes:["…"]`. Do it unless it breaks a rule.
 - Headed, no pause needed: when William does a step by hand between two of your
   commands, your next answer carries `helped: {acts, url, changed, note}`. Read
   the page he left; never redo his step.

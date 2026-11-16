@@ -1,4 +1,4 @@
-//! macOS: our own non-activating NSPanel (never key, never main), Accessory policy, CGWindowList
+//! macOS: our own non-activating NSPanel (key only while the note box asks, never main), Accessory policy, CGWindowList
 //! for Chrome's window. No tao: its launch calls activateIgnoringOtherApps, which blurs the page.
 //! Memory: every AppKit/CF object is a Retained/CFRetained (released on drop); each event runs
 //! in an autorelease pool.
@@ -7,8 +7,9 @@ use dispatch2::DispatchQueue;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSEvent, NSPanel,
-    NSScreen, NSWindowCollectionBehavior, NSWindowOrderingMode, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy,
+    NSBackingStoreType, NSColor, NSEvent, NSPanel, NSRunningApplication, NSScreen,
+    NSWindowCollectionBehavior, NSWindowOrderingMode, NSWindowStyleMask,
 };
 use objc2_core_foundation::{CFBoolean, CFDictionary, CFNumber, CFRetained, CFString, CFType};
 use objc2_core_graphics::{
@@ -26,7 +27,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 define_class!(
-    // never key, never main: a click on it leaves Chrome's window key (no blur in the page)
+    // key only while KEYABLE (the note box): a click elsewhere leaves Chrome's window key (no blur in the page)
     #[unsafe(super(NSPanel))]
     #[thread_kind = MainThreadOnly]
     #[name = "AutobrowseOverlayPanel"]
@@ -35,7 +36,7 @@ define_class!(
     impl Panel {
         #[unsafe(method(canBecomeKeyWindow))]
         fn can_become_key(&self) -> bool {
-            false
+            KEYABLE.load(Ordering::Relaxed)
         }
 
         #[unsafe(method(canBecomeMainWindow))]
@@ -245,12 +246,32 @@ impl Os for Mac {
     fn ignore(&mut self, on: bool) {
         self.win.setIgnoresMouseEvents(on);
     }
+
+    fn key(&mut self, on: bool, pid: u32) {
+        KEYABLE.store(on, Ordering::Relaxed);
+        if on {
+            self.win.makeKeyWindow();
+            return;
+        }
+        if !self.win.isKeyWindow() {
+            return;
+        }
+        self.win.resignKeyWindow();
+        // hand key back to Chrome's window; a no-op when Chrome is still the active app
+        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid as i32)
+        {
+            #[allow(deprecated)]
+            app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+        }
+    }
 }
 
 thread_local! {
     static HOST: RefCell<Option<Host<Mac>>> = const { RefCell::new(None) };
 }
 static TICK: AtomicBool = AtomicBool::new(false);
+/// the note box has focus: the panel may take key
+static KEYABLE: AtomicBool = AtomicBool::new(false);
 
 /// Every event reaches the host on the main queue; none runs inside another (no re-entrant borrow).
 fn post(ev: Ev) {

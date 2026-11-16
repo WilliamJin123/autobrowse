@@ -204,7 +204,8 @@ A "not in the tree:" section lists controls the outline misses (inside a closed 
 Rules: never invent values; use only the inputs given. Never buy, delete, or submit money-related forms: return human{reason} instead.
 Any captcha ("I'm not a robot", pick the squares, type the letters, drag a slider): use captcha. Only when it says it is not solved twice, return human{reason}.
 Prefer the shortest path. When the tree shows the goal is met, return done with achieved=true.
-If the same step fails twice, try another element or return done with achieved=false.${maxBatch > 1 ? `\n${BATCH}` : ""}`);
+If the same step fails twice, try another element or return done with achieved=false.
+THE PERSON WATCHING lines come from the person at the panel: follow them unless they break a rule above.${maxBatch > 1 ? `\n${BATCH}` : ""}`);
 
 /** The prompt with no line that offers an os act. */
 const withoutOs = (t: string) =>
@@ -258,13 +259,32 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
       })
       .catch(() => undefined);
   };
+  /** The panel's notes and a person's acts under their Pause, for the next prompt. */
+  let said: string[] = [];
+  let steeredBy = false;
+  const heard = (a: unknown) => {
+    const r = a as { notes?: unknown; steer?: { notes?: unknown } } | null;
+    for (const n of [r?.notes, r?.steer?.notes])
+      if (Array.isArray(n)) said.push(...n.filter((x): x is string => typeof x === "string"));
+    if (r?.steer) steeredBy = true;
+  };
+  /** A look the loop needs: a command refused by the person's Pause runs again once. */
+  const look = async (c: ExploreCommand) => {
+    let a = await o.explorer.exec(c);
+    heard(a);
+    if ((a as { ran?: unknown }).ran === false) {
+      a = await o.explorer.exec(c);
+      heard(a);
+    }
+    return a;
+  };
   for (let n = steps.length + 1; n <= max; n = steps.length + 1) {
     await o.explorer.resumed();
     if (o.stopped?.()) return { achieved: false, summary: "stopped by a person", steps, usage };
     t0 = Date.now();
-    const url = (await o.explorer.exec({ cmd: "url" })) as { url: string };
+    const url = (await look({ cmd: "url" })) as { url: string };
     // refs:false: the digest numbers controls itself and reads frame sections by their chain
-    const aria = (await o.explorer.exec({
+    const aria = (await look({
       cmd: "aria",
       limit: 60_000,
       extras: true,
@@ -288,6 +308,7 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
         doing: "",
         refs: page.refs.map((r) => ({ n: r.n, hints: hintsFor(r) })),
       })
+      .then(heard)
       .catch(() => undefined);
     // About the last two batches: a batch's acts are one turn to the model.
     const history = steps
@@ -299,7 +320,13 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
       .join("\n");
     const skipped = notRun ? `\nNOT RUN: ${notRun}` : "";
     notRun = null;
-    const prompt = `GOAL: ${o.goal}\n${inputs ? `INPUTS:\n${inputs}\n` : ""}\nSTEP ${n} of ${max}\nURL: ${url.url}\nRECENT STEPS:\n${history || "(none)"}${skipped}\n\nPAGE:\n${shown}`;
+    const person =
+      steeredBy || said.length
+        ? `\nTHE PERSON WATCHING:${steeredBy ? " paused you and acted on the page; read it as it is now, never redo their step." : ""}${said.map((t) => `\n- ${JSON.stringify(t)}`).join("")}`
+        : "";
+    said = [];
+    steeredBy = false;
+    const prompt = `GOAL: ${o.goal}\n${inputs ? `INPUTS:\n${inputs}\n` : ""}\nSTEP ${n} of ${max}\nURL: ${url.url}\nRECENT STEPS:\n${history || "(none)"}${skipped}${person}\n\nPAGE:\n${shown}`;
     let plan: Plan;
     let stepUsage: LlmUsage = { inputTokens: 0, outputTokens: 0 };
     try {
@@ -349,7 +376,10 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
       continue;
     }
     const step: Step = { thought: plan.thought, action: plan.actions[0] as Step["action"] };
-    await o.explorer.exec({ cmd: "overlay", thought: plan.thought }).catch(() => undefined);
+    await o.explorer
+      .exec({ cmd: "overlay", thought: plan.thought })
+      .then(heard)
+      .catch(() => undefined);
     const rec: StepRecord = {
       n,
       step,
@@ -385,7 +415,7 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
       return { achieved, summary, steps, usage };
     }
     if (notedOn !== url.url) {
-      await o.explorer.exec({ cmd: "note", text: step.thought });
+      heard(await o.explorer.exec({ cmd: "note", text: step.thought }));
       notedOn = url.url;
     }
     // The schema keeps done and human alone, so every act here is one the browser runs.
@@ -405,7 +435,9 @@ export async function exploreWithAgent(o: AgentOptions): Promise<AgentResult> {
               usage: { inputTokens: 0, outputTokens: 0 },
             };
       try {
-        r.result = clip(await o.explorer.exec(toCommand(act, page)));
+        const a = await o.explorer.exec(toCommand(act, page));
+        heard(a);
+        r.result = clip(a);
       } catch (err) {
         r.error = (err instanceof Error ? err.message : String(err)).split("\n")[0] ?? "failed";
         // The person said no to spending (or could not be asked): that ends the goal, not the model's turn.
@@ -604,6 +636,8 @@ function outcome(s: StepRecord): string {
       return `exit ${r.code}${r.stdout ? `\n${r.stdout.slice(0, 1_500)}` : ""}${r.stderr ? `\nstderr: ${r.stderr.slice(0, 500)}` : ""}`;
   }
   // The agent's keep has no confirm: a held value stays until a person says so.
+  if ((s.result as { ran?: unknown } | null)?.ran === false)
+    return "NOT RUN: a person paused you from the panel and acted; the page is theirs now";
   if (s.step?.action.cmd === "keep" && r?.held)
     return `NOT KEPT: ${r.held.env} already holds another value (${r.held.length} chars). Nothing was written. Keep it under another env name that says what this key is for; if no other name fits, stop with human.`;
   return "ok";

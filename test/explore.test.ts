@@ -911,6 +911,7 @@ describe("pause: a person's hand acts land in the journal", () => {
       ).rejects.toThrow(/needs a person.*no channel/);
       await ex.exec({ cmd: "pause" });
       expect(ex.paused()).toBe(true);
+      await new Promise((r) => setTimeout(r, 800)); // past HAND_GRACE_MS: events now are a person's
       // A person "clicks" and "types": real DOM events, as a hand would raise them.
       await ex.exec({
         cmd: "eval",

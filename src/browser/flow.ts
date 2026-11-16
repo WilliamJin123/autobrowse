@@ -30,7 +30,7 @@ import { banHit } from "./ban-signals.js";
 import { type CaptchaOutcome, solveCaptcha } from "./captcha/index.js";
 import { cardMask } from "./card-mask.js";
 import { collectWhenIdle } from "./driver-memory.js";
-import { filmLog, filmStep } from "./film.js";
+import { filmStep, handsLog } from "./film.js";
 import { flowKey } from "./fixes.js";
 import { freshSeed, HUMAN_PACE, handsFor, seeded } from "./human/index.js";
 import { asQuestion, settleKeeps } from "./keeps.js";
@@ -145,7 +145,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
   // run's seed: runs on two profiles at once never share a stream.
   const pace = runner.pace === undefined ? HUMAN_PACE : runner.pace;
   const fixedSeed = runner.seed ?? seedOf();
-  const handsOn = (seed: number) => handsFor(pace, seeded(seed), filmLog, holdsSecret);
+  const handsOn = (seed: number) => handsFor(pace, seeded(seed), handsLog, holdsSecret);
   const park = runner.park;
   const runsDir = runner.runs === undefined ? statsDirOf("flows") : null;
   const runs = runner.runs ?? (runsDir ? fileFlowRuns(runsDir) : null);

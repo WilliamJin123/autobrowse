@@ -11,6 +11,8 @@
  * Headless or off macOS, nothing is drawn.
  */
 import type { BrowserContext, CDPSession, Page } from "playwright";
+import { watchHands } from "../browser/film.js";
+import type { HandEvent } from "../browser/human/index.js";
 import { type Hints, locate } from "../browser/locate.js";
 import type { Command } from "./commands.js";
 import { type Box, MARK_COLOURS } from "./marks.js";
@@ -49,6 +51,12 @@ export interface OverlayState {
   trace: TraceRow[];
   /** A yes-or-no for the person at the window (keep a sign-in): two buttons, answered once. */
   ask: { id: number; text: string; yes: string; no: string } | null;
+  /** The person paused the agent from the panel; `arming`: it stops after the running command. */
+  held: { since: number; arming: boolean } | null;
+  /** The person's notes to the agent, oldest first; `read` once an answer carried it. */
+  notes: Array<{ id: number; text: string; read: boolean }>;
+  /** The cursor's name pill and colour. */
+  who: { name: string; color: string };
 }
 
 const EMPTY: OverlayState = {
@@ -63,7 +71,18 @@ const EMPTY: OverlayState = {
   meta: null,
   trace: [],
   ask: null,
+  held: null,
+  notes: [],
+  who: { name: "agent", color: "#3380ff" },
 };
+
+/** Cursor colours, one per session port: Clicky's blue first. */
+const HAND_COLOURS = ["#3380ff", "#e5484d", "#30a46c", "#f76b15", "#8e4ec6", "#0d9488"];
+export const handColour = (port: number) => HAND_COLOURS[port % HAND_COLOURS.length] as string;
+/** Moves batch to one send a frame. */
+const HAND_MS = 16;
+/** Notes the panel lists; older ones stay in the journal. */
+const NOTES_SHOWN = 3;
 
 /** The narrowest a person can size the panel, px. */
 const PANEL_MIN_W = 220;
@@ -134,6 +153,8 @@ const ICONS = {
   moon: "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401",
   sun: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41",
   min: "M5 12h14",
+  pause: "M14 5h3v14h-3zM7 5h3v14H7z",
+  play: "M7 4.5v15l12-7.5z",
   chevron: "m6 9 6 6 6-6",
 };
 
@@ -184,7 +205,29 @@ const SHARED_CSS = [
   // Each look places the cells by column in its own order; a definite row keeps them on one line.
   ".row>:not(.note){grid-row:1}",
   ".row .note{grid-row:2;overflow-wrap:anywhere}",
-  "@media (prefers-reduced-motion:reduce){.target,.target::after,.in,.enter,.row.new{animation:none!important}.shim{animation:none!important;background:none!important;color:inherit!important}*{transition:none!important}}",
+  // The agent's cursor: page px under the same scale as the boxes; never takes the mouse.
+  ".hands{position:fixed;left:0;top:0;transform-origin:0 0;pointer-events:none}",
+  ".hand{position:absolute;left:0;top:0;will-change:transform;transition:transform 60ms linear,opacity .5s var(--ease)}",
+  ".hand.idle{opacity:.35}",
+  ".hand .ptr{position:absolute;left:-4px;top:-3px;transform-origin:4px 3px;transition:transform .14s var(--spring);filter:drop-shadow(0 0 6px var(--hand)) drop-shadow(0 1px 2px rgb(0 0 0/.35))}",
+  ".hand .ptr svg{width:22px;height:22px;fill:var(--hand);stroke:#fff;stroke-width:1.6;stroke-linejoin:round}",
+  ".hand.down .ptr{transform:scale(.8)}",
+  '.hand .pill{position:absolute;left:18px;top:20px;background:#111;color:#fff;font:600 11px/17px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;padding:0 8px;border-radius:999px;white-space:nowrap;box-shadow:0 0 0 1px rgb(255 255 255/.16),0 2px 8px rgb(0 0 0/.3)}',
+  '.hand .bub{position:absolute;left:18px;top:41px;width:max-content;max-width:240px;background:var(--hand);color:#fff;font:500 12px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;padding:4px 9px;border-radius:3px 11px 11px 11px;box-shadow:0 6px 18px -6px rgb(0 0 0/.45);transform-origin:0 0;overflow-wrap:anywhere}',
+  ".hand.flip .pill,.hand.flip .bub{left:auto;right:10px}",
+  ".hand.flip .bub{border-radius:11px 3px 11px 11px;transform-origin:100% 0}",
+  ".hand .bub.pop{animation:pop .28s var(--spring)}",
+  "@keyframes pop{from{opacity:0;transform:scale(.55)}}",
+  ".ripple{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid var(--hand);animation:ripple .55s var(--ease) forwards}",
+  "@keyframes ripple{from{opacity:.8;transform:scale(.3)}to{opacity:0;transform:scale(2.2)}}",
+  ".focus{position:absolute;border:2px solid var(--hand);border-radius:6px;animation:focus .9s var(--ease) forwards}",
+  "@keyframes focus{0%{opacity:0;transform:scale(1.06)}15%{opacity:1;transform:none}70%{opacity:1}to{opacity:0}}",
+  // The note box takes text; the rest of the panel never selects.
+  ".say{display:block;width:100%;min-width:0;-webkit-user-select:text;user-select:text;outline:none}",
+  ".notes{display:grid;gap:1px}",
+  ".notes .nt{display:flex;align-items:baseline;gap:6px;overflow-wrap:anywhere}",
+  ".notes .nt>:first-child{flex:1;min-width:0}",
+  "@media (prefers-reduced-motion:reduce){.target,.target::after,.in,.enter,.row.new,.hand .bub.pop,.ripple,.focus{animation:none!important}.shim{animation:none!important;background:none!important;color:inherit!important}*{transition:none!important}}",
 ];
 
 /** The panel: a floating macOS-style sheet, light or dark, purple accents (2026-11-03). */
@@ -233,6 +276,19 @@ const PANEL_CSS = [
   ".ask .q{flex:1 1 160px;font-weight:600}",
   ".ask .go{flex:none;padding:2px 10px;border-radius:999px;cursor:pointer;font-weight:600;color:var(--ink-2);background:var(--fill)}",
   ".ask .go.yes{color:var(--on-accent);background:var(--accent)}",
+  // Paused by the person: the same tinted box as a question, Resume filled.
+  ".held{margin:4px 0 2px;padding:6px 8px;border-radius:9px;background:var(--tint);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent);display:flex;flex-wrap:wrap;align-items:center;gap:6px}",
+  ".held .q{flex:1 1 160px;font-weight:600}",
+  ".held .go{flex:none;padding:2px 10px;border-radius:999px;cursor:pointer;font-weight:600;color:var(--on-accent);background:var(--accent)}",
+  ".bar .state.held{color:var(--accent);font-weight:600}",
+  // The note box: a rounded field, as a chat composer; sent notes above it, Queued then Read.
+  ".steer{display:grid;gap:4px;padding:0 var(--g) 7px}",
+  ".say{font:inherit;color:var(--ink);background:var(--fill);border:0;border-radius:8px;padding:5px 9px;box-shadow:inset 0 0 0 1px var(--hair);transition:box-shadow .15s var(--ease)}",
+  ".say::placeholder{color:var(--ink-3)}",
+  ".say:focus{box-shadow:inset 0 0 0 1.5px var(--accent);background:var(--paper)}",
+  ".notes .nt{color:var(--ink-2)}",
+  ".notes .st{flex:none;font-size:.86em;color:var(--ink-3)}",
+  ".notes .st.q{color:var(--accent)}",
   // The busy words: a light passing through them, on one clock across redraws.
   ".shim{background:linear-gradient(90deg,var(--ink-3) 35%,var(--accent) 50%,var(--ink-3) 65%) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 1.8s linear infinite}",
   "@keyframes shim{from{background-position:100% 0}to{background-position:0 0}}",
@@ -294,6 +350,16 @@ const TERM_CSS = [
   `.ask{margin:2px 0;border:1px solid ${T.accent};padding:2px 4px;display:flex;flex-wrap:wrap;gap:6px}`,
   ".ask .q{flex:1 1 160px}",
   `.ask .go{cursor:pointer;color:${T.accent}}`,
+  `.held{margin:2px 0;border:1px solid ${T.accent};padding:2px 4px;display:flex;flex-wrap:wrap;gap:6px;color:${T.accent}}`,
+  ".held .q{flex:1 1 160px}",
+  `.held .go{cursor:pointer;color:${T.ink}}`,
+  `.bar .state.held{color:${T.accent}}`,
+  ".steer{display:grid;gap:1px;padding:0 var(--g) 4px}",
+  `.say{font:inherit;color:${T.ink};background:transparent;border:0;border-top:1px dashed ${T.paper};padding:2px 0;caret-color:${T.accent}}`,
+  `.say::placeholder{color:${T.ink3}}`,
+  `.notes .nt{color:${T.ink2}}`,
+  `.notes .st{flex:none;color:${T.ink3}}`,
+  `.notes .st.q{color:${T.accent}}`,
   `.cursor{display:inline-block;width:.6em;height:1.05em;margin-left:2px;vertical-align:-2px;background:${T.accent};animation:tblink 1s steps(2) infinite}`,
   "@keyframes tblink{50%{opacity:0}}",
   `.rule{display:flex;gap:var(--g);color:${T.ink3};padding:0 var(--g);border-top:1px solid ${T.paper}}`,
@@ -367,34 +433,74 @@ export const panelHtml = (
   // The running command's phase words: one keyframes rule, swapped per command.
   const phase = document.getElementById('ph');
   const marks = el('div', 'marks');
+  // The agent's cursor: its own layer, fed by ui.hand; paint only names and colours it.
+  const hands = el('div', 'hands');
+  const hand = el('div', 'hand', null, 'display:none');
+  const ptr = el('div', 'ptr');
+  {
+    const NS = 'http://www.w3.org/2000/svg';
+    const s = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
+    s.setAttribute('viewBox', '0 0 24 24');
+    p.setAttribute('d', 'M4 3l0 16.5 4.6-4.3 3 6.8 2.8-1.2-2.9-6.7 6.4-.3z');
+    s.appendChild(p);
+    ptr.appendChild(s);
+  }
+  const pill = el('div', 'pill'), bub = el('div', 'bub');
+  bub.hidden = true;
+  hand.append(ptr, pill, bub);
+  hands.appendChild(hand);
   // Folded: a tab peeking from the left edge.
   const tab = el('div', 'tab');
   tab.setAttribute('data-a', 'min');
   tab.title = 'autobrowse: open';
   const tui = el('div', 'tui');
   const bar = el('div', 'bar'), body = el('div', 'body'), rule = el('div', 'rule'), rows = el('div', 'rows');
-  tui.append(bar, body, rule, rows);
+  // The note box: mounted once, so a redraw never takes its focus or its half-typed words.
+  const steer = el('div', 'steer'), notesEl = el('div', 'notes'), say = el('input', 'say');
+  say.maxLength = 500;
+  say.spellcheck = false;
+  steer.append(notesEl, say);
+  tui.append(bar, body, steer, rule, rows);
   for (const c of ['nw', 'ne', 'sw', 'se']) {
     const g = el('div', 'grip ' + c);
     g.dataset.c = c;
     tui.appendChild(g);
   }
   const wrap = el('div', 'wrap');
-  wrap.append(marks, tab, tui);
+  wrap.append(marks, hands, tab, tui);
   document.body.append(wrap);
   const ICONS = ${JSON.stringify(ICONS)};
   const NS = 'http://www.w3.org/2000/svg';
   const icon = (d) => { const s = document.createElementNS(NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); s.appendChild(p); return s; };
   const dark = () => ui.theme ? ui.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   // The host: the rect that takes the mouse, and the prefs (boxes on or off) for the session.
-  const post = () => {
+  const post = (extra) => {
     const r = (ui.min ? tab : tui).getBoundingClientRect();
-    const m = { rect: [r.x, r.y, r.width, r.height], prefs: ui.prefs() };
+    const m = { rect: [r.x, r.y, r.width, r.height], prefs: ui.prefs(), ...extra };
     if (ui.answer) { m.answer = ui.answer; ui.answer = null; }
     try { window.webkit.messageHandlers.host.postMessage(m); } catch {}
   };
   // a rect read mid-animation (peek, spring) is not where it lands
-  for (const n of [tab, tui]) for (const k of ['animationend', 'transitionend']) n.addEventListener(k, post);
+  for (const n of [tab, tui]) for (const k of ['animationend', 'transitionend']) n.addEventListener(k, () => post());
+  // The window takes the keyboard only while the note box has focus (host: \`key\`).
+  // A press on it asks first: a window that is not key never focuses a field itself.
+  say.addEventListener('pointerdown', () => {
+    if (document.activeElement === say) return;
+    post({ key: true });
+    setTimeout(() => say.focus(), 30);
+  });
+  say.addEventListener('focus', () => { if (!ui.typing) { ui.typing = true; post({ key: true }); } });
+  say.addEventListener('blur', () => { ui.typing = false; post({ key: false }); });
+  say.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') say.blur();
+    if (e.key !== 'Enter' || e.isComposing) return;
+    const text = say.value.trim();
+    if (!text || !ui.s) return;
+    say.value = '';
+    ui.s.notes = (ui.s.notes || []).concat([{ id: -Date.now(), text, read: false }]);
+    post({ note: text });
+    ui.paint();
+  });
   // The grip sizes, the bar moves; capture keeps every move on us until the button lifts.
   tui.addEventListener('pointerdown', (e) => {
     const t = e.target instanceof Element ? e.target : null;
@@ -438,7 +544,9 @@ export const panelHtml = (
     if (!a || !ui.s) return;
     const act = a.getAttribute('data-a');
     // Opening springs the panel out of the tab; folding slides the tab in.
-    if (act === 'min') { ui.min = !ui.min; ui.enter = ui.min ? 'tab' : 'tui'; }
+    if (act === 'min') { ui.min = !ui.min; ui.enter = ui.min ? 'tab' : 'tui'; if (ui.min) say.blur(); }
+    // Pause shows at once; the session's next draw says whether it holds now or after the act.
+    else if (act === 'hold') { const on = !ui.s.held; ui.s.held = on ? { since: Date.now(), arming: ui.s.busy } : null; post({ pause: on }); }
     else if (act === 'look') ui.look = ui.look === 'term' ? 'panel' : 'term';
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
@@ -494,7 +602,22 @@ export const panelHtml = (
     if (phase.textContent !== s.ph.keys) phase.textContent = s.ph.keys;
     wrap.className = 'wrap ' + (term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
     // Page px to window px: the page's zoom over ours.
-    marks.style.transform = 'scale(' + (s.dpr || devicePixelRatio) / devicePixelRatio + ')';
+    marks.style.transform = hands.style.transform = 'scale(' + (s.dpr || devicePixelRatio) / devicePixelRatio + ')';
+    hand.style.setProperty('--hand', s.who.color);
+    if (pill.textContent !== s.who.name) pill.textContent = s.who.name;
+    // The act under way pops in beside the cursor; it goes a beat after the act ends.
+    if (s.doing !== ui.bubFor) {
+      ui.bubFor = s.doing;
+      clearTimeout(ui.bubT);
+      if (s.doing) {
+        const i = s.doing.indexOf(': ');
+        bub.textContent = i > 0 ? s.doing.slice(i + 2) : s.doing;
+        bub.hidden = false;
+        bub.classList.remove('pop');
+        void bub.offsetWidth;
+        bub.classList.add('pop');
+      } else ui.bubT = setTimeout(() => { bub.hidden = true; }, 1200);
+    }
     // Boxes redrawn only when they change: a redraw never restarts the target's lock-on.
     const mk = JSON.stringify([ui.marks, s.boxes, s.target]);
     if (mk !== ui.marksKey) {
@@ -562,10 +685,11 @@ export const panelHtml = (
       const btn = (a, d, tip, cls) => { const b = el('span', 'btn' + (cls ? ' ' + cls : '')); b.appendChild(icon(d)); b.setAttribute('data-a', a); b.title = tip; return b; };
       if (term) {
         bar.appendChild(el('span', 'name', '▌autobrowse'));
-        bar.appendChild(el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? '● run' : '○ idle'));
+        bar.appendChild(s.held ? el('span', 'state held', s.held.arming ? '◌ pausing' : '‖ paused') : el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? '● run' : '○ idle'));
         if (s.step) bar.appendChild(el('span', 'k', 'step ' + s.step));
         bar.appendChild(el('span', 'fill'));
         if (s.meta) bar.appendChild(el('span', 'meta', s.meta));
+        bar.appendChild(tbtn('hold', s.held ? '[▶]' : '[‖]', s.held ? 'resume the agent' : 'pause the agent', s.held ? 'on' : ''));
         bar.appendChild(tbtn('look', '[▤]', 'panel look'));
         bar.appendChild(tbtn('marks', ui.marks ? '[◆]' : '[◇]', ui.marks ? 'hide the boxes' : 'show the boxes', ui.marks ? 'on' : ''));
         bar.appendChild(tbtn('min', '[_]', 'minimize'));
@@ -578,6 +702,8 @@ export const panelHtml = (
           live.appendChild(el('span', 'spin'));
           live.appendChild(el('span', 'phase', ' ', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'));
           live.appendChild(el('span', 'dots'));
+        } else if (s.held) {
+          // held: the paused line says it; the agent is not thinking
         } else if (s.goal) {
           live.appendChild(el('span', 'spin slow'));
           live.appendChild(el('span', '', ' thinking'));
@@ -586,17 +712,18 @@ export const panelHtml = (
           live.appendChild(el('span', 'k', '$ waiting for the agent'));
           live.appendChild(el('span', 'cursor'));
         }
-        body.appendChild(live);
+        if (live.childNodes.length) body.appendChild(live);
         rule.appendChild(el('span', 't', '─ trace'));
         rule.appendChild(el('span', 't', String(s.count)));
         rule.appendChild(el('span', 'fill', null, 'flex:1'));
         rule.appendChild(tbtn('trace', ui.trace ? '[▾]' : '[▸]', ui.trace ? 'fold the trace' : 'show the trace'));
       } else {
         bar.appendChild(el('span', 'name', 'autobrowse'));
-        bar.appendChild(el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? 'Running' : 'Idle'));
+        bar.appendChild(s.held ? el('span', 'state held', s.held.arming ? 'Pausing' : 'Paused') : el('span', 'state' + (s.busy ? ' run' : ''), s.busy ? 'Running' : 'Idle'));
         if (s.step) bar.appendChild(el('span', 'k', 'Step ' + s.step));
         if (s.meta) bar.appendChild(el('span', 'meta num', s.meta));
         bar.appendChild(el('span', 'fill'));
+        bar.appendChild(btn('hold', s.held ? ICONS.play : ICONS.pause, s.held ? 'Resume the agent' : 'Pause the agent', s.held ? 'on' : ''));
         bar.appendChild(btn('look', ICONS.term, 'Terminal look'));
         bar.appendChild(btn('marks', ICONS.boxes, ui.marks ? 'Hide the boxes' : 'Show the boxes', ui.marks ? 'on' : ''));
         bar.appendChild(btn('theme', dark() ? ICONS.sun : ICONS.moon, dark() ? 'Light' : 'Dark'));
@@ -623,12 +750,14 @@ export const panelHtml = (
           const w = shim();
           w.append(el('span', 'phase', '', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'), el('span', 'dots'));
           live.appendChild(w);
+        } else if (s.held) {
+          // held: the paused line says it
         } else if (s.goal) {
           const w = shim('Thinking');
           w.appendChild(el('span', 'dots'));
           live.appendChild(w);
         } else live.appendChild(el('span', '', 'Waiting for the agent'));
-        body.appendChild(live);
+        if (live.childNodes.length) body.appendChild(live);
         rule.appendChild(el('span', '', 'Activity'));
         rule.appendChild(el('span', 't num', String(s.count)));
         rule.appendChild(el('span', 'fill', null, 'flex:1'));
@@ -641,10 +770,72 @@ export const panelHtml = (
         q.append(go('yes', s.ask.yes), go('no', s.ask.no));
         body.appendChild(q);
       }
+      if (s.held) {
+        const q = el('div', 'held');
+        q.appendChild(el('span', 'q', s.held.arming
+          ? (term ? 'pausing after this act' : 'Pausing after this act')
+          : (term ? 'paused: the agent waits for you' : 'Paused. The agent waits for you.')));
+        const b = el('span', 'go', term ? '[resume]' : 'Resume');
+        b.setAttribute('data-a', 'hold');
+        q.appendChild(b);
+        body.appendChild(q);
+      }
+      say.placeholder = term ? '> note to the agent' : 'Tell the agent…';
+      notesEl.textContent = '';
+      for (const n of (s.notes || []).slice(-${NOTES_SHOWN})) {
+        const r = el('div', 'nt');
+        r.appendChild(el('span', '', (term ? '> ' : '') + n.text));
+        r.appendChild(el('span', 'st' + (n.read ? '' : ' q'), n.read ? (term ? 'read' : 'Read') : (term ? 'queued' : 'Queued')));
+        notesEl.appendChild(r);
+      }
       rows.style.display = ui.trace && s.count ? '' : 'none';
     }
     post();
     return ui.prefs();
+  };
+  // The cursor: moves glide; a long jump arcs (Clicky); a press shrinks it, a release ripples.
+  const flyTo = (x, y) => {
+    const from = ui.hx == null ? null : [ui.hx, ui.hy];
+    ui.hx = x; ui.hy = y;
+    hand.style.display = '';
+    const k = (ui.s && ui.s.dpr || devicePixelRatio) / devicePixelRatio;
+    hand.classList.toggle('flip', x * k > innerWidth - 270);
+    const d = from ? Math.hypot(x - from[0], y - from[1]) : 0;
+    if (from && d > 160 && !still()) {
+      const lift = Math.min(0.2 * d, 80), nx = -(y - from[1]) / d, ny = (x - from[0]) / d, up = ny > 0 ? -1 : 1;
+      const cx = (from[0] + x) / 2 + nx * lift * up, cy = (from[1] + y) / 2 + ny * lift * up;
+      const frames = [];
+      for (let i = 0; i <= 16; i++) {
+        const t = i / 16, u = 1 - t;
+        frames.push({ transform: 'translate(' + (u * u * from[0] + 2 * u * t * cx + t * t * x) + 'px,' + (u * u * from[1] + 2 * u * t * cy + t * t * y) + 'px)' });
+      }
+      const ms = Math.min(900, 300 + d * 0.6);
+      hand.animate(frames, { duration: ms, easing: 'cubic-bezier(.45,0,.2,1)' });
+      ptr.animate([{ transform: 'none' }, { transform: 'scale(1.3)' }, { transform: 'none' }], { duration: ms });
+    }
+    hand.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+  };
+  ui.hand = (list) => {
+    for (const e of list) {
+      if (e.kind === 'move') flyTo(e.x, e.y);
+      else if (e.kind === 'down') { flyTo(e.x, e.y); hand.classList.add('down'); }
+      else if (e.kind === 'up') {
+        hand.classList.remove('down');
+        const r = el('div', 'ripple', null, 'left:' + e.x + 'px;top:' + e.y + 'px');
+        r.addEventListener('animationend', () => r.remove());
+        hands.appendChild(r);
+        if (still()) setTimeout(() => r.remove(), 300);
+      } else if (e.kind === 'focus') {
+        const f = el('div', 'focus', null, at({ x: e.box.x - 3, y: e.box.y - 3, w: e.box.w + 6, h: e.box.h + 6 }));
+        f.addEventListener('animationend', () => f.remove());
+        hands.appendChild(f);
+        if (still()) setTimeout(() => f.remove(), 900);
+      }
+    }
+    // dims after 6 s with no act
+    hand.classList.remove('idle');
+    clearTimeout(ui.idleT);
+    ui.idleT = setTimeout(() => hand.classList.add('idle'), 6000);
   };
   /** \`reset\`: the rows are all of them, not the new ones. */
   ui.draw = (s, list, reset) => {
@@ -748,6 +939,9 @@ export async function geometryOf(page: Page): Promise<Geometry | null> {
 const NOT_FOUND = "the overlay cannot find Chrome's window (Wayland?)";
 const FOUND_MS = 3_000;
 
+/** What the person did on the panel: pause or resume the agent, or a note to it. */
+export type Steer = { pause: boolean } | { note: string };
+
 export interface OverlayDeps {
   /** The window that draws; default the native host (macOS). */
   host?: (why: (reason: string) => void) => Promise<OverlayHost | null>;
@@ -792,6 +986,28 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   /** Questions out, by id: the panel's button answers one. */
   const asking = new Map<number, (yes: boolean | null) => void>();
   let askN = 0;
+  let steered: (s: Steer) => void = () => undefined;
+  let noteN = 0;
+  /** Hand events not yet sent; moves between two others keep only the newest. */
+  let handQ: HandEvent[] = [];
+  let handT: NodeJS.Timeout | null = null;
+  const flushHands = () => {
+    handT = null;
+    const list = handQ;
+    handQ = [];
+    if (host && drawn && enabled && list.length)
+      host.send({ t: "js", js: `ui.hand(${JSON.stringify(list)})` });
+  };
+  /** One page's hands: keys never leave (a key can be a secret's), nor scrolls. */
+  const hand = (page: Page, e: HandEvent) => {
+    if (page !== followed || !enabled || !drawn) return;
+    if (e.kind === "key" || e.kind === "scroll") return;
+    const last = handQ.at(-1);
+    if (e.kind === "move" && last?.kind === "move") handQ[handQ.length - 1] = e;
+    else handQ.push(e);
+    handT ??= setTimeout(flushHands, HAND_MS);
+    handT.unref?.();
+  };
   const answered = (id: number, yes: boolean | null) => {
     const done = asking.get(id);
     if (!done) return;
@@ -803,6 +1019,12 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   const onEvent = (e: HostEvent) => {
     const a = e.t === "js" ? (e.answer as { id?: unknown; yes?: unknown } | undefined) : undefined;
     if (a && typeof a.id === "number") answered(a.id, a.yes === true);
+    if (e.t === "js" && typeof e.pause === "boolean") steered({ pause: e.pause });
+    if (e.t === "js" && typeof e.note === "string" && e.note.trim()) {
+      const text = e.note.trim().slice(0, 500);
+      state.notes = [...state.notes, { id: ++noteN, text, read: false }].slice(-20);
+      steered({ note: text });
+    }
     if (e.t === "js" && e.prefs && typeof e.prefs === "object") prefs = e.prefs as Prefs;
     // Chrome's window changed size (full screen, an infobar) or went: measure again.
     else if (e.t === "lost") windowKey = null;
@@ -838,6 +1060,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     host?.close();
     host = null;
     opening = null;
+    if (followed) watchHands(followed, null);
     followed = null;
     windowKey = null;
     sentN = -1;
@@ -865,7 +1088,9 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   const paint = async (page: Page): Promise<boolean> => {
     // before the host starts: a context closed meanwhile still ends it
     if (followed !== page) {
+      if (followed) watchHands(followed, null);
       followed = page;
+      watchHands(page, (e) => hand(page, e));
       windowKey = null;
       page.once("close", () => {
         if (followed === page) host?.send({ t: "hide" });
@@ -947,6 +1172,9 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
           cmd: state.cmd,
           meta: state.meta,
           ask: state.ask,
+          held: state.held,
+          notes: state.notes,
+          who: state.who,
         };
       for (const [k, v] of Object.entries(fields))
         if (v !== undefined) (state as unknown as Record<string, unknown>)[k] = clipLine(v, 240);
@@ -1046,12 +1274,33 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       if (followed && drawn) await draw(followed);
       return yes;
     },
+    /** The panel's Pause, Resume and notes reach the session here. */
+    onSteer(fn: (s: Steer) => void): void {
+      steered = fn;
+    },
+    /** The cursor's name and colour; drawn with the next change. */
+    who(name?: string, color?: string): void {
+      state.who = { name: name ?? state.who.name, color: color ?? state.who.color };
+    },
+    /** Paused by the person, arming (stops after the running command), or null: running. */
+    async held(page: Page, h: OverlayState["held"]): Promise<void> {
+      state.held = h;
+      if (enabled && drawn) await draw(page);
+    },
+    /** The notes no answer carried yet; now marked Read (drawn with the next change). */
+    takeNotes(): string[] {
+      const fresh = state.notes.filter((n) => !n.read);
+      if (!fresh.length) return [];
+      state.notes = state.notes.map((n) => (n.read ? n : { ...n, read: true }));
+      return fresh.map((n) => n.text);
+    },
     /** The session ends: the window goes and its process exits. */
     async remove(_page: Page): Promise<void> {
       for (const id of [...asking.keys()]) answered(id, null);
       drawn = false;
-      state = { ...EMPTY };
+      state = { ...EMPTY, who: state.who };
       running = 0;
+      handQ = [];
       close();
     },
   };

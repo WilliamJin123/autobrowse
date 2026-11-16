@@ -24,11 +24,28 @@ macOS, Windows and Linux X11. On Wayland, with no host for the platform, or on L
   (where the page went, controls added and gone, state changes, page errors, chars read; for `network`, `proof`, `errors` a count). It never shows a typed value, a query string, a call body or a cookie.
 - The act's control locks on in purple before the hands reach it; a ring leaves it while the act runs.
 
+## The agent's cursor
+
+- A pointer with a name pill draws where the agent's hands go. Long jumps arc. A click shrinks it and leaves a ripple. A type puts a ring round the field.
+- It shows only with human pace (explore, `try --headed`). Instant hands make no events, so no cursor shows.
+- It never shows keys or scrolls: a key can belong to a secret.
+- Name and colour: `{"cmd":"overlay","name":"Scout","color":"#ff5a1f"}`. Default: the site, one colour a port, so two sessions differ.
+- After 6 s with no act it dims.
+
+## Steer the agent
+
+Like Operator's Pause and Claude Code's queued messages.
+- Pause (bar button): the running command finishes, then the agent waits ("Pausing", then "Paused").
+  Do the step by hand, then press Resume. If you changed the page, the agent's waiting command does not run; it reads the page again.
+  Only you resume it. After 10 min the waiting command answers that it did not run.
+- The note box under the bar: type, Enter. The note shows Queued, then Read once the agent's next answer carried it.
+  A click on the box gives it the keyboard. Esc or a click on the page gives the keyboard back to Chrome.
+
 ## Buttons
 
-- Your clicks land on the panel. The page never sees them, and Chrome keeps focus. The agent's acts never touch it.
+- Your clicks land on the panel. The page never sees them, and Chrome keeps focus (the note box takes it while you type). The agent's acts never touch it.
 - Drag the bar to move it. Drag any corner to size it; the text scales with its width.
-- Bar buttons: the look (panel or terminal), the boxes (show or hide), light or dark (panel only), minimize to a tab on the left edge. Click the tab to show it again.
+- Bar buttons: Pause or Resume, the look (panel or terminal), the boxes (show or hide), light or dark (panel only), minimize to a tab on the left edge. Click the tab to show it again.
 - Wheel over the trace to scroll it, live. Each choice carries to the next page.
 - Screen recordings (OBS, ⌘⇧5) show it; autobrowse's own shots and films never do.
 
@@ -39,6 +56,16 @@ macOS, Windows and Linux X11. On Wayland, with no host for the platform, or on L
 - `refs:[{n,hints}]` boxes controls with numbers; `clear:true` empties the fields.
 - `on:false` takes it down and keeps the trace; `on:true` draws it again.
 - It takes no part in your acts and no row in the run's history.
+
+## Record the screen
+
+`autobrowse screen-record --out demo.mp4 [--seconds 60] [--music [file]] [--whole-screen]`
+records the Mac's main screen with the overlay, the agent's cursor and the real pointer. Ctrl-C stops it.
+- It crops to the union of Chrome's windows at the end. Keep them in front: another app over them shows in the crop.
+- A bare `--music` lays "Local Forecast - Elevator" (Kevin MacLeod, CC BY 4.0) under it, looped and faded.
+  It writes the credit to `<out>.credits.txt`. Put that credit wherever the video goes.
+- The terminal needs Screen Recording (System Settings, Privacy).
+- A locked screen: it refuses. A capture would film only the lock screen.
 
 ## Record a run once
 
