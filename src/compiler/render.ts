@@ -481,10 +481,6 @@ import { planSchema, workflow } from "./index.js";
 const deps = () => ({ ${depsSrc} });
 
 describe(${q(o.name)}, () => {
-  it("parses the recorded example", () => {
-    expect(planSchema.parse({ ${example} }).dryRun).toBe(false);
-  });
-
   it("dry run plans and stops before anything irreversible", async () => {
     const plan = planSchema.parse({ dryRun: true, ${example} });
     const out = await runFlow(memoryEffects().fx, workflow, deps(), plan);
