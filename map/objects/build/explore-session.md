@@ -41,7 +41,7 @@ A person or a model maps a page and acts on it; what works is journaled and beco
 
 - **owns:** the journal, its [[explore-run]]
 - **owned-by:** [[backend]]; [[agent-session]] (the agent drives one)
-- **joins:** [[session]], [[flow]] (same runner), [[recording]] (`save`), [[approval]], [[card]], [[guard]], the desktop (`src/desktop/types.ts:53`)
+- **joins:** [[session]], [[flow]] (same runner), [[recording]] (`save`), [[approval]], [[card]], [[guard]], [[desktop-hands]] (`os`)
 
 ## If you change this
 

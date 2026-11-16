@@ -1,0 +1,50 @@
+{
+  "version": "2.6",
+  "ok": false,
+  "command": "click",
+  "error": {
+    "code": "POLICY_DENIED",
+    "message": "Target is not actionable: supported_action (direct semantic delivery is unavailable and physical fallback is denied)",
+    "suggestion": "Waiting will not help: this element cannot satisfy the action as targeted. Target an element that advertises the action (check available_actions in a fresh snapshot). For a dropdown without select support, open it with click, inspect its choices, and use explicit keyboard input.",
+    "recovery": {
+      "strategy": "request_explicit_policy_then_retry_original",
+      "retryable": true,
+      "requires_fresh_snapshot": false
+    },
+    "details": {
+      "actionable": false,
+      "checks": [
+        {
+          "check": "visible",
+          "status": "pass"
+        },
+        {
+          "check": "stable",
+          "stability": {
+            "samples": 1,
+            "span_ms": 0
+          },
+          "status": "pass"
+        },
+        {
+          "check": "enabled",
+          "status": "pass"
+        },
+        {
+          "check": "supported_action",
+          "reason": "direct semantic delivery is unavailable and physical fallback is denied",
+          "status": "fail"
+        },
+        {
+          "check": "policy",
+          "status": "pass"
+        }
+      ],
+      "observed_bounds_hash": 10102274251656575600
+    },
+    "disposition": {
+      "delivery": "not_delivered",
+      "retry": "safe"
+    }
+  }
+}

@@ -77,14 +77,16 @@ export { type KeyKeeper, noKeys } from "./deps/keys.js";
 export { fakeShell, localShell, type Shell, type ShellResult } from "./deps/shell.js";
 export { envFileSink, memorySink, type SecretSink } from "./deps/sink.js";
 export { resumeDir, statsDir } from "./deps/stats.js";
-export { macDesktop } from "./desktop/mac.js";
+export { type DesktopHands, desktopHands } from "./desktop/hands.js";
+export { localDesktop, macDesktop } from "./desktop/mac.js";
 export {
   type Desktop,
-  type DesktopNode,
+  type DesktopAct,
   type DesktopOp,
   fakeDesktop,
+  fakeWindow,
   noDesktop,
-  treeText,
+  snapText,
 } from "./desktop/types.js";
 export type { Effects, GateAnswer, GateName } from "./engine/effects.js";
 export { GateOpen, Unrecoverable } from "./engine/effects.js";

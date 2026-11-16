@@ -1,0 +1,12 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "find",
+  "data": {
+    "matches": [],
+    "roles_present": ["button", "group", "scrollarea", "statictext", "toolbar", "window"],
+    "snapshot_id": "sby98lzan6xo5",
+    "total_matches": 0,
+    "truncated": false
+  }
+}

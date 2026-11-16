@@ -340,7 +340,11 @@ describe("import", () => {
           t: 900,
           url: "",
           screenshot: shot,
-          op: { op: "click", app: "Notes", role: "AXButton", name: "New Note" },
+          op: {
+            op: "click",
+            window: { app: "Notes", title: "" },
+            control: { role: "button", name: "New Note" },
+          },
           redacted: false,
         },
         {
@@ -348,17 +352,12 @@ describe("import", () => {
           t: 2000,
           url: "",
           screenshot: shot,
-          op: { op: "type", text: "hello world" },
+          op: { op: "type", window: { app: "Notes", title: "" }, text: "hello world" },
           redacted: false,
         },
         { kind: "note", t: 3000, url: "", text: "right click on (300, 400), no element in Notes" },
-        {
-          kind: "desktop",
-          t: 4000,
-          url: "",
-          op: { op: "type", text: "<redacted>", secret: true },
-          redacted: true,
-        },
+        // No app: nothing a replay could find again.
+        { kind: "note", t: 4000, url: "", text: "typed <redacted>" },
         {
           kind: "desktop",
           t: 5000,
@@ -367,7 +366,13 @@ describe("import", () => {
           redacted: false,
         },
         // after-frame 5 is not in the bucket: no screenshot.
-        { kind: "desktop", t: 5500, url: "", op: { op: "key", combo: "enter" }, redacted: false },
+        {
+          kind: "desktop",
+          t: 5500,
+          url: "",
+          op: { op: "key", combo: "enter", window: { app: "Notes", title: "" } },
+          redacted: false,
+        },
       ],
     });
     // The frame it points at came down, relative to the recordings root.

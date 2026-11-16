@@ -9,7 +9,7 @@ import { envFileStore } from "credvault";
 import type { Identity, IdentityStore } from "../auth/identities.js";
 import { assignPurpose, PURPOSES } from "../auth/identities.js";
 import { SITE_LOGINS } from "../auth/sites.js";
-import { macDesktop } from "../desktop/mac.js";
+import { localDesktop } from "../desktop/mac.js";
 import { phoneStatus } from "../devices/phone.js";
 import { SITES } from "../sites/index.js";
 import { type AccountReadiness, readiness } from "./cli-accounts.js";
@@ -69,7 +69,7 @@ export function needsContextFor(
       const phone = phoneFor(settings);
       return phone ? once(() => phoneStatus(phone.dbPath)) : null;
     })(),
-    desktop: process.platform === "darwin" ? once(() => macDesktop().permissions()) : null,
+    desktop: process.platform === "darwin" ? once(() => localDesktop().permissions()) : null,
     owner: settings.owner,
     envFile: settings.envFile,
     keysHeld: async (vendor) =>

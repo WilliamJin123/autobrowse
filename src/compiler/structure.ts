@@ -265,34 +265,100 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
     switch (a.kind) {
       case "desktop": {
         const op = a.op;
+        const win = (w: { app: string; title: string }) => ({ app: w.app, title: w.title });
+        const ctl = (c: { role: string; name: string; nativeId?: string | undefined }) => ({
+          role: c.role,
+          name: c.name,
+          nativeId: c.nativeId ?? null,
+        });
+        const where = (w: { app: string; title: string } | undefined) =>
+          w ? ` in ${w.app}${w.title ? ` "${w.title}"` : ""}` : "";
         switch (op.op) {
-          case "open":
-            addDesktop({ kind: "open", goal: `open ${op.app}`, app: op.app });
+          case "launch":
+            addDesktop({
+              kind: "launch",
+              goal: `open ${op.app}`,
+              app: op.app,
+              fresh: op.fresh ?? false,
+              args: op.args ?? [],
+            });
             break;
           case "click":
             addDesktop({
               kind: "click",
-              goal: `click ${op.role ?? "control"} "${op.name}"`,
-              app: op.app ?? null,
-              role: op.role ?? null,
-              name: op.name,
-              irreversible: IRREVERSIBLE_CLICK.test(op.name),
+              goal: `click ${op.control.role} "${op.control.name}"${where(op.window)}`,
+              window: win(op.window),
+              control: ctl(op.control),
+              headed: op.headed ?? false,
+              irreversible: IRREVERSIBLE_CLICK.test(op.control.name),
             });
             break;
           case "type": {
-            const label = `typed text ${(curDesktop()?.ops.filter((o) => o.kind === "type").length ?? 0) + 1}`;
-            const key = fieldKey(camel(label));
-            if (a.redacted) secrets.push({ key, label });
-            else fields.push({ key, label, example: op.text });
+            const d = curDesktop();
+            const label =
+              op.secret ??
+              (op.control?.name ||
+                `typed text ${(d?.ops.filter((o) => o.kind === "type").length ?? 0) + 1}`);
+            // One secret typed twice is one key.
+            const key =
+              (op.secret !== undefined && secrets.find((s) => s.label === label)?.key) ||
+              fieldKey(camel(label));
+            if (op.secret !== undefined) {
+              if (!secrets.some((s) => s.key === key)) secrets.push({ key, label });
+            } else fields.push({ key, label, example: op.text ?? null });
             addDesktop({
               kind: "type",
-              goal: `type ${label}`,
-              value: a.redacted ? { from: "secret", key } : { from: "plan", field: key },
+              goal: `type ${label}${where(op.window)}`,
+              window: win(op.window),
+              control: op.control ? ctl(op.control) : null,
+              value:
+                op.secret !== undefined ? { from: "secret", key } : { from: "plan", field: key },
+              headed: op.headed ?? false,
             });
             break;
           }
           case "key":
-            addDesktop({ kind: "key", goal: `press ${op.combo}`, combo: op.combo });
+            addDesktop({
+              kind: "key",
+              goal: `press ${op.combo}${where(op.window)}`,
+              combo: op.combo,
+              window: op.window ? win(op.window) : null,
+              headed: op.headed ?? false,
+            });
+            break;
+          case "place":
+            addDesktop({
+              kind: "place",
+              goal: `place${where(op.window)}`,
+              window: win(op.window),
+              x: op.x,
+              y: op.y,
+              w: op.w,
+              h: op.h,
+            });
+            break;
+          case "focus":
+            addDesktop({ kind: "focus", goal: `focus${where(op.window)}`, window: win(op.window) });
+            break;
+          case "wait":
+            addDesktop({
+              kind: "wait",
+              goal: `wait for "${op.text}"${where(op.window)}`,
+              window: win(op.window),
+              text: op.text,
+              timeoutS: op.timeoutS ?? null,
+            });
+            break;
+          case "waitFile":
+            addDesktop({
+              kind: "waitFile",
+              goal: `wait for ${op.file}`,
+              file: op.file,
+              timeoutS: op.timeoutS ?? null,
+            });
+            break;
+          case "sleep":
+            addDesktop({ kind: "sleep", goal: `sleep ${op.ms}ms`, ms: op.ms });
             break;
           case "shell":
             addDesktop({
@@ -301,14 +367,6 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
               command: op.command,
               root: op.root ?? false,
             });
-            break;
-          case "wait":
-            addDesktop({ kind: "wait", goal: `wait ${op.ms}ms`, ms: op.ms });
-            break;
-          // Looking is not a step: apps, tree, shot.
-          case "apps":
-          case "tree":
-          case "shot":
             break;
         }
         break;
@@ -490,11 +548,12 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
     for (const op of s.ops) {
       if (s.kind === "browser" && "hints" in op)
         for (const k of HINT_TEXTS) if (typeof op.hints[k] === "string") named(op.hints[k]);
-      if ("file" in op && op.file.from === "plan") used.add(op.file.field);
+      if (op.kind === "upload" && op.file.from === "plan") used.add(op.file.field);
       if (op.kind === "code") for (const f of op.plan) used.add(f);
-      if (!("value" in op) || typeof op.value !== "object") continue;
-      if (op.value.from === "secret") used.add(op.value.key);
-      if (op.value.from === "plan") used.add(op.value.field);
+      const v = "value" in op ? op.value : null;
+      if (!v || typeof v !== "object") continue;
+      if (v.from === "secret") used.add(v.key);
+      if (v.from === "plan") used.add(v.field);
     }
   }
   return {

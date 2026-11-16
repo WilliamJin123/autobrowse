@@ -12,8 +12,8 @@ import type { FlowRunner } from "../browser/flow.js";
 import { type KeyKeeper, noKeys } from "../deps/keys.js";
 import { localShell, type Shell } from "../deps/shell.js";
 import { envFileSink, type SecretSink } from "../deps/sink.js";
-import { macDesktop } from "../desktop/mac.js";
-import { type Desktop, noDesktop } from "../desktop/types.js";
+import { localDesktop } from "../desktop/mac.js";
+import type { Desktop } from "../desktop/types.js";
 
 /** Everything a rendered workflow may ask for; the renderer declares only what a flow uses. */
 export interface CompiledDeps {
@@ -61,7 +61,7 @@ export function compiledDeps(
     shell: o.shell ?? localShell(),
     keys: o.keys ?? noKeys,
     sink: o.sink ?? envFileSink(".env"),
-    desktop: o.desktop ?? (process.platform === "darwin" ? macDesktop() : noDesktop()),
+    desktop: o.desktop ?? localDesktop(),
   };
 }
 

@@ -103,8 +103,9 @@ import {
 import { memoryDir, readMemory, recall, rememberCalls } from "../browser/site-memory.js";
 import type { KeyKeeper } from "../deps/keys.js";
 import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
-import { macDesktop } from "../desktop/mac.js";
-import { type Desktop, type DesktopOp, noDesktop, treeText } from "../desktop/types.js";
+import { type ActResult, desktopHands } from "../desktop/hands.js";
+import { localDesktop } from "../desktop/mac.js";
+import type { Desktop } from "../desktop/types.js";
 import type { Effects } from "../engine/effects.js";
 import { memoryEffects } from "../engine/memory.js";
 import { advance, applyAnswer, type OpenGate, outcomeOf, type RunStatus } from "../engine/run.js";
@@ -680,51 +681,20 @@ interface LegLogin {
   stop: string | null;
 }
 
-/** One `os` act against the desktop; the tree comes back as text like `aria` does. */
-async function runDesktop(d: Desktop, a: DesktopOp, shotsDir: string, n: number): Promise<unknown> {
-  switch (a.op) {
-    case "apps":
-      return { apps: await d.apps() };
-    case "open":
-      await d.open(a.app);
-      return { ok: true };
-    case "tree":
-      return { tree: redactText(treeText(await d.tree(a.app, a.depth))) };
-    case "click":
-      await d.click({
-        name: a.name,
-        ...(a.role ? { role: a.role } : {}),
-        ...(a.app ? { app: a.app } : {}),
-      });
-      return { ok: true };
-    case "type":
-      await d.type(a.text);
-      return { ok: true };
-    case "key":
-      await d.key(a.combo);
-      return { ok: true };
-    case "shot": {
-      const file = join(shotsDir, `os-${String(n).padStart(4, "0")}.png`);
-      await d.screenshot(file);
-      return { file };
-    }
-    case "shell": {
-      const r = await d.shell(a.command, a.root ?? false);
-      const shellOut = (key: string, text: string, budget: number) => {
-        const fit = fitText(shotsDir, key, text, budget);
-        return { [key]: fit.text, ...(fit.whole ? { [`${key}Whole`]: fit.whole } : {}) };
-      };
-      // Output can hold tokens: masked like everything else that leaves the socket.
-      return {
-        code: r.code,
-        ...shellOut("stdout", redactText(r.stdout), 4_000),
-        ...shellOut("stderr", redactText(r.stderr), 1_000),
-      };
-    }
-    case "wait":
-      await new Promise((r) => setTimeout(r, a.ms));
-      return { ok: true };
-  }
+/** An `os` answer as it leaves the socket: tree text and shell output masked, long output to a file. */
+function desktopAnswer(r: ActResult, shotsDir: string): Record<string, unknown> {
+  const a = { ...r.answer };
+  const fitOut = (key: string, budget: number) => {
+    if (typeof a[key] !== "string") return;
+    const f = fitText(shotsDir, key, redactText(a[key] as string), budget);
+    a[key] = f.text;
+    if (f.whole) a[`${key}Whole`] = f.whole;
+  };
+  // Output can hold tokens: masked like everything else that leaves the socket.
+  fitOut("tree", 12_000); // a terminal's scrollback is one big value
+  fitOut("stdout", 4_000);
+  fitOut("stderr", 1_000);
+  return a;
 }
 
 async function serve(
@@ -746,7 +716,7 @@ async function serve(
   const tBase = carried ? carried.t + 1 : 0;
   const shotsDir = join(opts.recordingsDir, `.explore-${opts.site}`);
   mkdirSync(shotsDir, { recursive: true });
-  const desktop = opts.desktop ?? (process.platform === "darwin" ? macDesktop() : noDesktop());
+  const desktop = opts.desktop ?? localDesktop();
   // A resumed journal points at the earlier shots: number on past them. A fresh
   // session writes over them, so the folder stays one session's size.
   let shotN = carried ? readdirSync(shotsDir).filter((f) => /^\d{4}\.png$/.test(f)).length : 0;
@@ -1688,18 +1658,24 @@ async function serve(
       )
       .catch(() => []);
   };
-  /** A desktop click that spends (an App Store "Buy") waits for the person the same way; "url" is the app. */
-  const gateDesktop = async (a: DesktopOp, wait: boolean) => {
-    if (a.op !== "click") return;
-    const what = paymentGate("click", { name: a.name, ...(a.role ? { role: a.role } : {}) });
-    if (!what) return;
-    const app = a.app ?? (await desktop.apps())[0] ?? "desktop";
-    const there = (await desktop.tree(a.app)).some(
-      (n) => n.name === a.name && (!a.role || n.role === a.role),
-    );
-    if (!there) throw new Error(`no ${a.role ?? "control"} "${a.name}" in ${app}`);
-    await decide(`os ${JSON.stringify(a)}`, `${what} in ${app}`, `app:${app}`, wait);
-  };
+  /** The `wait` of the `os` command running now: a gate holds or answers pending by it. */
+  let osWait = false;
+  /** Desktop acts; a click that spends (an App Store "Buy") waits for the person; "url" is the app. */
+  const osHands = desktopHands(desktop, {
+    secret: sessionSecret,
+    looksSecret: looksLikeSecretValue,
+    shotsDir,
+    async gateClick(app, control) {
+      const what = paymentGate("click", { name: control.name, role: control.role });
+      if (what)
+        await decide(
+          `os click ${JSON.stringify(control)}`,
+          `${what} in ${app}`,
+          `app:${app}`,
+          osWait,
+        );
+    },
+  });
   const journalAct = (t: Target, act: (target: LocatorHints) => Journaled) => {
     const j = act(toLocatorHints(t.hints));
     if (j.kind !== "click") {
@@ -3057,23 +3033,21 @@ async function serve(
       }
       case "os": {
         const a = c.act;
-        await gateDesktop(a, wait);
         // the OS picture cannot be masked: a card on this session's page stops it
         if (a.op === "shot" && !page.isClosed() && (await cardShown(page)))
           throw new Error(
             "os shot: a card field on this page holds a value; the screen picture would print it. Use `screenshot` (card fields are covered)",
           );
-        const result = await runDesktop(desktop, a, shotsDir, shotN++);
-        // Looking (apps, tree, shot) is not journaled; acts are, with typed secrets hidden.
-        if (a.op !== "apps" && a.op !== "tree" && a.op !== "shot") {
-          const redacted = a.op === "type" && (a.secret === true || looksLikeSecretValue(a.text));
+        osWait = wait;
+        const r = await osHands.act(a);
+        // Looking (windows, snapshot, shot) journals nothing; a secret is kept by name only.
+        if (r.op)
           journal({
             kind: "desktop",
-            op: redacted && a.op === "type" ? { ...a, text: REDACTED } : a,
-            redacted,
+            op: r.op,
+            redacted: r.op.op === "type" && r.op.secret !== undefined,
           });
-        }
-        return result;
+        return desktopAnswer(r, shotsDir);
       }
       case "pause":
         if (pausedBy === "person") return { paused: true, by: "person" };

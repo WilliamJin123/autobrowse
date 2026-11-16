@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { compile } from "../src/compiler/index.js";
 import { memorySink } from "../src/deps/sink.js";
-import { fakeDesktop } from "../src/desktop/types.js";
+import { fakeDesktop, fakeWindow } from "../src/desktop/types.js";
 import {
   journalFileFor,
   pageChange,
@@ -29,9 +29,11 @@ import { shipShots } from "../src/shots/ship.js";
 
 const sink = memorySink();
 const desktop = fakeDesktop([
-  { role: "window", name: "General", value: null, enabled: true, depth: 0 },
-  { role: "checkbox", name: "Remote Login", value: "0", enabled: true, depth: 1 },
-  { role: "button", name: "Buy", value: null, enabled: true, depth: 1 },
+  fakeWindow("w-1", "Settings", "Sharing", [
+    ["checkbox", "Remote Login"],
+    ["button", "Buy"],
+    ["textfield", "Password"],
+  ]),
 ]);
 
 /** A 1x1 PNG as a licence's front: synthetic. */
@@ -339,27 +341,30 @@ describe("explore mode", () => {
     expect(sink.values.TEST_HELD).toMatch(/^sk-ant-minted-key-/);
 
     // Desktop acts share the session and the journal; looking is not journaled, typed secrets are hidden.
-    const tree = (await send({ cmd: "os", act: { op: "tree" } })).body.tree as string;
-    expect(tree).toContain('- checkbox "Remote Login": 0');
-    expect(
-      (await send({ cmd: "os", act: { op: "click", role: "checkbox", name: "Remote Login" } }))
-        .body,
-    ).toEqual({ ok: true });
-    expect((await send({ cmd: "os", act: { op: "click", name: "Nope" } })).status).toBe(500);
-    await send({ cmd: "os", act: { op: "type", text: "hunter2hunter2", secret: true } });
+    const wins = (await send({ cmd: "os", act: { op: "windows" } })).body;
+    expect(JSON.stringify(wins)).toContain('"title":"Sharing"');
+    const tree = (await send({ cmd: "os", act: { op: "snapshot", window: "w-1" } })).body
+      .tree as string;
+    expect(tree).toContain('checkbox "Remote Login" @s1:e1');
+    expect((await send({ cmd: "os", act: { op: "click", ref: "@s1:e1" } })).body).toEqual({
+      ok: true,
+    });
+    expect((await send({ cmd: "os", act: { op: "click", ref: "@s9:e1" } })).status).toBe(500);
+    await send({ cmd: "os", act: { op: "type", ref: "@s1:e3", secret: "minted" } });
     await send({ cmd: "os", act: { op: "shell", command: "true" } });
-    expect(desktop.acts.map((a) => a.op)).toEqual(["click", "type", "shell"]);
+    const acted = () => desktop.calls.filter((c) => c.call !== "shot").map((c) => c.call);
+    expect(acted()).toEqual(["click", "type", "shell"]);
     // A desktop "Buy" is gated like the page's: asked, refused on a no, done on a yes.
-    const osBuy = { cmd: "os", act: { op: "click", role: "button", name: "Buy" } };
+    const osBuy = { cmd: "os", act: { op: "click", ref: "@s1:e2" } };
     answer = false;
     expect((await send(osBuy)).body).toMatchObject({ gate: "payment", reason: "asked" });
     expect((await send(osBuy)).status).toBe(403);
-    expect(desktop.acts.length).toBe(3);
+    expect(acted()).toHaveLength(3);
     answer = true;
     expect((await send(osBuy, true)).status).toBe(200);
-    expect(desktop.acts.at(-1)).toMatchObject({ op: "click", name: "Buy" });
+    expect(desktop.calls.at(-1)).toMatchObject({ call: "click", node: "Buy" });
     expect(asks.at(-1)).toMatch(
-      /^start paying on app:\w+: press "Buy", which spends in \w+ \(one yes/,
+      /^start paying on app:Settings: press "Buy", which spends in Settings \(one yes/,
     );
 
     const saved = await send({ cmd: "save", name: "buy" });
@@ -389,8 +394,8 @@ describe("explore mode", () => {
     ]);
     const typed = rec.actions[13];
     expect(
-      typed.kind === "desktop" && typed.redacted && typed.op.op === "type" && typed.op.text,
-    ).toBe("<redacted>");
+      typed.kind === "desktop" && typed.redacted && typed.op.op === "type" && typed.op.secret,
+    ).toBe("minted");
     const pw = rec.actions[3];
     expect(pw.kind === "input" && pw.value).toBe("<redacted>");
     const placedAct = rec.actions[4];

@@ -41,6 +41,9 @@ export function comboOf(key: string, mods: readonly string[]): string {
   return [...have, key].join("+");
 }
 
+/** "AXButton" → "button": the tracker reads AX roles, replay matches agent-desktop's. */
+export const roleOf = (ax: string): string => ax.replace(/^AX/, "").toLowerCase();
+
 /**
  * Not converted, on purpose: `move` and `scroll` (no desktop op reads them, and a recording is
  * the chore, not the cursor path), `frame` (idle reading), `focus` (every act already names its
@@ -55,6 +58,7 @@ export function eventsToActions(
   intents?: ReadonlyMap<number, string>,
 ): Action[] {
   const out: Action[] = [];
+  let secrets = 0;
   for (const e of events) {
     const shot = screenshotOf("after" in e ? e.after : undefined);
     const intent = intents?.get(e.t);
@@ -65,15 +69,16 @@ export function eventsToActions(
       ...(intent ? { intent } : {}),
     };
     const where = e.app?.name ? ` in ${e.app.name}` : "";
+    // What a replay finds again: the app plus the window title the tracker saw.
+    const window = e.app?.name ? { app: e.app.name, title: e.window?.title ?? "" } : null;
     switch (e.kind) {
       case "click": {
         const el = e.element;
-        if (e.button === "left" && el?.name) {
+        if (e.button === "left" && el?.name && window) {
           const op = {
             op: "click" as const,
-            ...(e.app?.name ? { app: e.app.name } : {}),
-            ...(el.role ? { role: el.role } : {}),
-            name: el.name,
+            window,
+            control: { role: roleOf(el.role), name: el.name },
           };
           const times = Math.min(Math.max(Math.round(e.count) || 1, 1), 3);
           for (let i = 0; i < times; i++)
@@ -94,10 +99,20 @@ export function eventsToActions(
       case "text": {
         const secret = e.redacted || looksLikeSecretValue(e.text);
         if (!secret && !e.text) break;
+        if (!window) {
+          out.push({ ...base, kind: "note", text: `typed ${secret ? REDACTED : `"${e.text}"`}` });
+          break;
+        }
+        const el = e.element?.name
+          ? { control: { role: roleOf(e.element.role), name: e.element.name } }
+          : {};
+        // A tracked secret has no stored name: compile asks for it by this one.
         out.push({
           ...base,
           kind: "desktop",
-          op: secret ? { op: "type", text: REDACTED, secret: true } : { op: "type", text: e.text },
+          op: secret
+            ? { op: "type", window, ...el, secret: `secret ${++secrets}` }
+            : { op: "type", window, ...el, text: e.text },
           redacted: secret,
         });
         break;
@@ -106,7 +121,7 @@ export function eventsToActions(
         out.push({
           ...base,
           kind: "desktop",
-          op: { op: "key", combo: comboOf(e.key, e.mods) },
+          op: { op: "key", combo: comboOf(e.key, e.mods), ...(window ? { window } : {}) },
           redacted: false,
         });
         break;

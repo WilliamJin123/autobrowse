@@ -25,7 +25,7 @@ One vocabulary is captured by the recorder, kept in outlines, typed in flows, pr
 
 - **owned-by:** none (a value type)
 - **joins:** [[flow]] (`fp.act`), [[recording]] (`Action.target`), [[outline]], [[fix]], [[screen]] (`shows`, `hides`), [[approval]] (`paymentGate(act, hints)`), the agent digest (`hintsFor(ref)`, `src/agent/digest.ts:407`)
-- **looks-like-but-is-not:** `DesktopTarget` (`src/desktop/types.ts:16`)
+- **looks-like-but-is-not:** [[desktop-hands]] targets (`controlTargetSchema`, `src/desktop/types.ts`)
 
 ## If you change this
 

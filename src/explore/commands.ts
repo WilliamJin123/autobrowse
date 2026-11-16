@@ -1,6 +1,6 @@
 /** The explore command grammar: every command as a zod schema, which ones only look, which cannot batch, and the hints a command names turned into locator hints. */
 import { z } from "zod";
-import { desktopOpSchema } from "../desktop/types.js";
+import { desktopActSchema } from "../desktop/types.js";
 import type { LocatorHints } from "../recorder/types.js";
 
 const hintsSchema = z.object({
@@ -330,7 +330,7 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   /** What is recorded so far; `last` = only the newest n. */
   z.object({ cmd: z.literal("journal"), last: z.number().int().positive().optional() }),
   /** An act on the desktop, outside the browser: apps, menus, keys, a root command. */
-  z.object({ cmd: z.literal("os"), act: desktopOpSchema }),
+  z.object({ cmd: z.literal("os"), act: desktopActSchema }),
   /** End the session; `keep`: the journal stays, the next session on this port resumes it (`browsers stop`). */
   z.object({
     cmd: z.literal("close"),

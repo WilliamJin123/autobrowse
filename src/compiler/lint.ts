@@ -94,6 +94,11 @@ export function lintOutline(outline: Outline, known: readonly Known[] = []): str
         if ("value" in op && typeof op.value === "object" && op.value.from === "literal")
           at(`${where}.value`, op.value.text);
         if (op.kind === "shell") at(`${where}.command`, op.command);
+        // A window title or a control name can carry a person's details (a mail subject, a name).
+        if ("window" in op && op.window) at(`${where}.window.title`, op.window.title);
+        if ("control" in op && op.control) at(`${where}.control.name`, op.control.name);
+        if (op.kind === "wait") at(`${where}.text`, op.text);
+        if (op.kind === "waitFile") at(`${where}.file`, op.file);
       }
   });
   return out;

@@ -1,0 +1,27 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "launch",
+  "data": {
+    "app": "Calculator",
+    "pid": 89010,
+    "process_instance": "macos-proc-v1:1794853032:146129",
+    "window": {
+      "accessible": true,
+      "app_name": "Calculator",
+      "bounds": {
+        "height": 0.0,
+        "width": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      },
+      "id": "w-233741",
+      "is_focused": false,
+      "minimized": false,
+      "pid": 89010,
+      "process_instance": "macos-proc-v1:1794853032:146129",
+      "title": "Calculator",
+      "visible": false
+    }
+  }
+}

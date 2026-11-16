@@ -1,0 +1,20 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "press",
+  "data": {
+    "action": "press_key",
+    "disposition": {
+      "delivery": "delivered_unverified",
+      "retry": "unsafe"
+    },
+    "steps": [
+      {
+        "label": "CGEventPostToPid",
+        "mechanism": "physical_synthetic",
+        "outcome": "succeeded",
+        "verified": false
+      }
+    ]
+  }
+}

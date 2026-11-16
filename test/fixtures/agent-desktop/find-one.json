@@ -1,0 +1,21 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "find",
+  "data": {
+    "matches": [
+      {
+        "interactive": true,
+        "name": "7",
+        "path": ["window:Calculator", "group", "group", "group", "group"],
+        "ref_id": "@s5su4b6s0c747:e1",
+        "role": "button",
+        "states": [],
+        "value": null
+      }
+    ],
+    "snapshot_id": "s5su4b6s0c747",
+    "total_matches": 1,
+    "truncated": false
+  }
+}

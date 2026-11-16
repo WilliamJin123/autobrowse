@@ -121,24 +121,75 @@ export const opSchema = z.discriminatedUnion("kind", [
 ]);
 
 /**
- * Desktop ops replay through `deps.desktop`. Typed text is a value like a
- * fill's (plan field, secret, or literal); a root command is irreversible
- * by default and gated.
+ * Desktop ops: the journaled `DesktopOp` (src/desktop/types.ts) with a goal,
+ * replayed by `desktopHands(...).run`. Nullable, not optional, like the rest.
+ * Typed text is a value like a fill's (plan field, secret or literal); a root
+ * command or a click that may spend makes the step irreversible and gated.
  */
+const windowSchema = z.object({ app: z.string(), title: z.string() });
+const controlSchema = z.object({
+  role: z.string(),
+  name: z.string(),
+  nativeId: z.string().nullable(),
+});
 const desktopOpSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("open"), goal: z.string(), app: z.string() }),
+  z.object({
+    kind: z.literal("launch"),
+    goal: z.string(),
+    app: z.string(),
+    fresh: z.boolean(),
+    args: z.array(z.string()),
+  }),
   z.object({
     kind: z.literal("click"),
     goal: z.string(),
-    app: z.string().nullable(),
-    role: z.string().nullable(),
-    name: z.string(),
+    window: windowSchema,
+    control: controlSchema,
+    headed: z.boolean(),
     irreversible: z.boolean(),
   }),
-  z.object({ kind: z.literal("type"), goal: z.string(), value: valueSchema }),
-  z.object({ kind: z.literal("key"), goal: z.string(), combo: z.string() }),
+  z.object({
+    kind: z.literal("type"),
+    goal: z.string(),
+    window: windowSchema,
+    /** null: the window's focused control. */
+    control: controlSchema.nullable(),
+    value: valueSchema,
+    headed: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("key"),
+    goal: z.string(),
+    combo: z.string(),
+    /** null: the front app. */
+    window: windowSchema.nullable(),
+    headed: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("place"),
+    goal: z.string(),
+    window: windowSchema,
+    x: z.number(),
+    y: z.number(),
+    w: z.number().positive(),
+    h: z.number().positive(),
+  }),
+  z.object({ kind: z.literal("focus"), goal: z.string(), window: windowSchema }),
+  z.object({
+    kind: z.literal("wait"),
+    goal: z.string(),
+    window: windowSchema,
+    text: z.string(),
+    timeoutS: z.number().positive().nullable(),
+  }),
+  z.object({
+    kind: z.literal("waitFile"),
+    goal: z.string(),
+    file: z.string(),
+    timeoutS: z.number().positive().nullable(),
+  }),
+  z.object({ kind: z.literal("sleep"), goal: z.string(), ms: z.number().int().positive() }),
   z.object({ kind: z.literal("shell"), goal: z.string(), command: z.string(), root: z.boolean() }),
-  z.object({ kind: z.literal("wait"), goal: z.string(), ms: z.number().int().positive() }),
 ]);
 
 export const fieldSchema = z.object({

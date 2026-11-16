@@ -133,7 +133,7 @@ describe("exploreWithAgent", () => {
   it("with desktop off, offers no os act and refuses one sent", async () => {
     const { ex, calls } = fakeExplorer(['- button "Only"']);
     const llm = fakeLlm([
-      { thought: "shell", action: { cmd: "os", act: { op: "tree" }, goal: "x" } },
+      { thought: "shell", action: { cmd: "os", act: { op: "windows" }, goal: "x" } },
       { thought: "ok", action: { cmd: "done", summary: "s", achieved: true } },
     ]);
     const r = await exploreWithAgent({ explorer: ex, llm, goal: "g", desktop: false });

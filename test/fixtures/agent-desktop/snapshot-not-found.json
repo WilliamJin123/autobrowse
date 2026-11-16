@@ -1,0 +1,19 @@
+{
+  "version": "2.6",
+  "ok": false,
+  "command": "click",
+  "error": {
+    "code": "SNAPSHOT_NOT_FOUND",
+    "message": "Snapshot 'szzzzzzzzzzz' not found",
+    "suggestion": "Re-run a snapshot and retry with a ref from the returned snapshot (CLI: snapshot, then use the printed @<snapshot_id>:eN ref; FFI: ad_snapshot then pass the printed qualified ref to ad_execute_by_ref). Snapshots are scoped to the session that took them, so take the snapshot under the same --session or AGENT_DESKTOP_SESSION you act with: one taken outside a session is not visible to a session-scoped action, and re-running it outside the session will fail the same way",
+    "recovery": {
+      "strategy": "refresh_snapshot_then_retry_original",
+      "retryable": true,
+      "requires_fresh_snapshot": true
+    },
+    "disposition": {
+      "delivery": "not_delivered",
+      "retry": "safe"
+    }
+  }
+}

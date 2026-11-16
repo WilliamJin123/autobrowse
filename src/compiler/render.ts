@@ -294,30 +294,93 @@ function renderDesktopValue(v: OpValue): string {
   }
 }
 
-function renderDesktopOp(op: DesktopOutlineOp, i: number): string {
-  const act = (src: string) =>
-    `    await fx.run(${q(`desktop ${i} ${op.kind}`)}, () => ${src}); // ${op.goal}`;
+/** Object source with its keys in order; `undefined` and null entries left out. */
+const objSrc = (entries: [string, string | undefined][]): string =>
+  `{ ${entries.flatMap(([k, v]) => (v === undefined ? [] : [`${k}: ${v}`])).join(", ")} }`;
+const windowSrc = (w: { app: string; title: string }) =>
+  objSrc([
+    ["app", q(w.app)],
+    ["title", q(w.title)],
+  ]);
+const controlSrc = (c: { role: string; name: string; nativeId: string | null }) =>
+  objSrc([
+    ["role", q(c.role)],
+    ["name", q(c.name)],
+    ["nativeId", c.nativeId === null ? undefined : q(c.nativeId)],
+  ]);
+const headedSrc = (h: boolean) => (h ? "true" : undefined);
+
+/** The journaled `DesktopOp` an outline op replays, as source. */
+function desktopOpSrc(op: DesktopOutlineOp): string | null {
   switch (op.kind) {
-    case "open":
-      return act(`deps.desktop.open(${q(op.app)})`);
+    case "launch":
+      return objSrc([
+        ["op", q("launch")],
+        ["app", q(op.app)],
+        ["fresh", op.fresh ? "true" : undefined],
+        ["args", op.args.length ? JSON.stringify(op.args) : undefined],
+      ]);
     case "click":
-      return act(
-        `deps.desktop.click({ ${[
-          ...(op.app ? [`app: ${q(op.app)}`] : []),
-          ...(op.role ? [`role: ${q(op.role)}`] : []),
-          `name: ${q(op.name)}`,
-        ].join(", ")} })`,
-      );
+      return objSrc([
+        ["op", q("click")],
+        ["window", windowSrc(op.window)],
+        ["control", controlSrc(op.control)],
+        ["headed", headedSrc(op.headed)],
+      ]);
     case "type":
-      // The journal keeps only that the step ran, never what was typed.
-      return act(`deps.desktop.type(${renderDesktopValue(op.value)}).then(() => undefined)`);
+      return objSrc([
+        ["op", q("type")],
+        ["window", windowSrc(op.window)],
+        ["control", op.control ? controlSrc(op.control) : undefined],
+        ["text", renderDesktopValue(op.value)],
+        ["headed", headedSrc(op.headed)],
+      ]);
     case "key":
-      return act(`deps.desktop.key(${q(op.combo)})`);
-    case "shell":
-      return `    await sh(${i}, ${q(op.command)}${op.root ? ", true" : ""}); // ${op.goal}`;
+      return objSrc([
+        ["op", q("key")],
+        ["combo", q(op.combo)],
+        ["window", op.window ? windowSrc(op.window) : undefined],
+        ["headed", headedSrc(op.headed)],
+      ]);
+    case "place":
+      return objSrc([
+        ["op", q("place")],
+        ["window", windowSrc(op.window)],
+        ["x", String(op.x)],
+        ["y", String(op.y)],
+        ["w", String(op.w)],
+        ["h", String(op.h)],
+      ]);
+    case "focus":
+      return objSrc([
+        ["op", q("focus")],
+        ["window", windowSrc(op.window)],
+      ]);
     case "wait":
-      return `    await fx.sleep(${op.ms});`;
+      return objSrc([
+        ["op", q("wait")],
+        ["window", windowSrc(op.window)],
+        ["text", q(op.text)],
+        ["timeoutS", op.timeoutS === null ? undefined : String(op.timeoutS)],
+      ]);
+    case "waitFile":
+      return objSrc([
+        ["op", q("waitFile")],
+        ["file", q(op.file)],
+        ["timeoutS", op.timeoutS === null ? undefined : String(op.timeoutS)],
+      ]);
+    case "sleep":
+    case "shell":
+      return null;
   }
+}
+
+function renderDesktopOp(op: DesktopOutlineOp, i: number): string {
+  if (op.kind === "sleep") return `    await fx.sleep(${op.ms}); // ${op.goal}`;
+  if (op.kind === "shell")
+    return `    await sh(${i}, ${q(op.command)}${op.root ? ", true" : ""}); // ${op.goal}`;
+  // The journal keeps only that the op ran: never typed text, never a window id.
+  return `    await fx.run(${q(`desktop ${i} ${op.kind}`)}, () => hands.run(${desktopOpSrc(op)}).then(() => undefined)); // ${op.goal}`;
 }
 
 function renderDesktopStep(step: Extract<OutlineStep, { kind: "desktop" }>): string {
@@ -331,6 +394,7 @@ function renderDesktopStep(step: Extract<OutlineStep, { kind: "desktop" }>): str
   ];
   const usesPlan = step.ops.some((op) => op.kind === "type" && op.value.from === "plan");
   const anyShell = step.ops.some((op) => op.kind === "shell");
+  const anyHands = step.ops.some((op) => op.kind !== "shell" && op.kind !== "sleep");
   const gate = step.irreversible
     ? `    const answer = gate("send", ${q(`Run "${step.name}" (${step.description || "irreversible"})?`)});\n    if (!answer.approved) return rejected(answer.note ?? "declined");\n`
     : "";
@@ -338,6 +402,7 @@ function renderDesktopStep(step: Extract<OutlineStep, { kind: "desktop" }>): str
     (k) =>
       `    // Outside fx.run on purpose: the journal must never hold it.\n    const ${k} = await deps.secrets.get(${q(k)});`,
   );
+  const hands = anyHands ? "    const hands = desktopHands(deps.desktop);\n" : "";
   const shell = anyShell
     ? `    // Only the exit code is journaled: command output can hold tokens.
     const sh = async (i: number, cmd: string, root = false) => {
@@ -350,10 +415,42 @@ function renderDesktopStep(step: Extract<OutlineStep, { kind: "desktop" }>): str
   return `const ${id}: Step<${q(step.name)}> = {
   name: ${q(step.name)},${step.irreversible ? "\n  irreversible: true," : ""}
   async run({ ${ctx.join(", ")} }) {
-${gate}${secretLines.length ? `${secretLines.join("\n")}\n` : ""}${shell}${step.ops.map(renderDesktopOp).join("\n")}
+${gate}${secretLines.length ? `${secretLines.join("\n")}\n` : ""}${hands}${shell}${step.ops.map(renderDesktopOp).join("\n")}
     return done(${q(step.description || step.name)});
   },
 };`;
+}
+
+/** Fake windows for the generated test: every window an op names, with the controls it uses. */
+export function fakeWindowsOf(o: Outline): string {
+  const wins = new Map<string, { app: string; title: string; rows: [string, string][] }>();
+  const at = (w: { app: string; title: string }) => {
+    const k = `${w.app}\u0000${w.title}`;
+    const e = wins.get(k) ?? { app: w.app, title: w.title, rows: [] };
+    wins.set(k, e);
+    return e;
+  };
+  const row = (w: { app: string; title: string }, r: [string, string]) => {
+    const e = at(w);
+    if (!e.rows.some((x) => x[0] === r[0] && x[1] === r[1])) e.rows.push(r);
+  };
+  for (const s of o.steps) {
+    if (s.kind !== "desktop") continue;
+    for (const op of s.ops) {
+      if (op.kind === "click") row(op.window, [op.control.role, op.control.name]);
+      else if (op.kind === "type")
+        row(op.window, op.control ? [op.control.role, op.control.name] : ["textfield", ""]);
+      else if (op.kind === "wait") row(op.window, ["text", op.text]);
+      else if (op.kind === "key" && op.window) at(op.window);
+      else if (op.kind === "place" || op.kind === "focus") at(op.window);
+      else if (op.kind === "launch") at({ app: op.app, title: "" });
+    }
+  }
+  // A launch with no other op names its app's window by an empty title piece; drop it when a titled one exists.
+  const list = [...wins.values()].filter(
+    (w) => w.title !== "" || ![...wins.values()].some((x) => x.app === w.app && x.title !== ""),
+  );
+  return `[${list.map((w, i) => `fakeWindow(${q(`w-${i + 1}`)}, ${q(w.app)}, ${q(w.title || w.app)}, ${JSON.stringify(w.rows)})`).join(", ")}]`;
 }
 
 export function render(o: Outline, opts: RenderOptions = {}): Rendered {
@@ -371,6 +468,12 @@ export function render(o: Outline, opts: RenderOptions = {}): Rendered {
   const anyGate = o.steps.some((s) => s.irreversible);
   const anyTerminal = o.steps.some((s) => s.kind === "terminal");
   const anyDesktop = o.steps.some((s) => s.kind === "desktop");
+  const anyHands = o.steps.some(
+    (s) => s.kind === "desktop" && s.ops.some((op) => op.kind !== "shell" && op.kind !== "sleep"),
+  );
+  const waitFiles = o.steps.flatMap((s) =>
+    s.kind === "desktop" ? s.ops.flatMap((op) => (op.kind === "waitFile" ? [op.file] : [])) : [],
+  );
   const anyKeep = o.steps.some(
     (s) => s.kind === "browser" && s.ops.some((op) => op.kind === "keep"),
   );
@@ -395,6 +498,7 @@ export function render(o: Outline, opts: RenderOptions = {}): Rendered {
     ...(anySecret ? ["type SecretSource"] : []),
     ...(anyTerminal ? ["type Shell"] : []),
     ...(anyDesktop ? ["type Desktop"] : []),
+    ...(anyHands ? ["desktopHands"] : []),
     ...(anyKeep ? ["type SecretSink"] : []),
     "type StepDef",
   ].sort((a, b) => a.replace("type ", "").localeCompare(b.replace("type ", "")));
@@ -462,11 +566,16 @@ export const workflow = defineWorkflow<Deps, Memo>()({
       ? [`secrets: memorySecrets({ ${o.secrets.map((s) => `${s.key}: "x"`).join(", ")} })`]
       : []),
     ...(anyTerminal ? ["shell: fakeShell()"] : []),
-    ...(anyDesktop ? ["desktop: fakeDesktop()"] : []),
+    ...(anyDesktop
+      ? [
+          `desktop: fakeDesktop(${fakeWindowsOf(o)}${waitFiles.length ? `, { files: ${JSON.stringify(waitFiles)} }` : ""})`,
+        ]
+      : []),
     ...(anyKeep ? ["sink: memorySink()"] : []),
   ].join(", ");
   const testImports = [
     ...(anyDesktop ? ["fakeDesktop"] : []),
+    ...(anyHands ? ["fakeWindow"] : []),
     ...(anyKeep ? ["memorySink"] : []),
     ...(anyTerminal ? ["fakeShell"] : []),
     "memoryEffects",

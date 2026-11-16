@@ -1,0 +1,28 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "click",
+  "data": {
+    "action": "click",
+    "details": {
+      "auto_wait": {
+        "lease_contention_count": 0,
+        "lease_hold_ms": 85,
+        "read_only_preflight_attempts": 1,
+        "read_only_resolve_attempts": 1
+      }
+    },
+    "disposition": {
+      "delivery": "delivered_unverified",
+      "retry": "unsafe"
+    },
+    "steps": [
+      {
+        "label": "AXPress",
+        "mechanism": "semantic_api",
+        "outcome": "succeeded",
+        "verified": false
+      }
+    ]
+  }
+}

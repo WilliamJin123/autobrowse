@@ -1,0 +1,39 @@
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "find",
+  "data": {
+    "matches": [
+      {
+        "interactive": true,
+        "name": "Delete",
+        "path": ["window", "group", "group", "group", "group"],
+        "ref_id": "@s3phnc06m36g1p:e1",
+        "role": "button",
+        "states": [],
+        "value": null
+      },
+      {
+        "interactive": true,
+        "name": "All Clear",
+        "path": ["window", "group", "group", "group", "group"],
+        "ref_id": "@s3phnc06m36g1p:e2",
+        "role": "button",
+        "states": [],
+        "value": null
+      },
+      {
+        "interactive": true,
+        "name": "Percent",
+        "path": ["window", "group", "group", "group", "group"],
+        "ref_id": "@s3phnc06m36g1p:e3",
+        "role": "button",
+        "states": [],
+        "value": null
+      }
+    ],
+    "snapshot_id": "s3phnc06m36g1p",
+    "total_matches": 25,
+    "truncated": false
+  }
+}

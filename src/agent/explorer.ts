@@ -10,7 +10,7 @@
  */
 import { z } from "zod";
 import type { Extra } from "../browser/extras.js";
-import { desktopOpSchema } from "../desktop/types.js";
+import { desktopActSchema } from "../desktop/types.js";
 import { unfence } from "../explore/boundary.js";
 import type { ExploreCommand, Explorer } from "../explore/server.js";
 import { PaymentGate } from "../gates/payment.js";
@@ -57,7 +57,7 @@ const actionSchema = z.discriminatedUnion("cmd", [
   z.object({ cmd: z.literal("keep"), ref, env: z.string().regex(/^[A-Z][A-Z0-9_]*$/) }),
   /** The goal is met (or cannot be): say what happened. */
   /** Outside the browser: an app, a menu, a key, a shell command on this machine. */
-  z.object({ cmd: z.literal("os"), act: desktopOpSchema, goal: z.string() }),
+  z.object({ cmd: z.literal("os"), act: desktopActSchema, goal: z.string() }),
   z.object({ cmd: z.literal("done"), summary: z.string(), achieved: z.boolean() }),
   /** Something only a person can do (a captcha, a choice with money on it). */
   z.object({ cmd: z.literal("human"), reason: z.string() }),
@@ -188,16 +188,17 @@ Actions, with "cmd" set to exactly one of these words:
   {"cmd":"read","ref":n,"as":"camelName"}   (keep an element's text under a name; a workflow built from this run will read it the same way)
   {"cmd":"records","as":"camelName","goal":"what the rows are","fields":[{"key":"title","says":"what it holds"}],"max":10}   (a list on the page as rows; a workflow built from this run reads the list again, whatever it holds then)
   {"cmd":"keep","ref":n,"env":"SOME_API_KEY"}   (a key, token or password the site just minted: it goes straight to the secret store under that env name; never read or quote it. A name that already holds another value is never replaced: pick a name that says what this key is for)
-  {"cmd":"os","act":{"op":"tree"},"goal":"why"}   (the desktop, outside the browser: the front app's controls as role "name" lines)
-  {"cmd":"os","act":{"op":"open","app":"System Settings"},"goal":"why"}
-  {"cmd":"os","act":{"op":"click","role":"button","name":"Allow"},"goal":"why"}   (role and name exactly as the tree printed them; "app" narrows to one app)
-  {"cmd":"os","act":{"op":"type","text":"...","secret":false},"goal":"why"}   (secret:true for a password: it is then kept out of the record)
-  {"cmd":"os","act":{"op":"key","combo":"cmd+q"},"goal":"why"}   (return, tab, escape, arrows, or a letter with cmd/shift/alt/ctrl)
+  {"cmd":"os","act":{"op":"windows"},"goal":"why"}   (the desktop, outside the browser: each window's id, app and title)
+  {"cmd":"os","act":{"op":"snapshot","window":"w-123"},"goal":"why"}   (one window's controls as role "name" lines, each with its @ref)
+  {"cmd":"os","act":{"op":"launch","app":"System Settings"},"goal":"why"}
+  {"cmd":"os","act":{"op":"click","ref":"@s1:e4"},"goal":"why"}   (a ref from the newest snapshot of that window)
+  {"cmd":"os","act":{"op":"type","ref":"@s1:e2","text":"..."},"goal":"why"}   (no ref: the window's focused control; {"secret":"name"} instead of text for a stored value)
+  {"cmd":"os","act":{"op":"key","combo":"cmd+q","window":"w-123"},"goal":"why"}   (return, tab, escape, arrows, or a letter with cmd/shift/alt/ctrl)
   {"cmd":"os","act":{"op":"shell","command":"...","root":false},"goal":"why"}   (root=true only when the goal needs it; output comes back)
   {"cmd":"done","summary":"what happened","achieved":true|false}
   {"cmd":"human","reason":"why a person must do this"}
 ref is the [n] of a control in the outline; only those numbers exist.
-Use os acts only when the goal is outside the browser (an app, a system setting, a file, a command); look with tree before clicking.
+Use os acts only when the goal is outside the browser (an app, a system setting, a file, a command); snapshot a window before clicking in it.
 Control names carry content too: a link named "Name Jane Doe" tells you the name is Jane Doe. When the goal asks you to report or collect something, read it with read{ref,as} first, then quote it in the done summary. For a list (results, rows, items), use one records act, never one read per item: a read finds its element by the text it shows, so it finds only that same text again. Name a records or read "as" for what it holds ("stories", "price"), never after the values you typed: a workflow built from this run fills in other values.
 An "iframe:" section is a frame inside the page (a captcha, an embedded sign-in); its refs work like any other.
 A "not in the tree:" section lists controls the outline misses (inside a closed web component, or a card clickable only by script); click or fill them like any other ref.

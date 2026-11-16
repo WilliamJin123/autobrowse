@@ -31,7 +31,7 @@ Robustness lives in one place: a pause to read, a curved reach, typing in runs w
 ## If you change this
 
 - **Hits:** `src/browser/flow.ts`, `src/browser/captcha/index.ts`, `src/explore/server.ts` (pace option).
-- **Does not hit:** the desktop leg (`src/desktop/mac.ts`), locators.
+- **Does not hit:** the desktop leg ([[desktop-hands]]), locators.
 
 ## Surfaces
 
