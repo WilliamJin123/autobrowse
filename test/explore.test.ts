@@ -85,6 +85,7 @@ describe("explore mode", () => {
     // Clear of the fixed 94xx loopback ports the oauth tests listen on.
     port = 9500 + Math.floor(Math.random() * 200);
     ({ done, token } = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port,
       desktop,
@@ -892,6 +893,7 @@ describe("pause: a person's hand acts land in the journal", () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-pause-"));
     const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port,
       recordingsDir: join(dir, "recordings"),
@@ -944,6 +946,7 @@ describe("a session nobody closes", () => {
   it("closes itself after its idle time, browser and all", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-idle-"));
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port: 9950 + Math.floor(Math.random() * 40),
       recordingsDir: join(dir, "recordings"),
@@ -973,6 +976,7 @@ describe("a session nobody closes", () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-owner-"));
     const tokenFile = join(dir, "explore-9000.token");
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port: 9950 + Math.floor(Math.random() * 40),
       recordingsDir: join(dir, "recordings"),
@@ -1012,6 +1016,7 @@ describe("a session nobody closes", () => {
   it("never idle-closes while a command runs; idle counts from its end", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-idle-"));
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port: 9950 + Math.floor(Math.random() * 40),
       recordingsDir: join(dir, "recordings"),
@@ -1054,6 +1059,7 @@ describe("a session nobody closes", () => {
     await new Promise<void>((r) => site.listen(0, r));
     const port = (site.address() as { port: number }).port;
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port: 9950 + Math.floor(Math.random() * 40),
       recordingsDir: join(dir, "recordings"),
@@ -1088,6 +1094,7 @@ describe("a session that dies", () => {
     const journalFile = journalFileFor(join(dir, "recordings"), "scratch", "test");
     const start = (idleMinutes = 0) =>
       startExplore({
+        actTimeoutMs: 2_000, // a miss fails fast
         site: "scratch",
         port: 9700 + Math.floor(Math.random() * 90),
         recordingsDir: join(dir, "recordings"),
@@ -1165,6 +1172,7 @@ describe("help without a pause", () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-help-"));
     const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port,
       recordingsDir: join(dir, "recordings"),
@@ -1223,6 +1231,7 @@ describe("a missed act in the history", () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-miss-"));
     const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port,
       recordingsDir: join(dir, "recordings"),
@@ -1265,6 +1274,7 @@ describe("what the model saw, for training", () => {
     const runs = join(dir, "runs");
     const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
+      actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port,
       recordingsDir: join(dir, "recordings"),
@@ -1351,6 +1361,7 @@ describe("a session that cannot open", () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-fail-"));
     await expect(
       startExplore({
+        actTimeoutMs: 2_000, // a miss fails fast
         site: "scratch",
         port: 9950 + Math.floor(Math.random() * 40),
         recordingsDir: join(dir, "recordings"),
@@ -1402,6 +1413,7 @@ describe("network and html", () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-net-"));
     const session = () =>
       startExplore({
+        actTimeoutMs: 2_000, // a miss fails fast
         site: "scratch",
         port: 9600 + Math.floor(Math.random() * 150),
         recordingsDir: join(dir, "recordings"),

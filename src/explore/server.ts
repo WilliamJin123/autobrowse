@@ -379,6 +379,8 @@ export interface ExploreOptions {
   signInOn?: "url" | "any";
   /** Delays around acts; null (the default) answers a console at once, an agent passes human pace. */
   pace?: RunnerOptions["pace"];
+  /** How long an act waits for its control before it misses; default 10 s. */
+  actTimeoutMs?: number;
   /** Captcha walls: checkboxes by hand, pictures when the eyes see. */
   captcha?: RunnerOptions["captcha"];
   /** The desktop `os` acts run on; this Mac by default, none on a headless host. */
@@ -732,6 +734,7 @@ async function serve(
   leg: LegLogin = { site: null, stop: null },
 ): Promise<Explorer> {
   const now = opts.now ?? Date.now;
+  const actMs = opts.actTimeoutMs ?? 10_000;
   const t0 = now();
   const startedAt = new Date(t0).toISOString();
   const infoFile = opts.tokenFile ? `${opts.tokenFile.replace(/\.token$/, "")}.json` : null;
@@ -1361,7 +1364,7 @@ async function serve(
                 e.getAttribute("aria-label") ||
                 "",
               undefined,
-              { timeout: 10_000 },
+              { timeout: actMs },
             )
             .catch(() => "")
         : "";
@@ -1372,7 +1375,7 @@ async function serve(
     const what = paymentGate(act, hints);
     if (!what) return null;
     // A miss is a miss, not a question: the element must be there before anyone is asked.
-    await find(t).first().waitFor({ state: "visible", timeout: 10_000 });
+    await find(t).first().waitFor({ state: "visible", timeout: actMs });
     // The button's own amount, else the order total next to it, else a question with no amount.
     const amount =
       act === "click"
@@ -1498,7 +1501,7 @@ async function serve(
         const kind = billingKind(f.label);
         const value = kind ? want[kind] : undefined;
         if (!kind || !value || holdsBilling(kind, f.value, value)) continue;
-        await hands.paste(frame.locator(`[data-ab-billing="${f.i}"]`), value, { timeout: 10_000 });
+        await hands.paste(frame.locator(`[data-ab-billing="${f.i}"]`), value, { timeout: actMs });
         set.push(kind);
       }
     }
@@ -1549,7 +1552,7 @@ async function serve(
     }
     await audit(true);
     await hands.think(page);
-    await hands.paste(find(c), value, { timeout: 10_000 });
+    await hands.paste(find(c), value, { timeout: actMs });
     journalAct(c, (target) => ({
       kind: "input",
       target,
@@ -1628,7 +1631,7 @@ async function serve(
       );
     await audit(true);
     await hands.think(page);
-    await hands.paste(find(c), secret(code), { timeout: 10_000 });
+    await hands.paste(find(c), secret(code), { timeout: actMs });
     journalAct(c, (target) => ({
       kind: "input",
       target,
@@ -2503,7 +2506,7 @@ async function serve(
         const spent = await gate("click", c, wait);
         const billing = spent ? await fillBilling() : [];
         await hands.think(page);
-        await hands.click(find(c), { timeout: 10_000, ...(c.at ? { at: c.at } : {}) });
+        await hands.click(find(c), { timeout: actMs, ...(c.at ? { at: c.at } : {}) });
         await settle(page);
         journalAct(c, (target) => ({ kind: "click", target }));
         // A receipt only for the click that takes money; checkout or "add a card" only led there.
@@ -2513,21 +2516,21 @@ async function serve(
       }
       case "hover": {
         await hands.think(page);
-        await hands.hover(find(c), { timeout: 10_000 });
+        await hands.hover(find(c), { timeout: actMs });
         await settle(page);
         journalAct(c, (target) => ({ kind: "hover", target }));
         return { url: page.url() };
       }
       case "drag": {
         await hands.think(page);
-        await hands.drag(find(c), c.from, c.to, { timeout: 10_000 });
+        await hands.drag(find(c), c.from, c.to, { timeout: actMs });
         await settle(page);
         return { url: page.url() };
       }
       case "fill": {
         await gate("fill", c, wait);
         await hands.think(page);
-        stepTyped = await hands.type(find(c), c.value, { timeout: 10_000 });
+        stepTyped = await hands.type(find(c), c.value, { timeout: actMs });
         const secret =
           looksLikeSecretField(toLocatorHints(c.hints)) || looksLikeSecretValue(c.value);
         journalAct(c, (target) => ({
@@ -2567,7 +2570,7 @@ async function serve(
         await gate("fill", c, wait);
         await hands.think(page);
         // A secret arrives whole, as autofill or a password manager puts it; nobody types a minted password.
-        await hands.paste(find(c), value, { timeout: 10_000 });
+        await hands.paste(find(c), value, { timeout: actMs });
         journalAct(c, (target) => ({
           kind: "input",
           target,
@@ -2580,7 +2583,7 @@ async function serve(
       case "select": {
         await gate("select", c, wait);
         await hands.think(page);
-        await chooseOption(find(c), c.value, 10_000, hands);
+        await chooseOption(find(c), c.value, actMs, hands);
         journalAct(c, (target) => ({ kind: "select", target, value: c.value }));
         return { ok: true };
       }
@@ -2590,7 +2593,7 @@ async function serve(
           c.hints as Hints,
           {
             goal: c.goal ?? "upload",
-            timeoutMs: 10_000,
+            timeoutMs: actMs,
           },
         );
         await settle(page);
@@ -2602,7 +2605,7 @@ async function serve(
         const spent = activates(c.key) ? await gate("click", c, wait) : null;
         const billing = spent ? await fillBilling() : [];
         await hands.think(page);
-        await hands.press(find(c), c.key, { timeout: 10_000 });
+        await hands.press(find(c), c.key, { timeout: actMs });
         await settle(page);
         journalAct(c, (target) => ({ kind: "press", target, key: c.key }));
         const set = billing.length ? { billing } : {};
@@ -2623,7 +2626,7 @@ async function serve(
               )
               .catch(() => false)
           : false;
-        stepTyped = await hands.type(page, c.text, { timeout: 10_000 });
+        stepTyped = await hands.type(page, c.text, { timeout: actMs });
         if (!into || !held)
           return {
             ok: true,
@@ -2644,7 +2647,7 @@ async function serve(
         // Enter or Space presses whatever has focus: judged as a click on it.
         const focused = { ...c, hints: { css: "*:focus" } } as unknown as Target;
         const spent = activates(c.key) ? await gate("click", focused, wait) : null;
-        await hands.press(page, c.key, { timeout: 10_000 });
+        await hands.press(page, c.key, { timeout: actMs });
         await settle(page);
         if (spent?.charges) return { url: page.url(), told: await reportSpend(spent) };
         return { url: page.url() };
@@ -2839,7 +2842,7 @@ async function serve(
                 new Function("el", `return (${c.js})(el);`) as (el: unknown) => unknown,
                 undefined,
                 {
-                  timeout: 10_000,
+                  timeout: actMs,
                 },
               )
           : await inPage(page, c.js);
@@ -2871,7 +2874,7 @@ async function serve(
       case "count":
         return { count: await locateAll(page, c.hints as Hints).count() };
       case "read": {
-        const text = (await find(c).first().innerText({ timeout: 10_000 })).trim();
+        const text = (await find(c).first().innerText({ timeout: actMs })).trim();
         const fit = fitText(shotsDir, "read", out(text, false), 2_000);
         const shown = fit.text;
         journalAct(c, (target) => ({ kind: "read", target, as: c.as, value: shown }));
