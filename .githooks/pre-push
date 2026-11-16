@@ -3,4 +3,12 @@
 # was one of these. Fix with `pnpm biome check --write $(peers files)`; skip with --no-verify.
 set -e
 pnpm -s lint
-pnpm -s typecheck
+# Typecheck queues on the Mac's checks lock (one tsc at a time, as the gates do); CI and a run that
+# already holds the lock skip it.
+set --
+if [ -z "${CI:-}" ] && [ -z "${CHECKS_LOCKED:-}" ]; then
+  LOCK=/tmp/wren_automation-checks.lock
+  lockf -s -t 0 "$LOCK" true || echo "==> waiting for another gate run to finish"
+  set -- lockf -s "$LOCK"
+fi
+CHECKS_LOCKED=1 "$@" pnpm -s typecheck
