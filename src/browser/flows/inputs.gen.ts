@@ -124,6 +124,7 @@ import {
   xListPosts,
   xLists,
   xPeople,
+  xSearchPosts,
   xThread,
   xTrending,
   xUserPosts,
@@ -897,6 +898,16 @@ export const FLOW_INPUTS: readonly FlowInput[] = [
         .optional(),
     }),
     true,
+  ),
+  entry(
+    xSearchPosts,
+    z.object({
+      q: z.string(),
+      product: z.union([z.literal("latest"), z.literal("top"), z.literal("media")]).optional(),
+      max: z.number().optional(),
+    }),
+    true,
+    "Posts X search finds for `q` (its own operators as typed), each tweet whole (`SearchTimeline`); ads left out.",
   ),
   entry(
     xThread,

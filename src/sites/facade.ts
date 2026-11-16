@@ -498,6 +498,8 @@ export function siteFacade(sites: readonly SiteApi[], deps: SiteFacadeDeps): Sit
         ? ((await deps.accountOf?.(deps.providerOf?.(s) ?? s.site, named)) ?? named)
         : named;
       const { r, params } = routeOf(s, method, path);
+      if (r.asOnly && named !== r.asOnly && `${s.site}@${named}` !== r.asOnly)
+        throw new SiteError(400, `${method} ${r.path} runs as ${r.asOnly} only; name that account`);
       const parsed = requestOf(r, path, params, input);
       // Named by the caller, else by the accounts policy. A policy pick falls back to the site's own
       // token at a provider's site, and at a site whose key a browser flow mints (npm, Cal.com: one

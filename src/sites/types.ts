@@ -110,6 +110,8 @@ export interface SiteRoute<I = unknown, O = unknown> {
   ported?: string;
   /** Publishes something: said in the route listing so an orchestrator gates it. */
   irreversible?: boolean;
+  /** The one credential this route runs as (`x@wren`): a call naming another, or none, is refused. */
+  asOnly?: string;
   /**
    * How a keyed call of this irreversible route proves what happened after an unclear end
    * (`sites/verdict.ts`), or `{ none }` with why no read can. Every irreversible route has one.

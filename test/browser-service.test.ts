@@ -187,6 +187,7 @@ describe("browser service", () => {
       "x/profile-name",
       "x/reply",
       "x/search",
+      "x/search-posts",
       "x/thread",
       "x/trending",
       "x/user-posts",

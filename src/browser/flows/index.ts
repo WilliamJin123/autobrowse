@@ -194,6 +194,7 @@ export {
   xListPosts,
   xLists,
   xPeople,
+  xSearchPosts,
   xThread,
   xTrending,
   xUserPosts,

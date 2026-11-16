@@ -11,6 +11,7 @@ import { defineFlow, type FlowPage } from "../flow.js";
 import { RungBroke } from "../ladder.js";
 import { captureJson } from "../page-json.js";
 import { scrollCollect } from "../scroll-collect.js";
+import { AccessRefused } from "../session.js";
 
 const WEB = "https://x.com";
 const SIGNED_OUT = /\/(i\/flow\/login|login)\b/;
@@ -41,7 +42,13 @@ export function entitiesOf(
       return;
     }
     const o = v as Record<string, unknown>;
-    if (kind === "tweet" && o.tweet_results && typeof o.tweet_results === "object") {
+    // an ad's cell carries `promotedMetadata` beside its tweet: not a post the read asked for
+    if (
+      kind === "tweet" &&
+      o.tweet_results &&
+      typeof o.tweet_results === "object" &&
+      !o.promotedMetadata
+    ) {
       let r = (o.tweet_results as { result?: Record<string, unknown> }).result;
       // A tweet with visibility results wraps the tweet one level down.
       if (r && r.__typename === "TweetWithVisibilityResults")
@@ -80,14 +87,25 @@ export interface Captured {
 /** Opens `url`, keeps answers of `ops` while scrolling, returns the entities of `kind`. */
 export async function captureOps(
   fp: FlowPage,
-  o: { url: string; ops: readonly string[]; kind: Kind; max: number; scroll?: boolean },
+  o: {
+    url: string;
+    ops: readonly string[];
+    kind: Kind;
+    max: number;
+    scroll?: boolean;
+    /** An answer with no entity is a result (a search with no hits), not a page from memory. */
+    emptyOk?: boolean;
+  },
 ): Promise<(Captured & { bodies: unknown[]; ops: string[] }) | "signed_out"> {
   const seen = new Map<string, Record<string, unknown>>();
   // what came instead, for the miss message
   const ops = new Set<string>();
+  // a 429 on one of `ops`: no reload, no scroll (one more call would only deepen the limit)
+  let limited = false;
   const onAny = (r: { url(): string; status(): number }) => {
     const op = /\/graphql\/[^/]+\/(\w+)/.exec(r.url())?.[1];
     if (op) ops.add(`${op} ${r.status()}`);
+    if (op && r.status() === 429 && o.ops.includes(op)) limited = true;
   };
   fp.page.on("response", onAny);
   const { bodies } = await captureJson(fp, { match: opsMatch(o.ops) }, async (got) => {
@@ -95,13 +113,17 @@ export async function captureOps(
     if (SIGNED_OUT.test(fp.url())) return;
     // first answer holding `kind`: another op (UserByScreenName) can land first
     const has = () => got.some((b) => entitiesOf(b, o.kind).size > 0);
-    for (let i = 0; i < 15 && !has(); i++) await fp.wait(700);
+    // an op answered with nothing of `kind` (a search with no hits): done waiting
+    const answered = () => got.length > 0;
+    for (let i = 0; i < 15 && !has() && !limited && !(o.emptyOk && answered()); i++)
+      await fp.wait(700);
     // same profile twice in one tab: X renders from memory, no call; a reload asks again
-    if (!has()) {
+    if (!has() && !limited && !(o.emptyOk && answered())) {
       await fp.page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
-      for (let i = 0; i < 15 && !has(); i++) await fp.wait(700);
+      for (let i = 0; i < 15 && !has() && !limited && !(o.emptyOk && answered()); i++)
+        await fp.wait(700);
     }
-    if (o.scroll === false) return;
+    if (o.scroll === false || limited || (o.emptyOk && !has())) return;
     await scrollCollect(fp, {
       read: async () => {
         for (const b of got) entitiesOf(b, o.kind, seen);
@@ -117,6 +139,11 @@ export async function captureOps(
     });
   }).finally(() => fp.page.off("response", onAny));
   if (SIGNED_OUT.test(fp.url())) return "signed_out";
+  if (limited && !bodies.some((b) => entitiesOf(b, o.kind).size))
+    throw new AccessRefused(
+      "rate_limited",
+      `X answered ${o.ops.join("/")} with 429 (${fp.url()}): stop, try tomorrow`,
+    );
   if (!bodies.length)
     throw new RungBroke(
       `no ${o.ops.join("/")} answer seen (calls: ${[...ops].join(", ") || "none"}; ${fp.url()})`,
@@ -300,6 +327,43 @@ export const xUserPosts = defineFlow<{ username: string; max?: number }, UserPos
       // GraphQL calls the page made: tells empty or short from renamed
       seen: c.ops,
     };
+  },
+});
+
+export type SearchProduct = "top" | "latest" | "media";
+/** The page's tab per product (`f`): Latest is `live`, as `X_SEARCH`'s sort facet writes it. */
+const SEARCH_TAB: Record<SearchProduct, string> = { top: "top", latest: "live", media: "media" };
+
+export interface SearchPosts extends Captured {
+  q: string;
+  product: SearchProduct;
+  /** `SearchTimeline` answered: an empty `items` is then no hits, not a broken read. */
+  found: boolean;
+  seen: string[];
+}
+
+/** Posts X search finds for `q` (its own operators as typed), each tweet whole (`SearchTimeline`); ads left out. */
+export const xSearchPosts = defineFlow<
+  { q: string; product?: SearchProduct; max?: number },
+  SearchPosts
+>({
+  site: "x",
+  name: "search-posts",
+  strategies: ["intercept"],
+  async run(fp, { q, product = "top", max }) {
+    const u = new URL(`${WEB}/search`);
+    u.searchParams.set("q", q);
+    u.searchParams.set("src", "typed_query");
+    u.searchParams.set("f", SEARCH_TAB[product]);
+    const c = await captureOps(fp, {
+      url: u.toString(),
+      ops: ["SearchTimeline"],
+      kind: "tweet",
+      max: capOf(max, 50, 200),
+      emptyOk: true,
+    });
+    if (c === "signed_out") return signedOut(fp);
+    return { q, product, found: c.calls > 0, items: c.items, calls: c.calls, seen: c.ops };
   },
 });
 

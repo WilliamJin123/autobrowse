@@ -307,6 +307,8 @@ export const x: SiteApi = {
     trending: 12,
     // One tracked creator's posts a day (creator index, WA-1362).
     user_posts: 100,
+    // weaver's x source, 5–20 searches a run (x@wren only)
+    web_search: 60,
   },
   pace: { gapMs: 5_000, jitterMs: 10_000 },
   routes: [
@@ -336,6 +338,21 @@ export const x: SiteApi = {
       }),
       meter: () => ({ user_posts: 1 }),
       browser: { flow: "x/user-posts" },
+    }),
+    route({
+      method: "GET",
+      path: "/web/search",
+      standing: { waits: "x-paid-reads" },
+      summary:
+        "Posts X search finds for `q` (X's operators as typed: `filter:native_video min_faves:500 since:2026-10-01 lang:en`), on the `product` tab top (default)|latest|media, each tweet whole as X's own GraphQL sends it (`tweet_results.result`: counts in `legacy`, views in `views.count`, media in `legacy.extended_entities`); ads left out: `{ q, product, found, items, calls, seen }` (`found`: search answered, so empty `items` = no hits) (`max`, default 50). As x@wren only. Reads only",
+      request: z.object({
+        q: z.string().min(1).max(500),
+        product: z.enum(["top", "latest", "media"]).default("top"),
+        max: z.coerce.number().int().min(1).max(200).optional(),
+      }),
+      asOnly: "x@wren",
+      meter: () => ({ web_search: 1 }),
+      browser: { flow: "x/search-posts" },
     }),
     route({
       method: "GET",
