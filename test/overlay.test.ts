@@ -359,7 +359,7 @@ describe("headed overlay, out of the page", () => {
         at: string;
         down: boolean;
       }>(
-        `(() => { const n = document.querySelector('.hand'); return { shown: n.style.display !== 'none', pill: n.querySelector('.pill').textContent, colour: n.style.getPropertyValue('--hand'), at: n.style.transform, down: n.classList.contains('down') }; })()`,
+        `(() => { const n = document.querySelector('.hand'); return { shown: n.style.display !== 'none', pill: n.querySelector('.pill').textContent, colour: n.parentElement.style.getPropertyValue('--hand'), at: n.style.transform, down: n.classList.contains('down') }; })()`,
       );
       expect(hand).toEqual({
         shown: true,
@@ -370,17 +370,49 @@ describe("headed overlay, out of the page", () => {
       });
       expect(await h.view.evaluate("document.querySelectorAll('.hands .ripple').length")).toBe(1);
       expect(await h.view.evaluate("document.querySelectorAll('.hands .focus').length")).toBe(1);
-      // moves batch into one line; keys and scrolls are never sent
+      // every move goes, with its time; keys and scrolls are never sent
       const lines = h.sent.filter((m) => m.t === "js" && String(m.js).startsWith("ui.hand("));
       const sentHands = lines.flatMap(
         (m) => JSON.parse(String(m.js).slice(8, -1)) as Array<{ kind: string }>,
       );
-      expect(sentHands.map((e) => e.kind)).toEqual(["move", "focus", "down", "up"]);
+      expect(sentHands.map((e) => e.kind)).toEqual(["move", "move", "focus", "down", "up"]);
       expect(JSON.stringify(h.sent)).not.toContain('"key":"s"');
       // another page's hands are not ours
       handsLog(await browser.newPage(), { kind: "move", t, x: 500, y: 500 });
       await new Promise((r) => setTimeout(r, 60));
       expect(await h.view.evaluate("ui.hx")).toBe(120);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("the cursor replays a clump of moves at the hands' own times, and arcs only a jump with no path between", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      await o.set(page, { goal: "save the form" });
+      await h.idle();
+      // a reach of 400 px in 14 ms steps, sent as one clump: drawn over its 280 ms, never as one jump
+      const t = Date.now();
+      for (let i = 0; i <= 20; i++)
+        handsLog(page, { kind: "move", t: t + i * 14, x: 20 * i, y: 100 });
+      await h.idle();
+      await expect.poll(() => h.view.evaluate("ui.hx")).toBeGreaterThan(0);
+      expect(await h.view.evaluate("ui.hx")).toBeLessThan(400);
+      await expect.poll(() => h.view.evaluate("ui.hx")).toBe(400);
+      expect(await h.view.evaluate("document.querySelector('.hand').getAnimations().length")).toBe(
+        0,
+      );
+      // a quiet hand that lands 300 px away with no path flies there
+      await new Promise((r) => setTimeout(r, 300));
+      handsLog(page, { kind: "down", t: Date.now(), x: 400, y: 400 });
+      await h.idle();
+      await expect.poll(() => h.view.evaluate("ui.hy")).toBe(400);
+      expect(await h.view.evaluate("document.querySelector('.hand').getAnimations().length")).toBe(
+        1,
+      );
     } finally {
       await browser.close();
     }

@@ -206,21 +206,22 @@ const SHARED_CSS = [
   ".row>:not(.note){grid-row:1}",
   ".row .note{grid-row:2;overflow-wrap:anywhere}",
   // The agent's cursor: page px under the same scale as the boxes; never takes the mouse.
-  ".hands{position:fixed;left:0;top:0;transform-origin:0 0;pointer-events:none}",
-  ".hand{position:absolute;left:0;top:0;will-change:transform;transition:transform 60ms linear,opacity .5s var(--ease)}",
-  ".hand.idle{opacity:.35}",
-  ".hand .ptr{position:absolute;left:-4px;top:-3px;transform-origin:4px 3px;transition:transform .14s var(--spring);filter:drop-shadow(0 0 6px var(--hand)) drop-shadow(0 1px 2px rgb(0 0 0/.35))}",
-  ".hand .ptr svg{width:22px;height:22px;fill:var(--hand);stroke:#fff;stroke-width:1.6;stroke-linejoin:round}",
+  // --tone: the colour pulled toward grey, so the cursor reads without shouting.
+  ".hands{position:fixed;left:0;top:0;transform-origin:0 0;pointer-events:none;--tone:color-mix(in oklab,var(--hand) 86%,#8b9099)}",
+  ".hand{position:absolute;left:0;top:0;will-change:transform;transition:opacity .5s var(--ease)}",
+  ".hand.idle{opacity:.6}",
+  ".hand .ptr{position:absolute;left:-4px;top:-3px;transform-origin:4px 3px;transition:transform .14s var(--spring);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--tone) 45%,transparent)) drop-shadow(0 1px 2px rgb(0 0 0/.3))}",
+  ".hand .ptr svg{width:22px;height:22px;fill:var(--tone);stroke:#fff;stroke-width:1.6;stroke-linejoin:round}",
   ".hand.down .ptr{transform:scale(.8)}",
   '.hand .pill{position:absolute;left:18px;top:20px;background:#111;color:#fff;font:600 11px/17px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;padding:0 8px;border-radius:999px;white-space:nowrap;box-shadow:0 0 0 1px rgb(255 255 255/.16),0 2px 8px rgb(0 0 0/.3)}',
-  '.hand .bub{position:absolute;left:18px;top:41px;width:max-content;max-width:240px;background:var(--hand);color:#fff;font:500 12px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;padding:4px 9px;border-radius:3px 11px 11px 11px;box-shadow:0 6px 18px -6px rgb(0 0 0/.45);transform-origin:0 0;overflow-wrap:anywhere}',
+  '.hand .bub{position:absolute;left:18px;top:41px;width:max-content;max-width:240px;background:var(--tone);color:#fff;font:500 12px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;padding:4px 9px;border-radius:3px 11px 11px 11px;box-shadow:0 6px 18px -6px rgb(0 0 0/.45);transform-origin:0 0;overflow-wrap:anywhere}',
   ".hand.flip .pill,.hand.flip .bub{left:auto;right:10px}",
   ".hand.flip .bub{border-radius:11px 3px 11px 11px;transform-origin:100% 0}",
   ".hand .bub.pop{animation:pop .28s var(--spring)}",
   "@keyframes pop{from{opacity:0;transform:scale(.55)}}",
-  ".ripple{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid var(--hand);animation:ripple .55s var(--ease) forwards}",
+  ".ripple{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid color-mix(in srgb,var(--tone) 85%,transparent);animation:ripple .55s var(--ease) forwards}",
   "@keyframes ripple{from{opacity:.8;transform:scale(.3)}to{opacity:0;transform:scale(2.2)}}",
-  ".focus{position:absolute;border:2px solid var(--hand);border-radius:6px;animation:focus .9s var(--ease) forwards}",
+  ".focus{position:absolute;border:2px solid color-mix(in srgb,var(--tone) 85%,transparent);border-radius:6px;animation:focus .9s var(--ease) forwards}",
   "@keyframes focus{0%{opacity:0;transform:scale(1.06)}15%{opacity:1;transform:none}70%{opacity:1}to{opacity:0}}",
   // The note box takes text; the rest of the panel never selects.
   ".say{display:block;width:100%;min-width:0;-webkit-user-select:text;user-select:text;outline:none}",
@@ -603,7 +604,7 @@ export const panelHtml = (
     wrap.className = 'wrap ' + (term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
     // Page px to window px: the page's zoom over ours.
     marks.style.transform = hands.style.transform = 'scale(' + (s.dpr || devicePixelRatio) / devicePixelRatio + ')';
-    hand.style.setProperty('--hand', s.who.color);
+    hands.style.setProperty('--hand', s.who.color);
     if (pill.textContent !== s.who.name) pill.textContent = s.who.name;
     // The act under way pops in beside the cursor; it goes a beat after the act ends.
     if (s.doing !== ui.bubFor) {
@@ -793,15 +794,19 @@ export const panelHtml = (
     post();
     return ui.prefs();
   };
-  // The cursor: moves glide; a long jump arcs (Clicky); a press shrinks it, a release ripples.
-  const flyTo = (x, y) => {
+  // The cursor replays the hands' own path at their own times, PLAY_MS behind: moves reach us in
+  // clumps, and a clump drawn as it lands is stop-start. A long jump with no path between arcs (Clicky).
+  const PLAY_MS = 80, JUMP_PX = 160, QUIET_MS = 250;
+  ui.hq = [];
+  const flyTo = (x, y, now) => {
     const from = ui.hx == null ? null : [ui.hx, ui.hy];
-    ui.hx = x; ui.hy = y;
+    const quiet = now - (ui.handAt || -1e9) > QUIET_MS;
+    ui.hx = x; ui.hy = y; ui.handAt = now;
     hand.style.display = '';
     const k = (ui.s && ui.s.dpr || devicePixelRatio) / devicePixelRatio;
     hand.classList.toggle('flip', x * k > innerWidth - 270);
     const d = from ? Math.hypot(x - from[0], y - from[1]) : 0;
-    if (from && d > 160 && !still()) {
+    if (from && quiet && d > JUMP_PX && !still()) {
       const lift = Math.min(0.2 * d, 80), nx = -(y - from[1]) / d, ny = (x - from[0]) / d, up = ny > 0 ? -1 : 1;
       const cx = (from[0] + x) / 2 + nx * lift * up, cy = (from[1] + y) / 2 + ny * lift * up;
       const frames = [];
@@ -815,23 +820,36 @@ export const panelHtml = (
     }
     hand.style.transform = 'translate(' + x + 'px,' + y + 'px)';
   };
-  ui.hand = (list) => {
-    for (const e of list) {
-      if (e.kind === 'move') flyTo(e.x, e.y);
-      else if (e.kind === 'down') { flyTo(e.x, e.y); hand.classList.add('down'); }
-      else if (e.kind === 'up') {
-        hand.classList.remove('down');
-        const r = el('div', 'ripple', null, 'left:' + e.x + 'px;top:' + e.y + 'px');
-        r.addEventListener('animationend', () => r.remove());
-        hands.appendChild(r);
-        if (still()) setTimeout(() => r.remove(), 300);
-      } else if (e.kind === 'focus') {
-        const f = el('div', 'focus', null, at({ x: e.box.x - 3, y: e.box.y - 3, w: e.box.w + 6, h: e.box.h + 6 }));
-        f.addEventListener('animationend', () => f.remove());
-        hands.appendChild(f);
-        if (still()) setTimeout(() => f.remove(), 900);
-      }
+  const play = (e, now) => {
+    if (e.kind === 'move') flyTo(e.x, e.y, now);
+    else if (e.kind === 'down') { flyTo(e.x, e.y, now); hand.classList.add('down'); }
+    else if (e.kind === 'up') {
+      hand.classList.remove('down');
+      const r = el('div', 'ripple', null, 'left:' + e.x + 'px;top:' + e.y + 'px');
+      r.addEventListener('animationend', () => r.remove());
+      hands.appendChild(r);
+      if (still()) setTimeout(() => r.remove(), 300);
+    } else if (e.kind === 'focus') {
+      const f = el('div', 'focus', null, at({ x: e.box.x - 3, y: e.box.y - 3, w: e.box.w + 6, h: e.box.h + 6 }));
+      f.addEventListener('animationend', () => f.remove());
+      hands.appendChild(f);
+      if (still()) setTimeout(() => f.remove(), 900);
     }
+  };
+  const tick = () => {
+    const now = performance.now();
+    while (ui.hq.length && ui.hq[0].due <= now) play(ui.hq.shift(), now);
+    ui.raf = ui.hq.length ? requestAnimationFrame(tick) : 0;
+  };
+  ui.hand = (list) => {
+    const now = performance.now();
+    for (const e of list) {
+      // hand clock → page clock; an event that lands past its slot moves the clock on
+      let due = ui.off == null ? -1 : e.t + ui.off;
+      if (due < now) { ui.off = now + PLAY_MS - e.t; due = now + PLAY_MS; }
+      ui.hq.push(Object.assign({}, e, { due }));
+    }
+    if (!ui.raf) ui.raf = requestAnimationFrame(tick);
     // dims after 6 s with no act
     hand.classList.remove('idle');
     clearTimeout(ui.idleT);
@@ -988,7 +1006,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   let askN = 0;
   let steered: (s: Steer) => void = () => undefined;
   let noteN = 0;
-  /** Hand events not yet sent; moves between two others keep only the newest. */
+  /** Hand events not yet sent: every move, with its time; the panel replays the path. */
   let handQ: HandEvent[] = [];
   let handT: NodeJS.Timeout | null = null;
   const flushHands = () => {
@@ -1002,9 +1020,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   const hand = (page: Page, e: HandEvent) => {
     if (page !== followed || !enabled || !drawn) return;
     if (e.kind === "key" || e.kind === "scroll") return;
-    const last = handQ.at(-1);
-    if (e.kind === "move" && last?.kind === "move") handQ[handQ.length - 1] = e;
-    else handQ.push(e);
+    handQ.push(e);
     handT ??= setTimeout(flushHands, HAND_MS);
     handT.unref?.();
   };

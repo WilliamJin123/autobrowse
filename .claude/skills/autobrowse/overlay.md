@@ -29,7 +29,7 @@ macOS, Windows and Linux X11. On Wayland, with no host for the platform, or on L
 - A pointer with a name pill draws where the agent's hands go. Long jumps arc. A click shrinks it and leaves a ripple. A type puts a ring round the field.
 - It shows only with human pace (explore, `try --headed`). Instant hands make no events, so no cursor shows.
 - It never shows keys or scrolls: a key can belong to a secret.
-- Name and colour: `{"cmd":"overlay","name":"Scout","color":"#ff5a1f"}`. Default: the site, one colour a port, so two sessions differ.
+- Name and colour: `{"cmd":"overlay","name":"Scout","color":"#ff5a1f"}`. Default: the site, one colour a port, so two sessions differ. The cursor draws it toned toward grey.
 - After 6 s with no act it dims.
 
 ## Steer the agent
@@ -59,13 +59,12 @@ Like Operator's Pause and Claude Code's queued messages.
 
 ## Record the screen
 
-`autobrowse screen-record --out demo.mp4 [--seconds 60] [--music [file]] [--whole-screen]`
-records the Mac's main screen with the overlay, the agent's cursor and the real pointer. Ctrl-C stops it.
-- It crops to the union of Chrome's windows at the end. Keep them in front: another app over them shows in the crop.
-- A bare `--music` lays "Local Forecast - Elevator" (Kevin MacLeod, CC BY 4.0) under it, looped and faded.
-  It writes the credit to `<out>.credits.txt`. Put that credit wherever the video goes.
-- The terminal needs Screen Recording (System Settings, Privacy).
-- A locked screen: it refuses. A capture would film only the lock screen.
+OBS records it: the overlay, the agent's cursor and the real pointer show. autobrowse only presses Record and Stop.
+- `autobrowse obs start [--scene <name>]`, then `autobrowse obs stop [--out demo.mp4]`. Stop prints the file.
+- `autobrowse obs status`: recording or not, the scene, the scenes.
+- It opens OBS when it is closed. It reads the websocket login from OBS's own config. OBS sets the scene, folder and format.
+- Keep our windows in front: OBS films the display as the scene has it.
+- A locked screen films only the lock screen.
 
 ## Record a run once
 

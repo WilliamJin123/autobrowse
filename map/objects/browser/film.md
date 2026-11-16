@@ -23,7 +23,7 @@ Filming is a session option, so every runner films with no change (`AUTOBROWSE_F
 - `filmTape` — `src/film/director.ts:38`: ttyd in headless Chrome as the `term` pane; `wait` counts only output after the last key (`showsAnew`, `:149`); writes `take.json`
 - Contact sheets (WA-1348): after each mp4, `contactSheet` tiles the first frame and each scene change (ffmpeg `select=gt(scene,SHEET_SCENE)`, `tile=4x4`) into `<pane>-sheet-NN.png`, listed in the pane's `sheets`; a failed sheet never fails the take. `autobrowse film-sheet <video>` makes them for any video
 - Needs: `FILM_NEEDS` (ffmpeg, ttyd), checked at start and in `doctor`
-- Screen recording (WA-1406): `screenRecord` — `src/film/screen.ts:220`: refuses a locked screen (`screenLocked`, CGSession); ffmpeg avfoundation "Capture screen 0" with the real cursor and clicks, stopped by `q`; crops to the union of Chrome's windows read by JXA from CoreGraphics at the end (`cropOf`, `:64`); `--music` loops a bed under it and fades it (`finishArgs`, `:80`). The default bed is Kevin MacLeod's "Local Forecast - Elevator" (CC BY 4.0), cached in `~/Library/Caches/autobrowse/music/`; its credit goes to `<out>.credits.txt`
+- Screen films (WA-1406): OBS over obs-websocket — `src/film/obs.ts`: `obsStart`, `obsStop` (moves the file to `--out`), `obsStatus`; `obsLogin` reads OBS's websocket config (`OBS_WEBSOCKET_URL`/`_PASSWORD` win); opens OBS when closed; the client comes from the vendor door `src/calls/obs.ts` (`newObs`)
 
 ## Connected to
 
@@ -41,11 +41,11 @@ Filming is a session option, so every runner films with no change (`AUTOBROWSE_F
 |---|---|
 | `autobrowse film <tape> --out <dir>` | films a tape |
 | `autobrowse film-sheet <video>` | contact sheets of a video |
-| `autobrowse screen-record --out <mp4>` | the main screen, cropped to Chrome, music optional |
+| `autobrowse obs start\|stop\|status` | OBS records the screen: overlay and cursor included |
 | `AUTOBROWSE_FILM=<dir>` on any command | films its browsers |
 | `autobrowse doctor` | the `film` row |
 
 ## See
 
 - Source: `src/browser/film.ts`, `src/film/`
-- Tests: `test/film.test.ts`, `test/film-tape.test.ts`, `test/screen-record.test.ts`
+- Tests: `test/film.test.ts`, `test/film-tape.test.ts`, `test/obs.test.ts`

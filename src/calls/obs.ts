@@ -28,6 +28,12 @@ export interface Saved {
 
 export type Obs = OBSWebSocket;
 
+/** A bare client, not connected; for callers with their own login (`src/film/obs.ts`). */
+export async function newObs(): Promise<Obs> {
+  const { default: Socket } = await import("obs-websocket-js");
+  return new Socket();
+}
+
 /** OBS's process is up. */
 export async function obsRunning(): Promise<boolean> {
   return run("/usr/bin/pgrep", ["-x", "OBS"]).then(
