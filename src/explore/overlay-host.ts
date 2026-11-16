@@ -24,6 +24,8 @@ const run = promisify(execFile);
 export type HostEvent = { t: string; [k: string]: unknown };
 
 export interface OverlayHost {
+  /** The host's process: a session over windows leaves its window out of `windows` answers. */
+  pid?: number;
   send(o: { t: string; [k: string]: unknown }): void;
   on(fn: (e: HostEvent) => void): void;
   close(): void;
@@ -178,6 +180,7 @@ export async function nativeHost(why: (reason: string) => void): Promise<Overlay
     return null;
   }
   return {
+    ...(child.pid ? { pid: child.pid } : {}),
     send(o) {
       if (open && child.stdin?.writable) child.stdin.write(`${JSON.stringify(o)}\n`);
     },

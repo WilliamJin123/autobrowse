@@ -102,8 +102,15 @@ import {
 } from "../browser/session.js";
 import { memoryDir, readMemory, recall, rememberCalls } from "../browser/site-memory.js";
 import type { KeyKeeper } from "../deps/keys.js";
+import { pageChange, steering } from "./steer.js";
+import { commandId, SENT_KEEP, withRepeat } from "./wire.js";
+
+export { type PageChange, pageChange } from "./steer.js";
+export { commandId, withRepeat } from "./wire.js";
+
 import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
-import { type ActResult, desktopHands } from "../desktop/hands.js";
+import { desktopAnswer } from "../desktop/answer.js";
+import { desktopHands } from "../desktop/hands.js";
 import { localDesktop } from "../desktop/mac.js";
 import type { Desktop } from "../desktop/types.js";
 import type { Effects } from "../engine/effects.js";
@@ -202,7 +209,8 @@ import {
   WAITS_FOR_CONTROL,
   WHOLE_PAGE,
 } from "./commands.js";
-import { compactText, compactValue } from "./compact.js";
+import { compactValue } from "./compact.js";
+import { fitText, keepWhole } from "./fit.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
 import { type Box, marksFor, missed, missText, refHints } from "./marks.js";
@@ -232,20 +240,6 @@ const EVAL_LIMIT = 20_000;
 /** Page text read whole before compaction; past this a page is not text. */
 const WHOLE_TEXT = 2_000_000;
 
-/** A compacted answer's whole, beside the session's shots; the answer names the file. */
-function keepWhole(dir: string, kind: string, text: string, ext = "txt"): string {
-  const file = join(dir, "whole", `${kind}-${Date.now()}.${ext}`);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, text, { mode: 0o600 });
-  return file;
-}
-
-/** Text over budget: compacted evenly, the whole kept. */
-function fitText(dir: string, kind: string, text: string, budget: number) {
-  const c = compactText(text, budget);
-  if (!c.even) return { text };
-  return { text: c.text, whole: { chars: text.length, file: keepWhole(dir, kind, text) } };
-}
 /** A `code` command stops after this long: a loop that never ends. */
 const CODE_MS = 30 * 60_000;
 /** How long a spending click's page gets to say paid or declined before it counts as no charge. */
@@ -272,20 +266,6 @@ const FRAME_MS = 5_000;
 const FULL_MS = 1_500;
 
 const HAND_GRACE_MS = 750;
-/** Rows the diff returns; `snapshot` has the rest. */
-const CHANGED_ROWS = 40;
-
-export interface PageChange {
-  /** Interactive elements (one `snapshot` row each) that are new since before the act. */
-  added: string[];
-  /** How many rows went away. */
-  gone: number;
-  /** Rows still there whose state changed (`[checked]`, `[disabled]`, `[filled]`…): `row: [old] -> [new]`. */
-  changed?: string[];
-  /** Added rows past the cap. */
-  more?: number;
-}
-
 /** The vault's key at an address; a keep with `key` needs the vault. */
 async function vaultKey(keeper: KeyKeeper | undefined, address: string) {
   if (!keeper) throw new Error("keep: no key vault here; keep under an env name alone");
@@ -316,45 +296,6 @@ function leanUrls(answer: unknown): unknown {
     ...(Array.isArray(a.done) ? { done: a.done.map(step) } : {}),
   };
 }
-
-/** What an act changed, as a multiset diff of snapshot rows. */
-export function pageChange(before: readonly string[], after: readonly string[]): PageChange {
-  const left = new Map<string, number>();
-  for (const r of before) left.set(r, (left.get(r) ?? 0) + 1);
-  const fresh: string[] = [];
-  for (const r of after) {
-    const n = left.get(r) ?? 0;
-    if (n) left.set(r, n - 1);
-    else fresh.push(r);
-  }
-  // a gone row and a new row alike but for state: one row that changed
-  const goneBy = new Map<string, string[]>();
-  for (const [r, n] of left)
-    for (let i = 0; i < n; i++) goneBy.set(rowKey(r), [...(goneBy.get(rowKey(r)) ?? []), r]);
-  const added: string[] = [];
-  const changed: string[] = [];
-  for (const r of fresh) {
-    const was = goneBy.get(rowKey(r))?.shift();
-    if (was === undefined) added.push(r);
-    else {
-      left.set(was, (left.get(was) ?? 0) - 1);
-      changed.push(`${rowKey(r)}: ${rowState(was) || "[]"} -> ${rowState(r) || "[]"}`);
-    }
-  }
-  const gone = [...left.values()].reduce((a, b) => a + b, 0);
-  return {
-    added: added.slice(0, CHANGED_ROWS),
-    gone,
-    ...(changed.length ? { changed: changed.slice(0, CHANGED_ROWS) } : {}),
-    ...(added.length > CHANGED_ROWS ? { more: added.length - CHANGED_ROWS } : {}),
-  };
-}
-
-// an aria line with children ends in `:` after its state
-const STATE_TAIL = /(?: \[[^\]]*\])+:?$/;
-/** A snapshot row without its trailing `[state]` tokens. */
-const rowKey = (r: string) => r.replace(STATE_TAIL, "");
-const rowState = (r: string) => (STATE_TAIL.exec(r)?.[0] ?? "").replace(/:$/, "").trim();
 
 /** A wall for the agent: a sign-in wall names the site's `<site>-login` tool (the provider's on its products). */
 export function wallAnswer(wall: Wall | null, url: string): (Wall & { signIn?: string }) | null {
@@ -646,29 +587,6 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
 }
 
 /** Command ids kept per session: a resend this far back still gets its first answer. */
-const SENT_KEEP = 500;
-
-/** The caller's id for a command (U6), taken off before the schema reads it. */
-export function commandId(raw: Record<string, unknown>): string | null {
-  const id = raw.id;
-  // A number is the command's own field (`network` row id), not the caller's id.
-  if (id === undefined || typeof id === "number") return null;
-  delete raw.id;
-  if (typeof id !== "string" || !/^[\w.:-]{1,80}$/.test(id))
-    throw new Error("id: 1-80 letters, digits or . : _ -");
-  return id;
-}
-
-/** The first answer, marked as a resend's. */
-export function withRepeat(body: string): string {
-  try {
-    const v = JSON.parse(body) as unknown;
-    if (v && typeof v === "object" && !Array.isArray(v))
-      return JSON.stringify({ ...v, repeat: true });
-  } catch {}
-  return body;
-}
-
 /** The browser or its page closed under the act. */
 export const browserGone = (err: unknown): boolean =>
   /Target (?:page, context or browser )?(?:has been )?closed|browser has been closed|Browser closed|Session closed/i.test(
@@ -679,22 +597,6 @@ export const browserGone = (err: unknown): boolean =>
 interface LegLogin {
   site: string | null;
   stop: string | null;
-}
-
-/** An `os` answer as it leaves the socket: tree text and shell output masked, long output to a file. */
-function desktopAnswer(r: ActResult, shotsDir: string): Record<string, unknown> {
-  const a = { ...r.answer };
-  const fitOut = (key: string, budget: number) => {
-    if (typeof a[key] !== "string") return;
-    const f = fitText(shotsDir, key, redactText(a[key] as string), budget);
-    a[key] = f.text;
-    if (f.whole) a[`${key}Whole`] = f.whole;
-  };
-  // Output can hold tokens: masked like everything else that leaves the socket.
-  fitOut("tree", 12_000); // a terminal's scrollback is one big value
-  fitOut("stdout", 4_000);
-  fitOut("stderr", 1_000);
-  return a;
 }
 
 async function serve(
@@ -739,12 +641,22 @@ async function serve(
   // A new document wipes the layer: the panel comes back on it.
   page.on("load", (p) => void overlay.loaded(p));
   overlay.who(opts.site, handColour(opts.port));
-  let paused = false;
-  /** Who paused: the agent's own `pause`, or the person's Pause on the panel (only they resume it). */
-  let pausedBy: "agent" | "person" | null = null;
-  let waiters: Array<() => void> = [];
-  /** Acts a person did by hand since the last `pause`. */
-  let handActs = 0;
+  const steer = steering({
+    scene: {
+      where: () => page.url(),
+      rows: () => rows(),
+      short: shortUrl,
+      key: "url",
+      noun: "page",
+    },
+    journal: (row) => journal(row),
+    held: (h) => overlay.held(page, h),
+    takeNotes: () => overlay.takeNotes(),
+    busy: () => busy,
+    now,
+    change: pageChange,
+    redact: redactText,
+  });
   /**
    * Help without a pause: a person at a headed browser types the code the
    * agent could not get, or clicks past the screen it was stuck on, between
@@ -769,13 +681,7 @@ async function serve(
   };
   /** Where the agent last left the page: the url, and the rows when its last act diffed them. */
   let left: { url: string; rows: string[] | null } | null = null;
-  const byHand = () => paused || (busy === 0 && now() >= quietAt);
-  const resume = () => {
-    paused = false;
-    pausedBy = null;
-    for (const w of waiters) w();
-    waiters = [];
-  };
+  const byHand = () => steer.paused() || (busy === 0 && now() >= quietAt);
 
   // Run history: the journal is resume state and goes on `close`; the run stays.
   // A resumed session goes on writing the run its journal's sidecar names.
@@ -1226,8 +1132,8 @@ async function serve(
       if (raw.kind === "pageerror") return pageErrors.push(raw, src.page.url());
       if (!byHand()) return;
       // the agent's own late events (a fill's change) are not the person's
-      if (paused) {
-        if (now() >= quietAt) handActs++;
+      if (steer.paused()) {
+        if (now() >= quietAt) steer.handAct();
       } else helpedActs++;
       runHandActs++;
       // before the redaction: the held value goes nowhere but the store
@@ -1244,7 +1150,7 @@ async function serve(
   // A load between commands is a person's only when they also acted (a slow redirect is not).
   page.on("framenavigated", (frame) => {
     if (frame !== page.mainFrame()) return;
-    if (paused || ((helpedActs || opts.driver === "person") && byHand()))
+    if (steer.paused() || ((helpedActs || opts.driver === "person") && byHand()))
       journal({ kind: "navigate" });
     if (opts.credentials && signIns.acted()) void checkSignIn(page);
     lookWhenQuiet();
@@ -1746,8 +1652,8 @@ async function serve(
     page = fp.page;
     if (IMMEDIATE.has(c.cmd)) return act(c, wait);
     // the person's Pause holds it before it starts: the panel never says Running while held
-    const steer = await heldAnswer(arrived);
-    if (steer) return steer;
+    const held = await steer.heldAnswer(arrived);
+    if (held) return held;
     busy++;
     holdCollect();
     const began = now();
@@ -1793,7 +1699,7 @@ async function serve(
       busy--;
       if (busy === 0) collectWhenIdle();
       // Pause pressed mid-command takes hold now, before the next one starts.
-      if (busy === 0 && holdArmed) await personPause();
+      await steer.afterCommand();
       // Idle counts from a command's end: a long one is someone driving.
       touch();
       quietAt = now() + HAND_GRACE_MS;
@@ -1933,7 +1839,7 @@ async function serve(
    * "someone got me past it": it re-reads the page instead of redoing the step.
    */
   const helpedSince = async () => {
-    if (!helpedActs || paused) return null;
+    if (!helpedActs || steer.paused()) return null;
     const acts = helpedActs;
     helpedActs = 0;
     journal({ kind: "note", text: `a person did ${acts} act(s) by hand here, unpaused` });
@@ -1948,99 +1854,7 @@ async function serve(
     left = { url: page.url(), rows: now_ };
     return out;
   };
-  /** The panel's Pause holds a command at most this long: under cmd.sh's 900 s resend. */
-  const HOLD_MS = 600_000;
-  /** Pause pressed while a command ran: it takes hold when that command ends (a flow or batch included). */
-  let holdArmed = false;
-  /** The page when the person paused: what their resume compares. */
-  let holdFrom: { since: number; url: string; rows: string[] | null } | null = null;
-  /** The last person pause, resumed: a command sent before `at` answers with it instead of running. */
-  let steered: { at: number; acted: boolean; view: Record<string, unknown> } | null = null;
-  const personPause = async () => {
-    holdArmed = false;
-    paused = true;
-    pausedBy = "person";
-    handActs = 0;
-    const since = now();
-    holdFrom = { since, url: page.url(), rows: await rows().catch(() => null) };
-    journal({ kind: "pause" });
-    journal({ kind: "note", text: "a person paused the agent from the panel" });
-    await overlay.held(page, { since, arming: false });
-  };
-  const personResume = async () => {
-    if (holdArmed && !paused) {
-      holdArmed = false;
-      await overlay.held(page, null);
-      return;
-    }
-    if (pausedBy !== "person") return;
-    const from = holdFrom ?? { since: now(), url: page.url(), rows: null };
-    holdFrom = null;
-    const url = page.url();
-    const after = from.rows ? await rows().catch(() => null) : null;
-    const changed = from.rows && after ? pageChange(from.rows, after) : null;
-    const moved = url !== from.url;
-    steered = {
-      at: now(),
-      acted: handActs > 0 || moved,
-      view: {
-        pausedS: Math.round((now() - from.since) / 1000),
-        acts: handActs,
-        ...(moved ? { from: shortUrl(from.url) } : {}),
-        url: shortUrl(url),
-        ...(changed ? { changed } : {}),
-      },
-    };
-    journal({ kind: "resume" });
-    resume();
-    await overlay.held(page, null);
-  };
-  overlay.onSteer((s) => {
-    if ("note" in s) {
-      journal({ kind: "note", text: `person: ${redactText(s.note)}` });
-      return;
-    }
-    if (!s.pause) return void personResume();
-    if (paused) {
-      // the agent's own pause becomes the person's: only they resume it now
-      pausedBy = "person";
-      holdFrom ??= { since: now(), url: page.url(), rows: null };
-      void overlay.held(page, { since: now(), arming: false });
-    } else if (busy > 0) {
-      holdArmed = true;
-      void overlay.held(page, { since: now(), arming: true });
-    } else void personPause();
-  });
-  /** A command under the person's Pause: held until Resume, then refused if they changed things. */
-  const heldAnswer = async (arrived: number): Promise<unknown | null> => {
-    if (pausedBy === "person") {
-      const since = holdFrom?.since ?? now();
-      const go = await Promise.race([
-        unpaused().then(() => true),
-        new Promise<false>((r) => setTimeout(() => r(false), HOLD_MS).unref()),
-      ]);
-      if (!go)
-        return {
-          ok: false,
-          held: true,
-          steer: {
-            pausedS: Math.round((now() - since) / 1000),
-            note: "A person paused you from the panel and has not resumed in 10 min. Your command did not run; send it again later.",
-          },
-        };
-    }
-    if (!steered || arrived >= steered.at) return null;
-    const notes = overlay.takeNotes();
-    if (!steered.acted && !notes.length) return null;
-    return {
-      ran: false,
-      steer: {
-        ...steered.view,
-        ...(notes.length ? { notes } : {}),
-        note: "A person paused you from the panel and acted or wrote to you. Your command did not run. Read the page and their notes, then go on from where they left it.",
-      },
-    };
-  };
+  overlay.onSteer((st) => steer.onSteer(st));
   /** A script that clicks, on a page that shows a spending button, needs the click's yes first. */
   const scriptGate = async (js: string, wait: boolean) => {
     if (!scriptActs(js)) return;
@@ -2068,8 +1882,7 @@ async function serve(
   const crossSite = new Set<string>();
   /** The payment refusal a flow's act met: the command answers with it, not with a failed step. */
   let flowGated: PaymentGate | null = null;
-  const unpaused = () =>
-    paused ? new Promise<void>((resolve) => waiters.push(resolve)) : Promise.resolve();
+  const unpaused = steer.unpaused;
   /** A flow's acts journaled flat, as the same commands would be: a mixed session saves as one recording. */
   const journalOp = (op: Op, hints: Hints) => {
     const t = { hints } as Target;
@@ -3049,25 +2862,14 @@ async function serve(
           });
         return desktopAnswer(r, shotsDir);
       }
-      case "pause":
-        if (pausedBy === "person") return { paused: true, by: "person" };
-        paused = true;
-        pausedBy = "agent";
-        handActs = 0;
+      case "pause": {
+        const held = steer.agentPause();
+        if (held) return held;
         if (history) lookBefore = await lookAt(page).catch(() => null);
-        journal({ kind: "pause" });
         return { paused: true };
-      case "resume": {
-        if (pausedBy === "person")
-          return {
-            paused: true,
-            by: "person",
-            note: "A person paused you from the panel; only they resume it. Your next command waits for them.",
-          };
-        journal({ kind: "resume" });
-        resume();
-        return { paused: false, handActs };
       }
+      case "resume":
+        return steer.agentResume();
       case "tools": {
         const all = await toolsNow();
         if (c.find)
@@ -3133,7 +2935,7 @@ async function serve(
         return runCodeHere(c, wait);
       case "close":
         // An agent that ended at a wall paused first: the session waits on a person.
-        if (c.unlessPaused && paused) return { ok: false, paused: true };
+        if (c.unlessPaused && steer.paused()) return { ok: false, paused: true };
         // Closed on purpose: nothing left to resume, unless asked to keep it.
         closing = !c.keep;
         if (c.why) {
@@ -3290,6 +3092,7 @@ async function serve(
     idleMs > 0
       ? setInterval(
           () => {
+            const paused = steer.paused();
             const gone = !paused && opts.owner?.alive?.() === false;
             if (busy === 0 && now() - lastTouch >= leaseMs(idleMs, { paused, ownerGone: gone })) {
               endedBy = "idle";
@@ -3336,9 +3139,8 @@ async function serve(
         throw err;
       }
     },
-    paused: () => paused,
-    resumed: () =>
-      paused ? new Promise<void>((resolve) => waiters.push(resolve)) : Promise.resolve(),
+    paused: steer.paused,
+    resumed: steer.resumed,
     done: ended,
     resumedFrom,
     runId: () => (history && !history.ended() ? history.id : null),

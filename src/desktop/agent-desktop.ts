@@ -200,12 +200,18 @@ export interface AgentDesktopOptions {
   run?: AdRun;
   /** Keystroke spacing for headed typing: terminals drop a paste-speed burst. */
   typeIntervalMs?: number;
+  /** Waits before a read's second try (tests pass a no-op). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
  * `Desktop` over agent-desktop. `shell`, `screenshot` and root stay ours
  * (`mac.ts`): they are not accessibility.
  */
+/** Codes a read tries once more. */
+const READ_RETRY = new Set(["APP_UNRESPONSIVE"]);
+const READ_RETRY_MS = 300;
+
 export function agentDesktop(
   base: Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady">,
   opts: AgentDesktopOptions = {},
@@ -214,14 +220,22 @@ export function agentDesktop(
   const run = opts.run ?? (bin ? spawnRun(bin) : null);
   if (!run) throw new Error("agent-desktop binary missing: pnpm install");
   const call = <T>(args: string[], stdin?: string) => adCall<T>(run, args, stdin);
+  const pause = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  // reads only: AX reads of a busy app fail now and then (live: 2 in 5 first snapshots of Calculator)
+  const read = <T>(args: string[]): Promise<T> =>
+    call<T>(args).catch(async (e: unknown) => {
+      if (!(e instanceof DesktopError) || !READ_RETRY.has(e.code)) throw e;
+      await pause(READ_RETRY_MS);
+      return call<T>(args);
+    });
   return {
     id: "agent-desktop",
     async windows(app) {
-      const ws = await call<AdWindow[]>(["list-windows", ...(app ? ["--app", app] : [])]);
+      const ws = await read<AdWindow[]>(["list-windows", ...(app ? ["--app", app] : [])]);
       return ws.filter((w) => w.visible || w.minimized).map(toWindow);
     },
     async displays() {
-      const ds = await call<{ id: string; bounds: AdBounds; scale: number; is_primary: boolean }[]>(
+      const ds = await read<{ id: string; bounds: AdBounds; scale: number; is_primary: boolean }[]>(
         ["list-displays"],
       );
       return ds.map(
@@ -234,7 +248,7 @@ export function agentDesktop(
       );
     },
     async snapshot(windowId) {
-      const d = await call<{
+      const d = await read<{
         app: string;
         snapshot_id: string;
         window?: { id: string; title: string };
@@ -243,7 +257,7 @@ export function agentDesktop(
       return { id: d.snapshot_id, app: d.app, windowId, nodes: flatten(d.tree) } satisfies Snapshot;
     },
     async find(windowId, t: ControlTarget) {
-      const d = await call<{ matches: AdMatch[]; total_matches: number }>([
+      const d = await read<{ matches: AdMatch[]; total_matches: number }>([
         "find",
         "--window-id",
         windowId,
@@ -257,7 +271,7 @@ export function agentDesktop(
     },
     async focused(windowId) {
       // `--last` answers `{match}`; a terminal has no focused control, so its first text row stands in.
-      const f = await call<{ match: AdMatch | null }>([
+      const f = await read<{ match: AdMatch | null }>([
         "find",
         "--window-id",
         windowId,
@@ -266,7 +280,7 @@ export function agentDesktop(
         "--last",
       ]);
       if (f.match) return f.match.ref_id;
-      const t = await call<{ match: AdMatch | null }>([
+      const t = await read<{ match: AdMatch | null }>([
         "find",
         "--window-id",
         windowId,

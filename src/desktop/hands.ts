@@ -35,6 +35,8 @@ export interface HandsOptions {
   exists?: (file: string) => Promise<boolean>;
   /** Tries for a window a target names (a just-launched app is slow to show it). */
   windowTries?: number;
+  /** Around real input (the guard and the headed send): the overlay hides so it takes no click or key. */
+  headed?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 /** What one act did: the agent's answer, the row to journal, where it happened (for the overlay). */
@@ -147,8 +149,11 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
         if (!refused(e)) throw e;
       }
     }
-    await guard(w);
-    await send("headed");
+    const around = o.headed ?? (<T>(fn: () => Promise<T>) => fn());
+    await around(async () => {
+      await guard(w);
+      await send("headed");
+    });
     return true;
   }
 
@@ -494,7 +499,17 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
     }
   }
 
-  return { act, run, guard, windowFor };
+  /** Where a ref's control is, before the act (the overlay aims there); null for an unknown ref. */
+  function peek(ref: string): { window: DesktopWindow; box: Bounds } | null {
+    try {
+      const { node, window } = fromRef(ref);
+      return node.bounds ? { window, box: node.bounds } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return { act, run, guard, windowFor, peek };
 }
 
 export type DesktopHands = ReturnType<typeof desktopHands>;

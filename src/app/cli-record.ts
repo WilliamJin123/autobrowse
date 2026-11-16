@@ -19,7 +19,7 @@ import { headed } from "./display.js";
 import { browserOptions, COMPILED_DIR, llmFor } from "./services.js";
 
 /** The Claude Code session this CLI runs under, if any: who an explore session answers to. */
-const claudeOwner = (): { session?: string; alive?: () => boolean } => {
+export const claudeOwner = (): { session?: string; alive?: () => boolean } => {
   const session = process.env.CLAUDE_CODE_SESSION_ID;
   const pid = Number(process.env.CLAUDE_PID);
   return {

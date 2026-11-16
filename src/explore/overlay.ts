@@ -960,15 +960,51 @@ const FOUND_MS = 3_000;
 /** What the person did on the panel: pause or resume the agent, or a note to it. */
 export type Steer = { pause: boolean } | { note: string };
 
-export interface OverlayDeps {
+/**
+ * What the overlay draws over: a page (explore), or a native window (the desktop session).
+ * Boxes are in the surface's own px: a page's viewport, or a window's points from its top-left.
+ */
+export interface Surface<S> {
+  geometry(s: S): Promise<Geometry | null>;
+  /** A control's box; null when it is not on screen. */
+  box(s: S, hints: Hints): Promise<Box | null>;
+  /** The person's pointer path, drawn as the hand; a window has none. */
+  watch(s: S, fn: ((e: HandEvent) => void) | null): void;
+  /** `hide` when this surface goes, `close` when everything it belongs to goes. */
+  gone(s: S, hide: () => void, close: () => void): void;
+}
+
+export const pageSurface: Surface<Page> = {
+  geometry: geometryOf,
+  async box(page, hints) {
+    const b = await locate(page, hints)
+      .boundingBox({ timeout: BOX_MS })
+      .catch(() => null);
+    if (!b) return null;
+    const view = page.viewportSize();
+    if (view && (b.x + b.width < 0 || b.y + b.height < 0 || b.x > view.width || b.y > view.height))
+      return null;
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  },
+  watch: watchHands,
+  gone(page, hide, close) {
+    page.once("close", hide);
+    page.context().once("close", close);
+  },
+};
+
+export interface OverlayDeps<S = Page> {
   /** The window that draws; default the native host (macOS). */
   host?: (why: (reason: string) => void) => Promise<OverlayHost | null>;
-  /** Default `geometryOf`. */
-  geometry?: (page: Page) => Promise<Geometry | null>;
+  /** Default `pageSurface`: a session over windows passes its own. */
+  surface?: Surface<S>;
+  /** Default the surface's. */
+  geometry?: (s: S) => Promise<Geometry | null>;
 }
 
 /** One session's overlay; `enabled` false makes every call a no-op. */
-export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
+export function overlayFor<S extends object = Page>(startOn: boolean, deps: OverlayDeps<S> = {}) {
+  const surface = deps.surface ?? (pageSurface as unknown as Surface<S>);
   // `toggle` flips it for the session's life.
   let enabled = startOn;
   let state: OverlayState = { ...EMPTY };
@@ -994,13 +1030,13 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
   /** Why nothing is drawn: no host for this platform, Wayland, a host that died. */
   let why: string | null = null;
   /** The page the window follows, and the Chrome window it was matched to. */
-  let followed: Page | null = null;
+  let followed: S | null = null;
   let windowKey: string | null = null;
   let dpr = 0;
   /** Targets sent, and the newest the host found: a gap past FOUND_MS sets `why`. */
   let targets = 0;
   let found = 0;
-  const geometry = deps.geometry ?? geometryOf;
+  const geometry = deps.geometry ?? surface.geometry;
   /** Questions out, by id: the panel's button answers one. */
   const asking = new Map<number, (yes: boolean | null) => void>();
   let askN = 0;
@@ -1017,7 +1053,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       host.send({ t: "js", js: `ui.hand(${JSON.stringify(list)})` });
   };
   /** One page's hands: keys never leave (a key can be a secret's), nor scrolls. */
-  const hand = (page: Page, e: HandEvent) => {
+  const hand = (page: S, e: HandEvent) => {
     if (page !== followed || !enabled || !drawn) return;
     if (e.kind === "key" || e.kind === "scroll") return;
     handQ.push(e);
@@ -1076,13 +1112,13 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     host?.close();
     host = null;
     opening = null;
-    if (followed) watchHands(followed, null);
+    if (followed) surface.watch(followed, null);
     followed = null;
     windowKey = null;
     sentN = -1;
   };
   /** The window over the page's viewport: which Chrome window, and its insets now. */
-  const place = async (page: Page) => {
+  const place = async (page: S) => {
     const g = await Promise.race([
       geometry(page),
       new Promise<null>((r) => setTimeout(() => r(null), DRAW_MS).unref()),
@@ -1101,17 +1137,20 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     dpr = g.view.dpr;
   };
   /** Each draw sends the state and the rows the window lacks. */
-  const paint = async (page: Page): Promise<boolean> => {
+  const paint = async (page: S): Promise<boolean> => {
     // before the host starts: a context closed meanwhile still ends it
     if (followed !== page) {
-      if (followed) watchHands(followed, null);
+      if (followed) surface.watch(followed, null);
       followed = page;
-      watchHands(page, (e) => hand(page, e));
+      surface.watch(page, (e) => hand(page, e));
       windowKey = null;
-      page.once("close", () => {
-        if (followed === page) host?.send({ t: "hide" });
-      });
-      page.context().once("close", close);
+      surface.gone(
+        page,
+        () => {
+          if (followed === page) host?.send({ t: "hide" });
+        },
+        close,
+      );
     }
     const h = await open();
     if (!h) return false;
@@ -1133,31 +1172,26 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     sentN = last;
     return true;
   };
-  const draw = async (page: Page): Promise<boolean> => {
+  const draw = async (page: S): Promise<boolean> => {
     if (!enabled) return false;
     drawn = await paint(page);
     return drawn;
   };
-  const boxOf = async (page: Page, hints: Hints): Promise<Box | null> => {
-    const b = await locate(page, hints)
-      .boundingBox({ timeout: BOX_MS })
-      .catch(() => null);
-    if (!b) return null;
-    const view = page.viewportSize();
-    if (view && (b.x + b.width < 0 || b.y + b.height < 0 || b.x > view.width || b.y > view.height))
-      return null;
-    return { x: b.x, y: b.y, w: b.width, h: b.height };
-  };
+  const boxOf = (page: S, hints: Hints): Promise<Box | null> => surface.box(page, hints);
   return {
     get enabled() {
       return enabled;
+    },
+    /** The drawing process, once it runs. */
+    get hostPid(): number | null {
+      return host?.pid ?? null;
     },
     /** Why nothing is drawn while on (no host, Wayland, a host that died); null when it draws. */
     get why() {
       return why;
     },
     /** On or off at any time; off hides the window and keeps the trace for when it comes back. */
-    async toggle(page: Page, on: boolean): Promise<{ drawn: boolean; why?: string }> {
+    async toggle(page: S, on: boolean): Promise<{ drawn: boolean; why?: string }> {
       enabled = on;
       if (!on) {
         host?.send({ t: "hide" });
@@ -1170,7 +1204,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     },
     /** Panel fields from a caller (the agent's goal, step, thought); `refs` boxes the outline's controls. */
     async set(
-      page: Page,
+      page: S,
       patch: {
         [K in "goal" | "step" | "thought" | "doing"]?: string | null | undefined;
       } & {
@@ -1207,7 +1241,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       return { drawn: true, ...(prefs.marks ? { boxes: state.boxes.length } : {}) };
     },
     /** A marks shot's numbered boxes stay drawn; the boxes button shows and hides them. */
-    async marked(page: Page, boxes: Array<{ n: number; box: Box }>): Promise<void> {
+    async marked(page: S, boxes: Array<{ n: number; box: Box }>): Promise<void> {
       if (!enabled) return;
       state.boxes = boxes;
       await draw(page);
@@ -1217,7 +1251,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       state.meta = meta;
     },
     /** A command starts: the busy line runs its phase words. */
-    async begin(page: Page, cmd?: string): Promise<void> {
+    async begin(page: S, cmd?: string): Promise<void> {
       if (!enabled) return;
       running++;
       state.busy = true;
@@ -1225,7 +1259,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       if (drawn) await draw(page);
     },
     /** A command ended: its row joins the trace. */
-    async end(page: Page, row: Omit<TraceRow, "n" | "at">): Promise<void> {
+    async end(page: S, row: Omit<TraceRow, "n" | "at">): Promise<void> {
       if (!enabled) return;
       const n = (state.trace.at(-1)?.n ?? 0) + 1;
       const at = new Date().toTimeString().slice(0, 8);
@@ -1239,22 +1273,43 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
     },
     /** Before an act: the target flashes (boxes on) and the panel says what is done. */
     /** `thought`: the act's goal; it stays on the panel until the next one. */
-    async flash(page: Page, hints: Hints, doing: string, thought?: string): Promise<void> {
+    async flash(page: S, hints: Hints, doing: string, thought?: string): Promise<void> {
       if (!enabled) return;
       if (thought) state.thought = clipLine(thought, 240);
       state.target = prefs.marks ? await boxOf(page, hints) : null;
       state.doing = clipLine(doing, 160);
       await draw(page);
     },
+    /** Before an act on a surface whose box is known (a window's control): as `flash`. */
+    async aim(page: S, box: Box | null, doing: string, thought?: string): Promise<void> {
+      if (!enabled) return;
+      if (thought) state.thought = clipLine(thought, 240);
+      state.target = prefs.marks ? box : null;
+      state.doing = clipLine(doing, 160);
+      await draw(page);
+    },
+    /**
+     * Real input under the window (a headed click or key): the overlay hides while it runs, so a
+     * click never lands on the panel and a key never in its note box.
+     */
+    async hidden<T>(fn: () => Promise<T>): Promise<T> {
+      if (!host || !enabled) return fn();
+      host.send({ t: "hide" });
+      try {
+        return await fn();
+      } finally {
+        if (enabled) host?.send({ t: "show" });
+      }
+    },
     /** After an act: the page may have changed, so its boxes go; the panel stays. */
-    async after(page: Page): Promise<void> {
+    async after(page: S): Promise<void> {
       if (!enabled || !drawn) return;
       state.target = null;
       state.boxes = [];
       await draw(page);
     },
     /** A new document: its boxes go. */
-    async loaded(page: Page): Promise<void> {
+    async loaded(page: S): Promise<void> {
       if (!drawn) return;
       return this.after(page);
     },
@@ -1263,7 +1318,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
      * nothing draws (off, no host), or when `ms` pass unanswered.
      */
     async ask(
-      page: Page,
+      page: S,
       text: string,
       o: { yes?: string; no?: string; ms?: number } = {},
     ): Promise<boolean | null> {
@@ -1299,7 +1354,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       state.who = { name: name ?? state.who.name, color: color ?? state.who.color };
     },
     /** Paused by the person, arming (stops after the running command), or null: running. */
-    async held(page: Page, h: OverlayState["held"]): Promise<void> {
+    async held(page: S, h: OverlayState["held"]): Promise<void> {
       state.held = h;
       if (enabled && drawn) await draw(page);
     },
@@ -1311,7 +1366,7 @@ export function overlayFor(startOn: boolean, deps: OverlayDeps = {}) {
       return fresh.map((n) => n.text);
     },
     /** The session ends: the window goes and its process exits. */
-    async remove(_page: Page): Promise<void> {
+    async remove(_page: S): Promise<void> {
       for (const id of [...asking.keys()]) answered(id, null);
       drawn = false;
       state = { ...EMPTY, who: state.who };

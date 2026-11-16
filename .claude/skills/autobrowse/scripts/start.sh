@@ -1,5 +1,6 @@
 #!/bin/bash
 # start.sh <site> [url] [port] [explore flags…]  → one explore session in the background; prints the port when it takes commands.
+# start.sh desktop:<name> "" [port]  → a desktop session (no browser) on the same token file.
 # The token lands in $TMPDIR/autobrowse/explore-<port>.token (owner-only); cmd.sh reads it, nothing prints it.
 set -euo pipefail
 SITE=${1:?site}; URL=${2:-}; PORT=${3:-9090}
@@ -18,7 +19,8 @@ if [ -f "$INFO" ]; then
   fi
 fi
 rm -f "$TOKEN"
-ARGS=(explore "$SITE" --port "$PORT"); [ -n "$URL" ] && ARGS+=(--url "$URL")
+if [[ $SITE == desktop:* ]]; then ARGS=(desktop start "${SITE#desktop:}" --port "$PORT"); WHO="desktop start ${SITE#desktop:} --port $PORT"
+else ARGS=(explore "$SITE" --port "$PORT"); [ -n "$URL" ] && ARGS+=(--url "$URL"); WHO="explore $SITE --port $PORT"; fi
 [ $# -gt 3 ] && ARGS+=("${@:4}")  # --signup/--codes/--login/--headed: what place may type
 # exec: the forked shell becomes the CLI, so nothing holds our stdout open (`start.sh | tail` returns)
 (cd "$ROOT" && exec nohup "$ROOT/bin/autobrowse" "${ARGS[@]}" </dev/null >"$LOG" 2>&1 &)
@@ -26,7 +28,7 @@ ARGS=(explore "$SITE" --port "$PORT"); [ -n "$URL" ] && ARGS+=(--url "$URL")
 warned() { sed -n '/^warning: memory is tight/,/^$/p' "$LOG" | sed '/^$/d'; }
 for _ in $(seq 1 120); do
   [ -f "$TOKEN" ] && { warned; echo "port $PORT"; echo "log $LOG"; echo "when done: autobrowse stop $PORT achieved|failed \"why\""; exit 0; }
-  if ! pgrep -qf "explore $SITE --port $PORT"; then sleep 1; [ -f "$TOKEN" ] && { warned; echo "port $PORT"; exit 0; }; echo "explore exited; log:"; sed 's/[A-Za-z0-9_-]\{30,\}/<tok>/g' "$LOG" | tail -20; exit 1; fi
+  if ! pgrep -qf "$WHO"; then sleep 1; [ -f "$TOKEN" ] && { warned; echo "port $PORT"; exit 0; }; echo "${ARGS[0]} exited; log:"; sed 's/[A-Za-z0-9_-]\{30,\}/<tok>/g' "$LOG" | tail -20; exit 1; fi
   sleep 1
 done
 echo "no token after 120s; log:"; sed 's/[A-Za-z0-9_-]\{30,\}/<tok>/g' "$LOG" | tail -20; exit 1

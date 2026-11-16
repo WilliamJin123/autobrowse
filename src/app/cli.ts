@@ -1031,7 +1031,7 @@ registerEnvCommands(program, settings, {
   filledBy: (name) => envNameKey(keyStoreFor(settings), settings.owner, name),
 });
 registerSettingsCommands(program, settings);
-registerDesktopCommands(program, tmpdir());
+registerDesktopCommands(program, tmpdir(), settings);
 registerWalletCommands(program, settings);
 registerFilesCommands(program, settings);
 registerCallsCommands(program, settings);

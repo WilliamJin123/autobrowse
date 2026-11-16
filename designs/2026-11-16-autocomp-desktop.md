@@ -26,9 +26,10 @@ clicks to the front window.
 
 - **Stage 1 (built):** the engine, the hands (record and replay), the compiler, and the film. The director is
   recorded once through explore's `os` command, which already journals desktop rows. Takes are compiled replays.
-- **Stage 2:** the browserless session (D2), the overlay over any window (D7) and the CLI names (D9). The film
-  does not need them: a take has no overlay or steering. Stage 2 gets its own live proof: a person's Pause,
-  Resume and a note during a desktop session, with the cursor over a native window.
+- **Stage 2 (built, William: "nah build it bro"):** the browserless session (D2), the overlay over any window (D7)
+  and the CLI names (D9). The film does not need them: a take has no overlay or steering. Live proof (11-16,
+  Calculator): Pause held a command, an unchanged Resume ran it, a person's press and note refused the next one
+  with `changed` and `notes`.
 
 ## What existed before this work (2026-11-16, HEAD)
 
@@ -52,6 +53,8 @@ clicks to the front window.
   The focus guard, the headed retry, waits and secrets live here, once, for both.
 - `src/desktop/mac.ts`: `shell`, root shell, screenshot and file checks; the root helper.
 - `compiler/structure.ts`, `render.ts`: desktop ops become outline ops, then `hands.run(...)` lines.
+- `src/desktop/session.ts`: the browserless session (D2), `windowSurface` (D7). `src/explore/steer.ts`: the
+  steering both sessions share. `src/explore/wire.ts`: command ids and repeats. Card: `map/objects/build/desktop-session.md`.
 - Consumers of the op shape: explore's `os` command (`explore/server.ts`), autotrack import
   (`autotrack/import.ts`), the agent prompt (`agent/explorer.ts`). Old recordings with JXA-era desktop rows
   no longer parse: they are dropped, not migrated.
@@ -96,8 +99,10 @@ clicks to the front window.
 | D. Desktop session = explore + a blank browser | Reuse explore as is | No new server | A 1–2 GB browser for nothing; page commands make no sense |
 
 Priorities, in order: no regression in explore, one steering code, small blast radius. **B.**
-`Scene` is what a resume compares: `where()` (url, or app plus window title) and `rows()` (aria rows,
-or AX rows). Hand-act counting stays browser-only. On the desktop, "the person acted" means the scene changed.
+`Scene` is what a resume compares: `where()` (url, or the front window's app and id; it may be async) and
+`rows()` (aria rows, or the last act's window's AX rows without refs). Hand-act counting stays browser-only.
+On the desktop, "the person acted" means the scene changed: `Scene.actedBy: "change"`.
+A pause captures the scene (~0.5 s on the desktop); a resume waits for that capture, else it has nothing to compare.
 
 ### D3. Desktop ops
 
@@ -113,6 +118,8 @@ or AX rows). Hand-act counting stays browser-only. On the desktop, "the person a
 
 - A ref belongs to one snapshot, so a workflow cannot store it. Hands keep each window's newest snapshot;
   a ref from an older one is refused as stale.
+- The engine itself keeps older refs live (live check, 11-16: a ref from an older snapshot still clicks).
+  So steering's own resume snapshot does not stale the agent's refs; hands still refuse them by their rule.
 - At record, the journal stores the ref's target: window (app, title), control (role, name, native id).
   A control with no name and no id, or one whose target matches two controls, is refused at record.
 - At replay, `find` gives a fresh ref. Native id ranks first. Zero or two matches fail the step, never a guess.
@@ -137,10 +144,14 @@ or AX rows). Hand-act counting stays browser-only. On the desktop, "the person a
 - An agent's wait is capped at 600 s (`WAIT_MAX_S`): the explore client resends at 900 s. A replay has no
   socket, so its waits take the recorded timeout with no cap (a whole inner run).
 
-### D7. Overlay over any window (stage 2)
+### D7. Overlay over any window (stage 2, built)
 
-- `geometryOf` becomes one of two sources. Page: CDP, as today. Window: `list-windows` bounds and pid,
-  with `view` equal to the bounds and the display's scale from `list-displays`.
+- Geometry has two sources (`Surface<S>`). Page: CDP, as before (`pageSurface`). Window: `windowSurface`, the
+  `list-windows` bounds and pid, with `view` equal to the bounds and `dpr` from the display under the window's center.
+- The overlay host is a window too: the session leaves its pid out of every `windows` answer.
+- Headed input runs with the overlay hidden (`hidden`), so a physical click never lands on the panel.
+- Before the first act the overlay follows the front window, which may be another app.
+- The panel's web view has no accessibility tree: an agent cannot press Pause by ref. Only a person can.
 - Boxes and the cursor take the control's bounds from the snapshot, in screen points.
 - The panel, Pause and note box are unchanged. The overlay follows the window of the last act.
 
@@ -151,13 +162,17 @@ or AX rows). Hand-act counting stays browser-only. On the desktop, "the person a
 - Each outline op renders as one `hands.run({...})` line; typed text keeps the value kinds (plan field,
   secret, literal). A wait's text may be a plan field.
 - The generated test seeds `fakeDesktop` with the windows and files the ops name.
-- A desktop row has no page. Explore writes the page URL it was on (`page.url()`); autotrack import writes
-  `""`, and so will the stage 2 session.
+- A desktop row has no page. Explore writes the page URL it was on (`page.url()`); autotrack import and the
+  desktop session write `""`. A saved desktop session recording has site `desktop`.
 
 ### D9. Names (stage 2)
 
-- No second bin. `autobrowse desktop start <name>` writes the same `explore-<port>.token` file as explore,
-  so `scripts/start.sh`, `cmd.sh` and `stop.sh` work unchanged.
+- No second bin. `autobrowse desktop start <name> [--port 9095] [--idle <s>] [--hold] [--fresh] [--no-overlay]`
+  writes the same `explore-<port>.token` and `.json` files as explore, so `cmd.sh` and `stop.sh` work unchanged;
+  `start.sh desktop:<name> "" <port>` starts one. Default port 9095.
+- Journal: `<recordings>/.desktop-<name>/journal-port-<port>.jsonl`. A restart resumes it; `--fresh` drops it.
+- Commands: `os`, `goal`, `note`, `pause`, `resume`, `journal`, `save`, `close` and the reads. A page command
+  answers 400 "page commands need explore".
 
 ## The film (proof)
 
@@ -180,8 +195,12 @@ or AX rows). Hand-act counting stays browser-only. On the desktop, "the person a
 - Compile round trip: the director's journal goes through outline and render; the module typechecks, and
   `runFlow` runs it on `fakeDesktop`.
 - Explore `os` (`test/explore.test.ts`): snapshot, click by ref, the payment gate, a secret kept by name.
-- Stage 2: the explore-steer tests run unchanged after the steering move; new session tests for held
-  command, resume, refusal after a scene change, notes; the window geometry source through the fake host.
+- Stage 2 (`test/desktop-session.test.ts`, fake desktop and fake host): held command and unchanged resume,
+  refusal after a scene change and after a focus move, a resume during the capture, notes, the payment gate,
+  page commands refused (400 on the wire), headed input hides the overlay, `aim` boxes relative to the window,
+  window geometry, the overlay's window left out, journal and save, token files. The explore-steer tests pass unchanged.
+- Adapter: a read that hits `APP_UNRESPONSIVE` is read once more; an act is never sent twice (live: 2 in 5 first
+  snapshots of a background Calculator failed so).
 - Live smoke, opt-in (`DESKTOP_LIVE=1`, `test/desktop-live.test.ts`; `DESKTOP_LIVE_INPUT=1` adds the typing), out of the gate: a Ghostty instance of its own, place, type,
   Return, wait for the echo, quit. Run by hand at hand-off.
 - Film rehearsal: the director workflow on the real desktop, up to the post.
@@ -212,3 +231,6 @@ or AX rows). Hand-act counting stays browser-only. On the desktop, "the person a
 - 2026-11-16: No `autocomp` bin: a second name for one CLI; the session reuses explore's token file.
 - 2026-11-16: Old JXA-era desktop rows are dropped, not migrated (engineering bar: break compat).
 - 2026-11-16: goldfish review: 39 findings (3 merged): 25 applied, 5 rejected (already in code or disproved by it), 6 wait on stage 2 or stay open questions (a menu or sheet as a find surface, pruning old snapshots); open: stage 2 now or after the film (William).
+- 2026-11-16: Stage 2 built now, not after the film (William: "nah build it bro").
+- 2026-11-16: Steering moved to `explore/steer.ts` (D2 B); a held command counts as sent before the resume whatever the clock says, and a resume waits for the pause's capture (both races seen in tests and live).
+- 2026-11-16: Adapter reads retry once on `APP_UNRESPONSIVE`; acts never retry (a resent click is a second click).

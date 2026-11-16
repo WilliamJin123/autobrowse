@@ -92,6 +92,40 @@ describe("agent-desktop adapter", () => {
     await expect(d.snapshot("w-999999")).rejects.toThrow(/WINDOW_NOT_FOUND/);
   });
 
+  it("a read that hits a busy app is read once more; an act is never sent twice", async () => {
+    const busy = JSON.stringify({
+      version: "2.6",
+      ok: false,
+      command: "snapshot",
+      error: {
+        code: "APP_UNRESPONSIVE",
+        message: "could not read AXFocusedUIElement",
+        disposition: { delivery: "not_delivered", retry: "safe" },
+      },
+    });
+    const calls: string[] = [];
+    let first = true;
+    const run: AdRun = async (args) => {
+      calls.push(args[0] ?? "");
+      const out = first ? busy : fixture(args[0] ?? "").replace(/\n\s*/g, "");
+      first = false;
+      return { code: 0, stdout: `${out}\n`, stderr: "" };
+    };
+    const base = {
+      shell: async () => ({ code: 0, stdout: "", stderr: "" }),
+      screenshot: async () => undefined,
+      exists: async () => false,
+      rootReady: async () => false,
+    };
+    const d = agentDesktop(base, { run, sleep: async () => undefined });
+    expect((await d.snapshot("w-233741")).id).toBe("s9pv385und5c");
+    expect(calls).toEqual(["snapshot", "snapshot"]);
+    first = true;
+    calls.length = 0;
+    await expect(d.click("@s1:e1")).rejects.toThrow(/APP_UNRESPONSIVE/);
+    expect(calls).toEqual(["click"]);
+  });
+
   it("a launch whose window has no size yet answers no window", async () => {
     const { d, calls } = scripted();
     const r = await d.launch("Calculator", { fresh: true, args: ["-x"] });
