@@ -1,7 +1,7 @@
 import { readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Vitest keeps transformed modules in <tmpdir>/<21-char nanoid>/ssr and removes the dir only on a
 // clean close; killed runs left 6217 of them, 20.6 GB (10-23). Its own dir takes the path before
@@ -29,6 +29,8 @@ const FILE_CACHE_DIR = join(tmpdir(), "autobrowse-test-files");
 rmSync(FILE_CACHE_DIR, { recursive: true, force: true });
 export default defineConfig({
   test: {
+    // dist/ holds tsc copies of src tests: same tests twice
+    exclude: [...configDefaults.exclude, "dist/**"],
     env: {
       AUTOBROWSE_STATS: "off",
       AUTOBROWSE_RESUME: "off",
