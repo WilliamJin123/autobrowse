@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { type CredentialStore, keyId, parseKeyAddress, type SecretAudit } from "credvault";
@@ -3052,7 +3053,7 @@ async function serve(
         const id = history && !history.ended() ? history.id : null;
         await endRun(c.outcome, c.summary ?? null);
         // The browser stays open for a next goal: say how it goes.
-        return { ok: true, run: id, close: `autobrowse stop ${opts.port}` };
+        return { ok: true, run: id, close: `autobrowse stop ${port}` };
       }
       case "os": {
         const a = c.act;
@@ -3274,7 +3275,14 @@ async function serve(
       }
     });
   });
-  await new Promise<void>((resolve) => server.listen(opts.port, "127.0.0.1", resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject); // a taken port fails the start, never hangs
+    server.listen(opts.port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const port = (server.address() as AddressInfo).port; // opts.port 0: the OS picks
   if (opts.tokenFile) {
     mkdirSync(dirname(opts.tokenFile), { recursive: true, mode: 0o700 });
     writeFileSync(opts.tokenFile, token, { mode: 0o600 });
@@ -3283,7 +3291,7 @@ async function serve(
   if (infoFile) {
     // No secret in it: who serves this port, for `autobrowse browsers`. Never idle-closed = held.
     const info: ExploreInfo = {
-      port: opts.port,
+      port,
       pid: process.pid,
       site: opts.site,
       driver: opts.driver ?? "console",
@@ -3339,7 +3347,7 @@ async function serve(
   });
   openRun();
   return {
-    port: opts.port,
+    port,
     token,
     exec: async (c) => {
       const t = now();

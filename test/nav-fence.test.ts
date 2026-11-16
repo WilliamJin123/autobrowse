@@ -53,8 +53,8 @@ describe("navigation fence", () => {
     base = `http://127.0.0.1:${p}`;
     away = `http://localhost:${p}`;
     dir = await mkdtemp(join(tmpdir(), "nav-fence-"));
-    port = 9800 + Math.floor(Math.random() * 100);
-    ({ done, token } = await startExplore({
+    port = 0; // the OS picks; startExplore answers the bound port
+    ({ done, token, port } = await startExplore({
       site: "scratch",
       port,
       allowHosts: (h) => h === "127.0.0.1",

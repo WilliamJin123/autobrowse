@@ -86,8 +86,8 @@ describe("the bank's code in a 3-D Secure iframe", () => {
       else res.end(`<label>Confirmation code <input id="otp"></label>`);
     }).listen(0);
     webPort = (web.address() as AddressInfo).port;
-    port = 9700 + Math.floor(Math.random() * 200);
-    ({ done, token } = await startExplore({
+    port = 0; // the OS picks; startExplore answers the bound port
+    ({ done, token, port } = await startExplore({
       site: "posthog",
       port,
       tokenFile: join(dir, "explore.token"),

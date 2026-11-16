@@ -82,9 +82,8 @@ describe("explore mode", () => {
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "explore-"));
-    // Clear of the fixed 94xx loopback ports the oauth tests listen on.
-    port = 9500 + Math.floor(Math.random() * 200);
-    ({ done, token } = await startExplore({
+    port = 0; // the OS picks; startExplore answers the bound port
+    ({ done, token, port } = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
       port,
@@ -891,11 +890,10 @@ describe("explore mode", () => {
 describe("pause: a person's hand acts land in the journal", () => {
   it("journals clicks and typing between pause and resume, nothing outside", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-pause-"));
-    const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port,
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
@@ -948,7 +946,7 @@ describe("a session nobody closes", () => {
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port: 9950 + Math.floor(Math.random() * 40),
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       idleMinutes: 0.005, // 300 ms
       browser: {
@@ -978,7 +976,7 @@ describe("a session nobody closes", () => {
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port: 9950 + Math.floor(Math.random() * 40),
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       idleMinutes: 0,
       tokenFile,
@@ -1018,7 +1016,7 @@ describe("a session nobody closes", () => {
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port: 9950 + Math.floor(Math.random() * 40),
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       idleMinutes: 0.005, // 300 ms
       browser: {
@@ -1061,7 +1059,7 @@ describe("a session nobody closes", () => {
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port: 9950 + Math.floor(Math.random() * 40),
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
@@ -1096,7 +1094,7 @@ describe("a session that dies", () => {
       startExplore({
         actTimeoutMs: 2_000, // a miss fails fast
         site: "scratch",
-        port: 9700 + Math.floor(Math.random() * 90),
+        port: 0,
         recordingsDir: join(dir, "recordings"),
         journalFile,
         idleMinutes,
@@ -1170,11 +1168,10 @@ describe("pageChange", () => {
 describe("help without a pause", () => {
   it("a person's acts between two commands are journaled and the next answer says so, once", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-help-"));
-    const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port,
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
@@ -1229,11 +1226,10 @@ describe("help without a pause", () => {
 describe("a missed act in the history", () => {
   it("records what it aimed at and why the locator missed", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-miss-"));
-    const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port,
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       runs: join(dir, "runs"),
       browser: {
@@ -1272,11 +1268,10 @@ describe("what the model saw, for training", () => {
   it("keeps masked answers, the tree after an act, pictures and marks boxes; packs them at the end; a ship clears them", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-obs-"));
     const runs = join(dir, "runs");
-    const port = 9800 + Math.floor(Math.random() * 150);
     const ex = await startExplore({
       actTimeoutMs: 2_000, // a miss fails fast
       site: "scratch",
-      port,
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       runs,
       browser: {
@@ -1363,7 +1358,7 @@ describe("a session that cannot open", () => {
       startExplore({
         actTimeoutMs: 2_000, // a miss fails fast
         site: "scratch",
-        port: 9950 + Math.floor(Math.random() * 40),
+        port: 0,
         recordingsDir: join(dir, "recordings"),
         browser: {
           tier: "browserbase",
@@ -1415,7 +1410,7 @@ describe("network and html", () => {
       startExplore({
         actTimeoutMs: 2_000, // a miss fails fast
         site: "scratch",
-        port: 9600 + Math.floor(Math.random() * 150),
+        port: 0,
         recordingsDir: join(dir, "recordings"),
         browser: {
           tier: "local",

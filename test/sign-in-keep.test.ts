@@ -177,7 +177,7 @@ describe("hand sign-in and teach on by default, end to end", () => {
     try {
       const ex = await startExplore({
         site: "localhost",
-        port: 9800 + Math.floor(Math.random() * 150),
+        port: 0,
         recordingsDir: join(dir, "recordings"),
         runs,
         credentials: store,

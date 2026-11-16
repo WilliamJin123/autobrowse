@@ -21,8 +21,8 @@ describe("explore --look-only", () => {
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "explore-look-"));
-    port = 9700 + Math.floor(Math.random() * 100);
-    ({ done, token } = await startExplore({
+    port = 0; // the OS picks; startExplore answers the bound port
+    ({ done, token, port } = await startExplore({
       site: "scratch",
       port,
       lookOnly: true,

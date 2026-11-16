@@ -35,7 +35,7 @@ describe("the panel's Pause and notes steer the agent", () => {
     };
     const ex = await startExplore({
       site: "scratch",
-      port: 9600 + Math.floor(Math.random() * 150),
+      port: 0,
       recordingsDir: join(dir, "recordings"),
       overlay: true,
       overlayDeps: {

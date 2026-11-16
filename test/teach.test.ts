@@ -193,7 +193,7 @@ describe("teach end to end", () => {
     try {
       const ex = await startExplore({
         site: "scratch",
-        port: 9800 + Math.floor(Math.random() * 150),
+        port: 0,
         recordingsDir: join(dir, "recordings"),
         runs,
         driver: "person",

@@ -153,8 +153,12 @@ describe("explore runs a compiled workflow on its page (flow)", () => {
       );
     }).listen(0);
     webPort = (web.address() as AddressInfo).port;
-    port = 9900 + Math.floor(Math.random() * 90);
-    ({ done: done_, token } = await startExplore({
+    port = 0; // the OS picks; startExplore answers the bound port
+    ({
+      done: done_,
+      token,
+      port,
+    } = await startExplore({
       site: "shop",
       port,
       tokenFile: join(dir, "explore.token"),
