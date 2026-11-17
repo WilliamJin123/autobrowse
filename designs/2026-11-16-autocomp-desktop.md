@@ -185,6 +185,18 @@ A pause captures the scene (~0.5 s on the desktop); a resume waits for that capt
 5. Before each take: free memory check (the last take was black under swap). OBS records the whole screen.
    Music is an OBS media source.
 
+### Beats (William, 11-16)
+
+1. Autocomp opens the Claude desktop app (not Ghostty) and types the prompt.
+2. Claude runs autobrowse on X: the sign-in, with secrets shown as dots.
+3. It scrolls X through a few computer-use demos.
+4. It types draft 1, the long draft, into the composer.
+5. Pause, then the steer note "make it way shorter and to the point", then Resume. Cmd+A and Backspace clear the draft (`key` command), and draft 2 is typed.
+6. Post. Draft 2 is fixed text in the prompt, so William's yes covers the exact words.
+7. Double reveal: the inner run compiles into a workflow on screen, then the camera pulls back to the autocomp workflow that typed the first prompt. No captions.
+
+Cut: profile edit, approval gate. Open: the Claude app sign-in (it timed out twice under swap).
+
 ## Tests
 
 - Adapter, offline: recorded agent-desktop envelopes as fixtures (ok, `STALE_REF`, `AMBIGUOUS_TARGET`,
