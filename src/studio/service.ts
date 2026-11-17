@@ -6,7 +6,7 @@
  * each finished OBS or Cap recording becomes a video, once. `creatorFind` / `creatorRead`: Studio's
  * Add creator (wren WA-1416 D2): `creator find --request`, then reads of what it tracked.
  */
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import * as restate from "@restatedev/restate-sdk";
@@ -90,19 +90,43 @@ process.on("exit", () => {
 export const wrenIn =
   (checkout: string): Wren =>
   (args, timeoutMs) =>
-    new Promise((ok, fail) =>
-      execFile(
-        "node",
-        ["scripts/prod-wren.mjs", ...args],
-        { cwd: checkout, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-        (err, stdout, stderr) => {
-          if (!err) return ok(stdout);
-          const why = err.killed ? `took over ${timeoutMs / 60_000} minutes` : `exit ${err.code}`;
-          // The CLI's last lines say what broke.
-          fail(new Error(`${why}: ${(stderr || stdout).trim().slice(-400)}`));
-        },
-      ),
-    );
+    new Promise((ok, fail) => {
+      const p = spawn("node", ["scripts/prod-wren.mjs", ...args], {
+        cwd: checkout,
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const pid = p.pid;
+      if (pid) liveGroups.add(pid);
+      let stdout = "";
+      let stderr = "";
+      let killed = false;
+      p.stdout.on("data", (d) => {
+        stdout += d;
+      });
+      p.stderr.on("data", (d) => {
+        stderr = (stderr + d).slice(-4000);
+      });
+      const timer = setTimeout(() => {
+        killed = true;
+        if (!pid) return;
+        killGroup(pid, "SIGTERM");
+        setTimeout(() => killGroup(pid, "SIGKILL"), 5000).unref();
+      }, timeoutMs);
+      p.on("error", (err) => {
+        clearTimeout(timer);
+        if (pid) liveGroups.delete(pid);
+        fail(err);
+      });
+      p.on("close", (code) => {
+        clearTimeout(timer);
+        if (pid) liveGroups.delete(pid);
+        if (code === 0 && !killed) return ok(stdout);
+        const why = killed ? `took over ${timeoutMs / 60_000} minutes` : `exit ${code}`;
+        // The CLI's last lines say what broke.
+        fail(new Error(`${why}: ${(stderr || stdout).trim().slice(-400)}`));
+      });
+    });
 
 /** What `render --only` takes: one format, or the Shorts or thumbnails alone (wren's RENDER_PARTS). */
 export const RENDER_PARTS = ["long", "vertical", "square", "portrait", "shorts", "thumbs"] as const;

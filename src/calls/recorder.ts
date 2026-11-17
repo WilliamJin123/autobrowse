@@ -232,7 +232,10 @@ export class Recorder {
     if (now.getTime() - this.upcomingAt < UPCOMING_EVERY_MS) return;
     this.upcomingAt = now.getTime();
     try {
-      this.upcoming = JSON.parse(await this.d.wren(["calls", "upcoming", "--hours", "24"], 60_000));
+      // 4 min: room for bin/wren's rebuild under swap, still under UPCOMING_EVERY_MS so polls never overlap
+      this.upcoming = JSON.parse(
+        await this.d.wren(["calls", "upcoming", "--hours", "24"], UPCOMING_EVERY_MS - 60_000),
+      );
       // Done ids only matter while their call is listed.
       const listed = new Set(this.upcoming.map((c) => c.id));
       this.file.done = this.file.done.filter((id) => listed.has(id));

@@ -5,7 +5,7 @@
  * known-value scrubs cannot know: names, places and numbers in page text.
  * Strings are batched: one `/analyze` call per chunk of joined strings, spans mapped back.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { strFromU8, zipSync } from "fflate";
 import { shareFetch } from "./fetch.js";
@@ -14,7 +14,17 @@ import { SHARE_URL } from "./share.js";
 
 const run = promisify(execFile);
 
-export const PRESIDIO_IMAGE = "mcr.microsoft.com/presidio-analyzer:2.2.362";
+export const PRESIDIO_BASE = "mcr.microsoft.com/presidio-analyzer:2.2.362";
+/** Built here from the base: spaCy en_core_web_sm in place of _lg (~0.4 GB RAM, not 0.8–1.5). */
+export const PRESIDIO_IMAGE = "autobrowse-presidio:2.2.362-sm";
+const SMALL_MODEL =
+  "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl";
+const DOCKERFILE = `FROM ${PRESIDIO_BASE}
+USER root
+RUN pip install ${SMALL_MODEL} && pip uninstall -y en_core_web_lg \\
+ && sed -i s/en_core_web_lg/en_core_web_sm/ presidio_analyzer/conf/default.yaml
+USER presidio
+`;
 const CONTAINER = "autobrowse-presidio";
 const PORT = 5002;
 
@@ -66,6 +76,7 @@ export async function presidioUp(): Promise<Analyze> {
       () => false,
     );
   if (await alive()) return presidioAt(base);
+  await smallImage();
   await run("docker", ["rm", "-f", CONTAINER]).catch(() => undefined);
   await run("docker", [
     "run",
@@ -76,7 +87,7 @@ export async function presidioUp(): Promise<Analyze> {
     "-p",
     `127.0.0.1:${PORT}:3000`,
     "--memory",
-    "2g",
+    "1g",
     PRESIDIO_IMAGE,
   ]);
   for (let i = 0; i < 90; i++) {
@@ -84,6 +95,29 @@ export async function presidioUp(): Promise<Analyze> {
     await new Promise((r) => setTimeout(r, 1000));
   }
   throw new Error("presidio did not start in 90 s");
+}
+
+/** Build `PRESIDIO_IMAGE` once; Dockerfile on stdin, no context. */
+async function smallImage(): Promise<void> {
+  const have = await run("docker", ["image", "inspect", PRESIDIO_IMAGE]).then(
+    () => true,
+    () => false,
+  );
+  if (have) return;
+  await new Promise<void>((ok, fail) => {
+    const p = spawn("docker", ["build", "-t", PRESIDIO_IMAGE, "-"], {
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+    let err = "";
+    p.stderr.on("data", (d) => {
+      err = (err + d).slice(-2000);
+    });
+    p.on("error", fail);
+    p.on("close", (code) =>
+      code === 0 ? ok() : fail(new Error(`presidio image build failed: ${err.slice(-500)}`)),
+    );
+    p.stdin.end(DOCKERFILE);
+  });
 }
 
 export async function presidioDown(): Promise<void> {
