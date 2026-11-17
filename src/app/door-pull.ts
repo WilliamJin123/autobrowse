@@ -3,10 +3,12 @@
  * no inbound port, and calls wait in wren's Postgres while the Mac sleeps. Each handler runs
  * whole with a plain `ctx`; there is no journal here, so a rerun starts the handler again. The send
  * journal keeps each keyed write once, as it did under Restate. wren imports nothing from here and
- * this imports nothing from wren: the contract is the four `/rt/*` routes.
+ * this imports nothing from wren: the contract is the four `/rt/*` routes. A call to a name the
+ * door does not serve (keyRotate's run) goes to the local runner (designs/2026-11-16-local-runner.md).
  */
 import { randomUUID } from "node:crypto";
 import * as restate from "@restatedev/restate-sdk";
+import { type Ingress, rpc } from "../runtime/index.js";
 
 /** The SDK's handler wrapper: the part a runtime calls (wren `packages/runtime/src/pg/registry.ts`). */
 interface Wrapper {
@@ -120,20 +122,60 @@ type RunOpts = {
 /** Thrown at the next step once wren asks for a cancel: ends the call with 409, as Restate. */
 const cancelled = () => new restate.TerminalError("cancelled", { errorCode: 409 });
 
+/** Where calls to names the door does not serve go: the local runner. */
+export interface LocalCalls {
+  ingress: Ingress;
+  /** True: the door serves this full name. */
+  atDoor(name: string): boolean;
+}
+
+/** The runner's client for one call; the SDK's opts rebuilt as the clients' (their classes differ). */
+function localCall(
+  local: LocalCalls,
+  def: { name: string },
+  key: string | undefined,
+  send: boolean,
+  method: string,
+  parameter: unknown,
+  opts: Record<string, unknown>,
+): Promise<unknown> {
+  const o = {
+    ...(opts.idempotencyKey ? { idempotencyKey: String(opts.idempotencyKey) } : {}),
+    ...(opts.headers ? { headers: opts.headers as Record<string, string> } : {}),
+  };
+  const delay = millis(opts.delay);
+  const i = local.ingress;
+  const c = (key === undefined
+    ? send
+      ? i.serviceSendClient(def)
+      : i.serviceClient(def)
+    : send
+      ? i.objectSendClient(def, key)
+      : i.objectClient(def, key)) as unknown as Record<
+    string,
+    (p: unknown, o: unknown) => Promise<unknown>
+  >;
+  const f = c[method];
+  if (!f) throw new Error(`no handler ${def.name}/${method}`);
+  return f(parameter, send ? rpc.sendOpts({ ...o, ...(delay ? { delay } : {}) }) : rpc.opts(o));
+}
+
 /**
  * A `ctx` for one call: `run` (its own retries; at the cap a `TerminalError`, as Restate), `sleep`,
- * `request()`, and clients that call through the door. Anything else throws by name.
+ * `request()`, and clients that call through the door, or the local runner for its names.
+ * Anything else throws by name.
  */
 export function plainContext(
   c: Call,
   door: DoorPost,
   state: { cancel: boolean },
   log: (msg: string, extra?: Record<string, unknown>) => void,
+  local?: LocalCalls,
 ) {
   const step = () => {
     if (state.cancel) throw cancelled();
   };
-  const client = (send: boolean) => (def: { name: string }) =>
+  const client = (send: boolean) => (def: { name: string }, key?: string) =>
     new Proxy(
       {},
       {
@@ -145,7 +187,10 @@ export function plainContext(
             const opts = hasOpts ? (last?.getOpts?.() ?? {}) : {};
             const parameter = !hasOpts || args.length === 2 ? args[0] : undefined;
             const delay = millis(opts.delay);
-            const path = `/${encodeURIComponent(def.name)}/${encodeURIComponent(method)}${
+            const target = `/${encodeURIComponent(def.name)}${
+              key === undefined ? "" : `/${encodeURIComponent(key)}`
+            }`;
+            const path = `${target}/${encodeURIComponent(method)}${
               send ? `/send${delay ? `?delay=${delay}ms` : ""}` : ""
             }`;
             const headers: Record<string, string> = {
@@ -154,6 +199,13 @@ export function plainContext(
             };
             const p = (async () => {
               step();
+              if (local && !local.atDoor(def.name))
+                return localCall(local, def, key, send, method, parameter, opts).catch((e) => {
+                  const status = (e as { status?: unknown })?.status;
+                  throw typeof status === "number"
+                    ? new restate.TerminalError((e as Error).message, { errorCode: status })
+                    : e;
+                });
               const r = await door(path, parameter ?? null, headers);
               if (r.status >= 200 && r.status < 300) return r.text ? JSON.parse(r.text) : undefined;
               let message = r.text;
@@ -165,9 +217,9 @@ export function plainContext(
             if (send) {
               // a send's handle is not awaited by its callers
               p.catch((e: unknown) => log("door pull: send failed", { path, err: String(e) }));
-              return {
-                invocationId: p.then((x) => (x as { invocationId?: string })?.invocationId),
-              };
+              const invocationId = p.then((x) => (x as { invocationId?: string })?.invocationId);
+              invocationId.catch(() => {}); // logged above; unawaited, it must not crash the desk
+              return { invocationId };
             }
             return p;
           };
@@ -220,8 +272,10 @@ export function plainContext(
       await sleep(millis(d) ?? 0);
       step();
     },
-    serviceClient: client(false),
-    serviceSendClient: client(true),
+    serviceClient: (def: { name: string }) => client(false)(def),
+    serviceSendClient: (def: { name: string }) => client(true)(def),
+    objectClient: client(false),
+    objectSendClient: client(true),
     rand: { random: Math.random, uuidv4: randomUUID },
     date: { now: async () => Date.now(), toJSON: async () => new Date().toJSON() },
     console,
@@ -242,6 +296,8 @@ export interface PullOptions {
   retry: RetryPolicy;
   /** Calls at once: more than one, since a call may wait on another of its own (`renew`). */
   concurrency: number;
+  /** The runner, for names the door does not serve. */
+  local?: LocalCalls;
   /** wren's lease is 60 s: renew well inside it. */
   renewMs?: number;
   /** First wait after a failed register or claim; doubles to 60 s for register. */
@@ -310,7 +366,7 @@ export async function pullFromDoor(o: PullOptions) {
     try {
       if (state.cancel) throw cancelled();
       const out = await h.wrapper.invoke(
-        plainContext(c, o.door, state, o.log),
+        plainContext(c, o.door, state, o.log, o.local),
         new Uint8Array(Buffer.from(c.input, "base64")),
       );
       await finish(c, { value: Buffer.from(out).toString("base64") });

@@ -183,7 +183,7 @@ describe("setup", () => {
     expect(asked[0]?.startsWith("hidden")).toBe(true);
     expect(put).toEqual({ LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-test" });
   });
-  it("tier 2 points the worker at a local Restate", async () => {
+  it("tier 2 asks nothing more: the runner is a file", async () => {
     const { put, env } = envSink();
     const { io, said } = scripted([""]);
     await runSetup(io, memoryCredentials(), SITE_LOGINS, {
@@ -192,8 +192,7 @@ describe("setup", () => {
       has: () => false,
       set: { llm: true, codesInbox: true },
     });
-    expect(put.RESTATE_ADMIN_URL).toBe("http://localhost:9070");
-    expect(put.RESTATE_ENDPOINT_URL).toBe("http://localhost:9081");
-    expect(said.some((l) => l.includes("brew install restatedev/tap/restate"))).toBe(true);
+    expect(put).toEqual({});
+    expect(said.some((l) => l.includes("`autobrowse worker`"))).toBe(true);
   });
 });

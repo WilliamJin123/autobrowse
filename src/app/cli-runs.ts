@@ -22,19 +22,16 @@ import { writeRecords } from "../agent/records.js";
 import { SITE_LOGINS } from "../auth/sites.js";
 import { defineFlow } from "../browser/flow.js";
 import type { RecordsOp, Row } from "../browser/records.js";
-import { httpClient } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
 import { readLlmCalls } from "../llm/ledger.js";
-import { named } from "../owner.js";
 import { fileSiteCalls, readSiteCalls } from "../runs/calls.js";
 import { flowRunReport, formatFlowRunReport, readFlowRuns } from "../runs/flows.js";
-import { finishedCalls, fromCaps, fromRestate, newRows } from "../runs/import.js";
+import { fromCaps, newRows } from "../runs/import.js";
 import { baseSite, listRuns, openRuns, readRun, runFile } from "../runs/log.js";
 import { runSteps } from "../runs/steps.js";
 import { formatSuccessReport, successReport } from "../runs/success.js";
 import { formatTokenReport, readCmds, tokenReport } from "../runs/tokens.js";
 import type { MeteredCall } from "../sites/caps.js";
-import { DESK_SERVICE, SITES_SERVICE } from "../sites/service.js";
 import { accent, columns, dim, good, warn } from "../style.js";
 import { buildWalk } from "../walks/build.js";
 import {
@@ -597,24 +594,10 @@ export function registerRunsCommands(
 
   success
     .command("import")
-    .description(
-      "Backfill site calls from before the ledger: Restate's finished invocations (about a day) and the caps ledger (14 days)",
-    )
-    .option("--no-restate", "skip Restate")
-    .action(async (o: { restate: boolean }) => {
+    .description("Backfill site calls from before the ledger: the caps ledger (14 days)")
+    .action(async () => {
       const dir = siteCallsDirFor(settings);
       const have = readSiteCalls(dir, "2000-01-01");
-      let restate: ReturnType<typeof fromRestate> = [];
-      if (o.restate) {
-        restate = fromRestate(
-          await finishedCalls({
-            adminUrl: `${settings.restateIngressUrl.replace(/\/$/, "")}/admin`,
-            authToken: settings.restateAuthToken ?? null,
-            http: httpClient(),
-            services: [SITES_SERVICE, DESK_SERVICE].map((n) => named(n, settings.owner)),
-          }),
-        );
-      }
       const capsDir = join(dirname(expandHome(settings.capsFile)), "caps-calls");
       const metered: MeteredCall[] = [];
       if (existsSync(capsDir))
@@ -626,11 +609,11 @@ export function registerRunsCommands(
               } catch {
                 // torn
               }
-      const rows = newRows(have, restate, fromCaps(metered));
+      const rows = newRows(have, fromCaps(metered));
       const ledger = fileSiteCalls(dir);
       for (const r of rows) ledger.record(r);
       console.log(
-        `${rows.length} calls imported (${rows.filter((r) => r.from === "restate").length} from Restate, ${rows.filter((r) => r.from === "caps").length} from the caps ledger); ${have.length} already there`,
+        `${rows.length} calls imported from the caps ledger; ${have.length} already there`,
       );
     });
 }

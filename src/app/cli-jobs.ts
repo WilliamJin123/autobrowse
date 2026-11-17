@@ -14,12 +14,13 @@ export function registerJobCommands(program: Command, settings: Settings): void 
         url: settings.restateIngressUrl,
         authToken: settings.restateAuthToken ?? null,
         owner: settings.owner,
+        runner: settings.runnerFile,
       }).job,
       ledger: expandHome(settings.jobsFile),
     });
   const job = program
     .command("job")
-    .description("Start a worker handler now, collect its result later: a Restate send by key");
+    .description("Start a handler now, collect its result later: a send by key");
 
   job
     .command("start <service> <handler> [json]")

@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
 import { loadSettings } from "../src/app/config.js";
-import { planEndpoint } from "../src/app/endpoint.js";
 import { enterOwner, ownerFromArgv } from "../src/app/owner.js";
 import {
   buildApp,
@@ -79,20 +78,6 @@ describe("names", () => {
     const catalog = { list: async () => [], get: async () => null, proofs: async () => ({}) };
     const browser = fakeBrowser([]);
     expect(makeCompiledRunObject({ catalog, browser, host }).name).toBe("Compiled_acme");
-  });
-
-  it("the tunnel is the owner's", () => {
-    const tunnel = {
-      RESTATE_INGRESS_URL: "http://127.0.0.1:8080",
-      RESTATE_TUNNEL_NAME: "autobrowse",
-      RESTATE_ENVIRONMENT_ID: "env_1",
-      RESTATE_CLOUD_REGION: "us",
-      RESTATE_IDENTITY_KEY: "publickeyv1_x",
-      RESTATE_AUTH_TOKEN: "t",
-    };
-    const plan = planEndpoint({ ...loadSettings(tunnel), owner: "acme" });
-    expect(plan).toMatchObject({ mode: "tunnel", tunnelName: "autobrowse_acme" });
-    expect(planEndpoint(loadSettings(tunnel))).toMatchObject({ tunnelName: "autobrowse" });
   });
 });
 

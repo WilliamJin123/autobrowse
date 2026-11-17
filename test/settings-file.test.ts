@@ -37,6 +37,17 @@ describe("settings.json", () => {
     expect(() => editSetting(fresh(), "browserKeepMax", "0")).toThrow(/browserKeepMax/);
   });
 
+  it("skips the Restate server's retired keys, in a file and in the env", () => {
+    const path = fresh();
+    writeFileSync(
+      path,
+      JSON.stringify({ restatePort: 9080, RESTATE_ENDPOINT_URL: "http://x", logLevel: "warn" }),
+    );
+    expect(readSettings(path)).toEqual({ logLevel: "warn" });
+    const s = loadSettings({ RESTATE_PORT: "9080", RESTATE_ADMIN_URL: "http://127.0.0.1:9070" });
+    expect(s.runnerFile).toMatch(/runner\.sqlite$/);
+  });
+
   it("edits one setting, sorted, and notes before and after beside the file", () => {
     const path = fresh();
     expect(editSetting(path, "PACE", "fast")).toEqual({

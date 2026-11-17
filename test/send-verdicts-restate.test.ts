@@ -1,60 +1,43 @@
 /**
- * Send verdicts under a real Restate (designs/2026-10-16-send-verdicts.md, "Done when"): a keyed
+ * Send verdicts on the local runner (designs/2026-10-16-send-verdicts.md, "Done when"): a keyed
  * write killed after its submit step, then rerun with its key, answers the verdict without a
  * second write. One test per leg, API and browser. The first call carries the Restate idempotency
  * key equal to the send key, as wren sets it. Old code: the killed call left no record, so a rerun
- * wrote again or threw "already went through". Needs Docker.
+ * wrote again or threw "already went through".
  */
 import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as clients from "@restatedev/restate-sdk-clients";
-import { RestateContainer, RestateTestEnvironment } from "@restatedev/restate-sdk-testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { fileSendJournal, type SendJournal, sitesService } from "../src/sites/index.js";
+import { startTestRunner, type TestRunner } from "./runner-env.js";
 import { platform, resetPlatform, scratchFacade } from "./send-rig.js";
 
 const NAME = "sites_verdicts_restate";
 let dir: string;
-let env: RestateTestEnvironment;
+let env: TestRunner;
 let journal: SendJournal;
-
-/** A Restate that cannot be left behind (same as profile-wait-restate.test.ts). */
-const container = () => {
-  const c = new RestateContainer();
-  (c as unknown as { hostConfig: { AutoRemove?: boolean } }).hostConfig.AutoRemove = true;
-  return c
-    .withAutoRemove(false)
-    .withEntrypoint(["timeout", "-s", "KILL", "30m", "/usr/local/bin/restate-server"])
-    .withCommand([])
-    .alwaysReplay();
-};
 
 type Handlers = {
   call: (req: unknown) => Promise<unknown>;
   verdict: (req: { sendKey: string }) => Promise<unknown>;
 };
-const ingress = () => clients.connect({ url: env.baseUrl() });
+const ingress = () => env.ingress();
 const svc = () => ingress().serviceClient<Handlers>({ name: NAME });
 const sender = () => ingress().serviceSendClient<Handlers>({ name: NAME });
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "send-verdicts-"));
   journal = fileSendJournal(join(dir, "sends"));
-  const start = () =>
-    RestateTestEnvironment.start({
-      services: [
-        sitesService(scratchFacade(join(dir, "started")), NAME, undefined, null, {
-          journal,
-          // Short, so a verify read does not wait half a minute.
-          verifyWaitMs: 200,
-        }),
-      ],
-      container,
-      serviceEndpointAccess: "docker-host",
-    });
-  env = await start().catch(start);
+  env = await startTestRunner([
+    sitesService(scratchFacade(join(dir, "started")), NAME, undefined, null, {
+      journal,
+      // Short, so a verify read does not wait half a minute.
+      verifyWaitMs: 200,
+    }),
+  ]);
 }, 180_000);
 
 afterAll(async () => {
@@ -74,7 +57,7 @@ const until = async (what: string, ok: () => boolean, ms = 15_000) => {
 
 /**
  * Run a keyed write with the idempotency key set to the send key. Hold it after its submit step,
- * kill the invocation through the admin API, then let the leg fail as a crashed process would.
+ * kill the invocation, then let the leg fail as a crashed process would.
  */
 async function writeKilledAfterSubmit(req: Record<string, unknown>, key: string) {
   platform.mode = "hold";
@@ -90,10 +73,7 @@ async function writeKilledAfterSubmit(req: Record<string, unknown>, key: string)
     "the write reached the platform and the journal says submitted",
     () => platform.writes.length === 1 && journal.get(key)?.submitted === true,
   );
-  const res = await fetch(`${env.adminAPIBaseUrl()}/invocations/${sent.invocationId}/kill`, {
-    method: "PATCH",
-  });
-  expect(res.ok).toBe(true);
+  expect(await env.kill(sent.invocationId)).toBe(true);
   // The leg dies as a crash would: its work is done on the platform, nothing comes back.
   release();
   await until("the leg ended", () => !journal.live(key));

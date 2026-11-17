@@ -8,6 +8,8 @@
  * It also serves `claude`: questions to Claude Code on this Mac, read only (`src/claude/`),
  * and for Wren `studio`: renders the Videos page asks for, and new recordings picked up every
  * minute (`src/studio/`); and `calls`: William's calls recorded by OBS (`src/calls/`).
+ * It also serves the engine (run objects, `sites`, `browser`, `do`) on the local runner's file, when
+ * no worker dispatches it (designs/2026-11-16-local-runner.md); `do` has no doer here (503).
  * launchd keeps it up: `deploy/desk/`.
  */
 import { resolve } from "node:path";
@@ -19,12 +21,15 @@ import { Recorder } from "../calls/recorder.js";
 import { callsService, macBanner, watchCalls } from "../calls/service.js";
 import { OBS_CREDENTIAL } from "../calls/setup.js";
 import { CLAUDE_SERVICE, claudeService } from "../claude/service.js";
+import { expandHome } from "../google/auth.js";
 import { isDefaultOwner, named } from "../owner.js";
 import { fileSiteCalls } from "../runs/calls.js";
+import { startRunner } from "../runtime/index.js";
 import { DESK_SERVICE, sitesService } from "../sites/index.js";
 import { studioService, watchRecordings, wrenCheckout, wrenIn } from "../studio/service.js";
 import { COMPILED_DIR } from "../workflows/roots.js";
 import { proveCompiled } from "./backend.js";
+import { atDoor } from "./client.js";
 import { doorHttp, pullFromDoor } from "./door-pull.js";
 import { boot } from "./owner.js";
 import {
@@ -98,11 +103,18 @@ const services =
 // calls come only from wren's door (Restate retired 11-09, wren WA-1217): no inbound port
 if (!settings.deskDoorUrl || !settings.deskDoorToken)
   throw new Error("desk needs DESK_DOOR_URL and DESK_DOOR_TOKEN: wren's door is its only source");
+// the engine: runs survive a restart; a worker (`autobrowse worker`) may hold the file instead
+const runner = await startRunner({
+  file: expandHome(settings.runnerFile),
+  services: app.services,
+  log: (msg, err) => log.warn({ err: err === undefined ? undefined : String(err) }, msg),
+});
 const pull = await pullFromDoor({
   door: doorHttp(settings.deskDoorUrl, settings.deskDoorToken),
   services,
   retry: OUTAGE_RETRY,
   concurrency: 8,
+  local: { ingress: runner.ingress, atDoor: (name) => atDoor(name, settings.owner) },
   log: (msg, extra) => log.warn(extra ?? {}, msg),
 });
 if (wren) watchRecordings(wren, (msg) => log.info({ watch: msg }, "recordings"));
@@ -134,6 +146,7 @@ setInterval(() => {
 log.info(
   {
     pulls: pull.services,
+    runner: runner.dispatching ? "dispatching" : "calls only",
     browser: settings.browser,
   },
   "desk up",

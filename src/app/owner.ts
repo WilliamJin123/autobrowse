@@ -56,7 +56,6 @@ export const OWNER_SETTINGS = [
 
 /** Per process: the operator's value is the default, an owner may pick its own (two workers on one machine need two ports). */
 export const PROCESS_SETTINGS = [
-  "restatePort",
   "uiPort",
   "oauthPort",
   "logLevel",

@@ -37,6 +37,21 @@ export const isSecretName = (name: string) =>
 
 const SETTING_NAMES = new Set<string>(Object.values(ENV_KEYS));
 
+/** Gone with the Restate server (designs/2026-11-16-local-runner.md): an old file's keys, skipped. */
+const RETIRED = new Set([
+  "restatePort",
+  "restateAdminUrl",
+  "restateEndpointUrl",
+  "restateTunnelName",
+  "restateEnvironmentId",
+  "restateCloudRegion",
+  "restateIdentityKey",
+  "restateBoxIdentityKey",
+]);
+const retired = (name: string) =>
+  RETIRED.has(name) ||
+  RETIRED.has(name.toLowerCase().replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase()));
+
 /** An env name `settings.json` holds, not the env file: a setting and no secret. */
 export const isSettingName = (name: string) => SETTING_NAMES.has(name) && !isSecretName(name);
 
@@ -67,6 +82,7 @@ export function readSettings(path: string): SettingsValues {
   if (!parsed.success) throw new Error(`${path}: ${parsed.error.issues[0]?.message}`);
   const out: SettingsValues = {};
   for (const [name, v] of Object.entries(parsed.data)) {
+    if (retired(name)) continue;
     const field = settingField(name);
     const value = String(v);
     const bad = checkSetting(field, value);

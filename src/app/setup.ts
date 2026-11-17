@@ -2,7 +2,7 @@
  * `autobrowse setup`: the one conversation a person has with the tool.
  * It asks only for what the picked tier needs and what is missing:
  * tier 0 nothing, tier 1 a model and the sites that sign in as you (plus
- * where codes arrive), tier 2 a local Restate. Secrets are typed hidden and
+ * where codes arrive), tier 2 durable runs (nothing to ask: the runner is a file). Secrets are typed hidden and
  * stored sealed; settings go to the .env. It ends on what to run next.
  */
 
@@ -60,7 +60,7 @@ export interface DeviceLink {
   guide?: () => Promise<void>;
 }
 
-/** 0: public pages, no keys. 1: + a model and your own accounts. 2: + durable runs (local Restate). */
+/** 0: public pages, no keys. 1: + a model and your own accounts. 2: + durable runs (the local runner). */
 export type Tier = 0 | 1 | 2;
 
 export interface SetupOptions {
@@ -70,20 +70,14 @@ export interface SetupOptions {
   /** Where picked settings go (the .env). */
   env?: { put(name: string, value: string): Promise<void> };
   /** Settings already present; a set one is not asked again. */
-  set?: { llm?: boolean; codesInbox?: boolean; phone?: boolean; restate?: boolean };
-  /** Is this program on the PATH (`claude`, `restate-server`)? */
+  set?: { llm?: boolean; codesInbox?: boolean; phone?: boolean };
+  /** Is this program on the PATH (`claude`)? */
   has?: (bin: string) => boolean;
   /** Ask for SMS codes through this Mac's Messages. */
   mac?: boolean;
   /** Ask for every known site in turn (the operator's roster), not a picked few. */
   all?: boolean;
 }
-
-const LOCAL_RESTATE = {
-  RESTATE_INGRESS_URL: "http://localhost:8080",
-  RESTATE_ADMIN_URL: "http://localhost:9070",
-  RESTATE_ENDPOINT_URL: "http://localhost:9081",
-};
 
 const NEXT: Record<Tier, string[]> = {
   0: [
@@ -93,9 +87,7 @@ const NEXT: Record<Tier, string[]> = {
     "next: `autobrowse login <site> --headed` once per site, then `autobrowse mfa totp <site>` where 2FA is off",
     '      `autobrowse do "<a task in words>"` runs the agent',
   ],
-  2: [
-    "next: `restate-server` in one terminal, `autobrowse worker` in another; runs now survive restarts",
-  ],
+  2: ["next: `autobrowse worker`; runs survive restarts (the desk runs them too, when it is up)"],
 };
 
 async function pickTier(io: Prompter): Promise<Tier> {
@@ -171,18 +163,6 @@ async function askCodes(io: Prompter, opts: SetupOptions): Promise<void> {
       io.say("  run setup again: it checks that Messages can be read");
     } else if (phone) io.say("  not a phone number in +<country><number> form; skipped");
   }
-}
-
-/** Tier 2: Restate on this machine, and the worker registers itself with it. */
-async function askRestate(io: Prompter, opts: SetupOptions): Promise<void> {
-  io.say(
-    opts.has?.("restate-server")
-      ? "\nrestate: installed"
-      : "\nrestate: not installed. Once: `brew install restatedev/tap/restate` (or docs.restate.dev)",
-  );
-  if (opts.set?.restate || !opts.env) return;
-  for (const [name, value] of Object.entries(LOCAL_RESTATE)) await opts.env.put(name, value);
-  io.say("  .env: the worker registers itself with the local Restate");
 }
 
 export async function runSetup(
@@ -271,7 +251,6 @@ export async function runSetup(
       io.say("  (the settings pane is open; run setup again after)");
     }
   }
-  if (tier === 2) await askRestate(io, opts);
   io.say("");
   if (stored.length) io.say(`stored: ${stored.join(", ")}`);
   if (skipped.length) io.say(`skipped: ${skipped.join(", ")} (run setup again any time)`);

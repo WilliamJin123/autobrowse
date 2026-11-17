@@ -1,7 +1,12 @@
 // The desk's pull from wren's door (src/app/door-pull.ts): a fake door, real SDK handlers.
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as restate from "@restatedev/restate-sdk";
 import { describe, expect, it } from "vitest";
 import { type Call, type DoorPost, plainContext, pullFromDoor } from "../src/app/door-pull.js";
+import { startRunner } from "../src/runtime/index.js";
 
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
 const unb64 = (s: string) => JSON.parse(Buffer.from(s, "base64").toString());
@@ -268,8 +273,49 @@ describe("plainContext", () => {
     await expect(
       c.serviceClient<{ nope: () => Promise<unknown> }>({ name: "desk" }).nope(),
     ).rejects.toMatchObject({ code: 404, message: "nope" });
-    expect(() => (c as unknown as { objectClient: unknown }).objectClient).toThrow(
-      "ctx.objectClient is not served here",
+    expect(() => (c as unknown as { workflowClient: unknown }).workflowClient).toThrow(
+      "ctx.workflowClient is not served here",
     );
+  });
+
+  it("a name the door does not serve runs on the local runner; the same key twice is one run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "door-local-"));
+    let runs = 0;
+    const rotate = restate.service({
+      name: "Rotate",
+      handlers: {
+        go: async (ctx: restate.Context, x: { n: number }) => ctx.run("rotate", () => ++runs + x.n),
+      },
+    });
+    const runner = await startRunner({ file: join(dir, "r.db"), services: [rotate], pollMs: 20 });
+    try {
+      const f = fakeDoor([], () => ({ results: [] }));
+      const c = plainContext(call("x", {}), f.door, { cancel: false }, quiet, {
+        ingress: runner.ingress,
+        atDoor: (name) => name !== "Rotate",
+      }) as unknown as restate.Context;
+      const send = () =>
+        c
+          .serviceSendClient<{ go: (ctx: unknown, x: { n: number }) => Promise<number> }>({
+            name: "Rotate",
+          })
+          .go({ n: 10 }, restate.rpc.sendOpts({ idempotencyKey: "keyRotate a 1" })).invocationId;
+      const [a, b] = [await send(), await send()];
+      expect(a).toBe(b);
+      const got = await c
+        .serviceClient<{ go: (ctx: unknown, x: { n: number }) => Promise<number> }>({
+          name: "Rotate",
+        })
+        .go({ n: 10 }, restate.rpc.opts({ idempotencyKey: "keyRotate a 1" }));
+      expect(got).toBe(11);
+      expect(runs).toBe(1);
+      await c
+        .serviceClient<{ renew: (ctx: unknown, x: unknown) => Promise<unknown> }>({ name: "desk" })
+        .renew({});
+      expect(f.posts.map((p) => p.path)).toEqual(["/desk/renew"]);
+    } finally {
+      await runner.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,22 +1,21 @@
 /**
- * A busy profile under a real Restate and a real browser: an explore session holds the profile,
+ * A busy profile on the local runner and a real browser: an explore session holds the profile,
  * a post-like write on it waits (durable sleeps), then runs once when the session closes; an
  * idle session gives its profile to the write at once; a profile held past the bound goes back
- * `not sent` under 503. Needs Docker and Playwright's chromium.
+ * `not sent` under 503. Needs Playwright's chromium.
  */
 
 import { symlinkSync, unlinkSync, utimesSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import * as clients from "@restatedev/restate-sdk-clients";
-import { RestateContainer, RestateTestEnvironment } from "@restatedev/restate-sdk-testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { listProcs } from "../src/browser/reap.js";
 import { type BrowserOptions, openSession } from "../src/browser/session.js";
 import { startExplore } from "../src/explore/server.js";
 import type { SiteFacade } from "../src/sites/facade.js";
 import { sitesService } from "../src/sites/index.js";
+import { startTestRunner, type TestRunner } from "./runner-env.js";
 
 const NAME = "sites_waittest";
 let dir: string;
@@ -41,16 +40,7 @@ const facade: SiteFacade = {
   caps: () => ({ day: "2026-10-15", used: {}, calls: [] }),
 };
 
-let env: RestateTestEnvironment;
-const container = () => {
-  const c = new RestateContainer();
-  (c as unknown as { hostConfig: { AutoRemove?: boolean } }).hostConfig.AutoRemove = true;
-  return c
-    .withAutoRemove(false)
-    .withEntrypoint(["timeout", "-s", "KILL", "30m", "/usr/local/bin/restate-server"])
-    .withCommand([])
-    .alwaysReplay();
-};
+let env: TestRunner;
 
 /** An explore session on the profile, its files where real ones live, so the profile's owner reads `explore:<port>`. */
 async function explore() {
@@ -84,8 +74,8 @@ async function explore() {
 }
 
 const post = (path: string) =>
-  clients
-    .connect({ url: env.baseUrl() })
+  env
+    .ingress()
     .serviceClient<{ call: (r: unknown) => Promise<unknown> }>({ name: NAME })
     .call({ site: "scratch", method: "POST", path, input: {} });
 
@@ -98,17 +88,11 @@ beforeAll(async () => {
     artifactsDir: join(dir, "artifacts"),
     headless: true,
   } as BrowserOptions;
-  const start = () =>
-    RestateTestEnvironment.start({
-      services: [
-        sitesService(facade, NAME, undefined, null, {
-          wait: { boundMs: 8_000, pausesMs: [1_000] },
-        }),
-      ],
-      container,
-      serviceEndpointAccess: "docker-host",
-    });
-  env = await start().catch(start);
+  env = await startTestRunner([
+    sitesService(facade, NAME, undefined, null, {
+      wait: { boundMs: 8_000, pausesMs: [1_000] },
+    }),
+  ]);
 }, 180_000);
 afterAll(async () => {
   await env?.stop();

@@ -237,33 +237,7 @@ describe("self stopper", () => {
   });
 });
 
-describe("pending invocations", () => {
-  it("counts queued, running and retrying invocations of the worker's services", async () => {
-    const { pendingInvocations } = await import("../src/app/pending.js");
-    const seen: Array<{ url: string; query: string; auth: string | undefined }> = [];
-    const http = {
-      json: async (
-        url: string,
-        req: { body: { query: string }; headers: Record<string, string> },
-      ) => {
-        seen.push({ url, query: req.body.query, auth: req.headers.authorization });
-        return { ok: true, status: 200, body: { rows: [{ n: "2" }] }, headers: new Headers() };
-      },
-    } as never;
-    const n = await pendingInvocations({
-      adminUrl: "https://env.restate.cloud:9070/",
-      authToken: "t",
-      http,
-      services: ["sites", "browser", "it's"],
-    });
-    expect(n).toBe(2);
-    expect(seen[0]?.url).toBe("https://env.restate.cloud:9070/query");
-    expect(seen[0]?.auth).toBe("Bearer t");
-    expect(seen[0]?.query).toBe(
-      "SELECT COUNT(*) AS n FROM sys_invocation WHERE target_service_name IN ('sites', 'browser', 'it''s') AND status IN ('pending', 'ready', 'running', 'backing-off')",
-    );
-  });
-
+describe("idle stop and queued work", () => {
   it("the idle stop waits on a busy answer, async or not", async () => {
     let t = 0;
     const idle = idleTracker(() => t);

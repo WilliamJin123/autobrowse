@@ -19,7 +19,7 @@ One zod schema with defaults is the whole contract between the box, compose, `.e
 
 - `Settings = z.infer<typeof schema>` — `src/app/config.ts:302`; `ENV_KEYS` — `:300-409`; `loadSettings(env)` — `:411`; `loadEnvFile(from)` — `:514`
 - Files it names: `credentialsFile`, `walletFile`, `accountsFile`, `accessFile`, `fixesFile`, `screensFile`, `capsFile`, `needsDoneFile` (`:40-243`), `artifactsDir`, `recordingsDir`, `profilesDir`; a non-default [[owner]]'s are fixed under `ownersDir` (`OWNER_PATHS`, `:428`)
-- Restate shape: `planEndpoint` (listen, or tunnel to Restate Cloud) — `src/app/endpoint.ts:17-63`
+- The engine's file: `runnerFile` (`RUNNER_FILE`), see [[local-runner]]. `settings.json` skips the retired Restate keys (`restatePort` …) — `src/app/settings-file.ts`
 - Where values come from, first wins: the process env, `~/.config/autobrowse/settings.json` (settings that are no secret, by field name; `src/app/settings-file.ts`, `SETTINGS_FILE`), the env file (secrets only; `boot` names a setting left there), the default. Secrets also sit in SSM through credvault
 - `autobrowse settings [name] [--all]` shows each value and its source; `settings set|unset` checks the value as the boot does and notes it in `settings-changes.jsonl`; `env pull` sends settings to the file, secrets to the env file (`designs/2026-10-26-settings-file.md`)
 

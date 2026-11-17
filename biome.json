@@ -20,6 +20,7 @@
       "includes": [
         "src/**",
         "!src/app/client.ts",
+        "!src/runtime/index.ts",
         "!src/app/sentry.ts",
         "!src/browser/session.ts",
         "!src/share/fetch.ts",

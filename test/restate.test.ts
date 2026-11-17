@@ -1,12 +1,10 @@
 /**
- * DomainProvision under a real Restate: a run stops at the purchase gate,
+ * DomainProvision on the local runner (each turn replayed after each step): a run stops at the purchase gate,
  * `status` shows it, `approve` moves it on, the flow finishes; pause holds
  * the next step and play releases it; reset forgets a waiting run; a
  * second owner beside the default one keeps its own objects and registry.
- * Needs Docker.
  */
 import * as clients from "@restatedev/restate-sdk-clients";
-import { RestateContainer, RestateTestEnvironment } from "@restatedev/restate-sdk-testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NeedsHuman } from "../src/browser/session.js";
 import { Unrecoverable } from "../src/engine/effects.js";
@@ -21,6 +19,7 @@ import {
 import { type DomainWorkflow, domainWorkflow } from "../src/workflows/domain/index.js";
 import { workflow as exampleTitle } from "../src/workflows/example-title/index.js";
 import { fakeBrowser, fakeDeps, fakeHost } from "./fakes.js";
+import { startTestRunner, type TestRunner } from "./runner-env.js";
 import { type Deps as UndoDeps, workflow as undoDemo } from "./undo-demo.js";
 
 const deps = fakeDeps();
@@ -40,51 +39,28 @@ const undoDeps: UndoDeps = { log: [], fail: {} };
 const undoHost = { ...fakeHost(), undoAfterMs: 1500 };
 const browserCalls: string[] = [];
 const browser = fakeBrowser(browserCalls);
-let env: RestateTestEnvironment;
-/** A Restate that cannot be left behind: Ryuk dies when the Docker VM is starved or restarted, so
- *  Docker deletes the container when it exits, and it kills itself after 30 minutes. */
-const container = () => {
-  const c = new RestateContainer();
-  (c as unknown as { hostConfig: { AutoRemove?: boolean } }).hostConfig.AutoRemove = true;
-  return c
-    .withAutoRemove(false) // Docker removes it; a second remove from testcontainers would throw
-    .withEntrypoint(["timeout", "-s", "KILL", "30m", "/usr/local/bin/restate-server"])
-    .withCommand([])
-    .alwaysReplay();
-};
+let env: TestRunner;
 beforeAll(async () => {
-  const start = () =>
-    RestateTestEnvironment.start({
-      services: [
-        runsRegistry,
-        makeRunObject(domainWorkflow, deps, host),
-        makeCompiledRunObject({ catalog, browser, host }),
-        runsRegistryFor("acme"),
-        makeRunObject(domainWorkflow, acmeDeps, acmeHost),
-        makeRunObject(undoDemo, undoDeps, undoHost),
-      ],
-      container,
-      serviceEndpointAccess: "docker-host", // no sshd port-forwarding container
-    });
-  // The container start is the one flaky thing in the suite (port or pull timing): one more try.
-  env = await start().catch(start);
+  env = await startTestRunner([
+    runsRegistry,
+    makeRunObject(domainWorkflow, deps, host),
+    makeCompiledRunObject({ catalog, browser, host }),
+    runsRegistryFor("acme"),
+    makeRunObject(domainWorkflow, acmeDeps, acmeHost),
+    makeRunObject(undoDemo, undoDeps, undoHost),
+  ]);
 });
 afterAll(async () => {
   await env?.stop();
 });
 
 const object = (domain: string) =>
-  clients
-    .connect({ url: env.baseUrl() })
-    .objectClient<RunObject<DomainWorkflow>>({ name: "domain" }, domain);
+  env.ingress().objectClient<RunObject<DomainWorkflow>>({ name: "domain" }, domain);
 const compiled = (workflow: string, key: string) =>
-  clients
-    .connect({ url: env.baseUrl() })
+  env
+    .ingress()
     .objectClient<RunObject<typeof exampleTitle>>({ name: "Compiled" }, compiledKey(workflow, key));
-const registry = () =>
-  clients
-    .connect({ url: env.baseUrl() })
-    .objectClient<typeof runsRegistry>({ name: "Runs" }, "all");
+const registry = () => env.ingress().objectClient<typeof runsRegistry>({ name: "Runs" }, "all");
 
 async function until<T>(fn: () => Promise<T>, ok: (v: T) => boolean, ms = 30_000): Promise<T> {
   const deadline = Date.now() + ms;
@@ -309,9 +285,7 @@ describe("Compiled object", () => {
 
 describe("undo steps on Restate", () => {
   const demo = (key: string) =>
-    clients
-      .connect({ url: env.baseUrl() })
-      .objectClient<RunObject<typeof undoDemo>>({ name: "undo-demo" }, key);
+    env.ingress().objectClient<RunObject<typeof undoDemo>>({ name: "undo-demo" }, key);
   const undone = (key: string) =>
     undoHost.events.flatMap((e) =>
       e.type === "undone" && e.run.key === key ? [`${e.step} ${e.result.status}`] : [],
@@ -394,13 +368,11 @@ describe("undo steps on Restate", () => {
 describe("two owners on one Restate", () => {
   it("run the same key apart: each its own object, deps, events and registry", async () => {
     const domain = "shared.test";
-    const acme = clients
-      .connect({ url: env.baseUrl() })
+    const acme = env
+      .ingress()
       .objectClient<RunObject<DomainWorkflow>>({ name: "domain_acme" }, domain);
     const acmeRegistry = () =>
-      clients
-        .connect({ url: env.baseUrl() })
-        .objectClient<typeof runsRegistry>({ name: "Runs_acme" }, "all");
+      env.ingress().objectClient<typeof runsRegistry>({ name: "Runs_acme" }, "all");
     await acme.run({ domain, inboxes: inbox });
     await until(
       () => acme.status(),

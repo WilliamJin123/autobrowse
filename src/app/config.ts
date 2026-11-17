@@ -44,7 +44,7 @@ const schema = z.object({
   signInHoldsFile: z.string().min(1).default("~/.config/autobrowse/sign-in-holds.json"),
   /** Saved default plans, one `<workflow>.json` each: the operator's values for workflows that name no one (designs/2026-10-24-operator-defaults.md). */
   plansDir: z.string().min(1).default("~/.config/autobrowse/plans"),
-  /** Restate ingress: Restate Cloud in prod (wren's loops share the env), a local restate-server otherwise. */
+  /** wren's door (its Restate-shaped ingress): the desk's services, wren's own, watcher sinks. */
   restateIngressUrl: z.string().url().default("http://localhost:8080"),
   restateAuthToken: z.string().min(1).optional(),
   /** Cloudflare: registrar of record and DNS for every fleet domain. */
@@ -168,6 +168,8 @@ const schema = z.object({
   capsFile: z.string().min(1).default("~/.config/autobrowse/caps.json"),
   /** Jobs started by `autobrowse job start`: id, handler, key, who, why. */
   jobsFile: z.string().min(1).default("~/.config/autobrowse/jobs.jsonl"),
+  /** The local runner's SQLite file: queue, journal and object state of every run (`src/runtime/`). */
+  runnerFile: z.string().min(1).default("~/.config/autobrowse/runner.sqlite"),
   /** The operator's own caps, account caps and pace per site, over the code's defaults (`sites/limits.ts`). */
   limitsFile: z.string().min(1).default("~/.config/autobrowse/limits.json"),
   /** Raw Playwright codegen output from `record --flow`; may hold typed secrets, never committed. */
@@ -195,8 +197,6 @@ const schema = z.object({
   /** A kept trace stays on this disk this long, then is swept (the backup holds it for good). */
   tracesKeepDays: z.coerce.number().min(0).default(3),
   logLevel: z.string().default("info"),
-  /** Where the Restate endpoint listens; the UI is on `uiPort`. */
-  restatePort: z.coerce.number().int().default(9081),
   uiPort: z.coerce.number().int().default(9080),
   /** Loopback port OAuth consents redirect to; the OAuth clients register http://127.0.0.1:<port>/oauth/callback. */
   oauthPort: z.coerce.number().int().default(9400),
@@ -380,36 +380,9 @@ const schema = z.object({
     .string()
     .regex(/^\+\d{8,15}$/)
     .optional(),
-  /** Restate admin API; set to self-register this worker on start (Docker/k8s). */
-  restateAdminUrl: z.string().url().optional(),
-  /** How Restate reaches this worker, for self-registration: http://worker:9081 in compose. */
-  restateEndpointUrl: z.string().url().optional(),
-  /**
-   * Restate Cloud, no inbound port: the worker dials out to the env's tunnel and
-   * registers the tunnel URL. All four or none; `restateAuthToken` is the key.
-   * The identity key is also honoured by the plain listener (a public endpoint).
-   */
-  restateTunnelName: z.string().min(1).optional(),
-  restateEnvironmentId: z
-    .string()
-    .regex(/^env_[a-z0-9]+$/)
-    .optional(),
-  restateCloudRegion: z.string().min(1).optional(),
-  restateIdentityKey: z
-    .string()
-    .regex(/^publickeyv1_[1-9A-HJ-NP-Za-km-z]+$/)
-    .optional(),
-  /**
-   * The public half of the key wren's self-hosted Restate server (on the Postgres box) signs
-   * with; the desk serves that server only calls it signed. Public, so it lives here.
-   */
-  restateBoxIdentityKey: z
-    .string()
-    .regex(/^publickeyv1_[1-9A-HJ-NP-Za-km-z]+$/)
-    .default("publickeyv1_HcPGxeCdDAVdujTibFvhHboaqNsHrV5CBTSgZsquHjvj"),
   /**
    * wren's door (its ingress): the desk claims its calls there (wren designs/2026-11-09-own-runtime.md,
-   * "Phase 5"). Both set: the desk pulls; unset: Restate pushes, as before.
+   * "Phase 5"). The desk needs both.
    */
   deskDoorUrl: z.string().url().optional(),
   deskDoorToken: z.string().min(1).optional(),
@@ -479,6 +452,7 @@ export const ENV_KEYS = {
   screensFile: "SCREENS_FILE",
   capsFile: "CAPS_FILE",
   jobsFile: "JOBS_FILE",
+  runnerFile: "RUNNER_FILE",
   limitsFile: "LIMITS_FILE",
   recordingsDir: "RECORDINGS_DIR",
   shotsBucket: "SHOTS_BUCKET",
@@ -489,7 +463,6 @@ export const ENV_KEYS = {
   traceDirs: "TRACE_DIRS",
   tracesKeepDays: "TRACES_KEEP_DAYS",
   logLevel: "LOG_LEVEL",
-  restatePort: "RESTATE_PORT",
   uiPort: "UI_PORT",
   oauthPort: "OAUTH_PORT",
   uiToken: "UI_TOKEN",
@@ -556,13 +529,6 @@ export const ENV_KEYS = {
   twilioAccountSid: "TWILIO_ACCOUNT_SID",
   twilioAuthToken: "TWILIO_AUTH_TOKEN",
   twilioNumber: "TWILIO_NUMBER",
-  restateAdminUrl: "RESTATE_ADMIN_URL",
-  restateEndpointUrl: "RESTATE_ENDPOINT_URL",
-  restateTunnelName: "RESTATE_TUNNEL_NAME",
-  restateEnvironmentId: "RESTATE_ENVIRONMENT_ID",
-  restateCloudRegion: "RESTATE_CLOUD_REGION",
-  restateIdentityKey: "RESTATE_IDENTITY_KEY",
-  restateBoxIdentityKey: "RESTATE_BOX_IDENTITY_KEY",
   deskDoorUrl: "DESK_DOOR_URL",
   deskDoorToken: "DESK_DOOR_TOKEN",
 } as const satisfies Record<keyof Settings, string>;
@@ -596,6 +562,7 @@ export const OWNER_PATHS = {
   accountsFile: "accounts.json",
   capsFile: "caps.json",
   jobsFile: "jobs.jsonl",
+  runnerFile: "runner.sqlite",
   limitsFile: "limits.json",
   accessFile: "access.json",
   needsDoneFile: "needs-done.json",

@@ -1,19 +1,21 @@
-/** Restate endpoint (:9081) and the UI + API (:9080) in one process, sharing the event bus. */
+/**
+ * The worker: the engine on the local runner's file and the UI + API (:9080) in one process,
+ * sharing the event bus. It dispatches the file unless the desk already does
+ * (designs/2026-11-16-local-runner.md).
+ */
 
-import { serve } from "@restatedev/restate-sdk/node";
 import pino from "pino";
 import { fileKeys } from "../access/keys.js";
 import type { FailureRecord } from "../browser/session.js";
 import { httpClient } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
 import { isDefaultOwner } from "../owner.js";
+import { sqliteStore, startRunner } from "../runtime/index.js";
 import { startUiServer } from "../ui/server.js";
 import { backendFor } from "./backend.js";
 import { ingress } from "./client.js";
-import { cloudAdminUrl, planEndpoint } from "./endpoint.js";
 import { opsLane } from "./ops.js";
 import { awsFor, boot } from "./owner.js";
-import { registerDeployment } from "./register.js";
 import { initSentry } from "./sentry.js";
 import {
   approverFor,
@@ -37,52 +39,8 @@ if (sentry) {
   app.bus.subscribe((_seq, e) => void sentry.event(e));
   log.info({ environment: settings.sentryEnvironment }, "sentry on");
 }
-const plan = planEndpoint(settings);
-let register: { adminUrl: string; endpointUrl: string } | null = null;
-if (plan.mode === "listen") {
-  await serve({ services: app.services, port: plan.port, identityKeys: plan.identityKeys });
-  log.info({ port: plan.port, browser: settings.browser }, "autobrowse restate endpoint");
-  if (plan.register && settings.restateAdminUrl) {
-    register = { adminUrl: settings.restateAdminUrl, endpointUrl: plan.register };
-  }
-} else {
-  // No inbound port: the worker dials Restate Cloud and registers the tunnel URL it is handed.
-  const { connectTunnel } = await import("@restatedev/restate-sdk-tunnel");
-  const tunnel = connectTunnel({
-    services: app.services,
-    tunnelName: plan.tunnelName,
-    environmentId: plan.environmentId,
-    region: plan.region,
-    signingPublicKey: plan.signingPublicKey,
-    authToken: settings.restateAuthToken as string,
-  });
-  await tunnel.ready;
-  if (!tunnel.deploymentUrl) throw new Error("restate tunnel handshake gave no deployment URL");
-  log.info({ tunnel: plan.tunnelName, browser: settings.browser }, "autobrowse restate tunnel up");
-  // A tunnel is a Restate Cloud thing, so the cloud's admin URL is the right one:
-  // a stale RESTATE_ADMIN_URL from a local Restate would send this registration nowhere.
-  const local = /^https?:\/\/(localhost|127\.0\.0\.1)\b/.test(settings.restateAdminUrl ?? "");
-  if (local)
-    log.warn(
-      { adminUrl: settings.restateAdminUrl },
-      "ignoring RESTATE_ADMIN_URL: this worker is on the cloud tunnel",
-    );
-  register = {
-    adminUrl:
-      !local && settings.restateAdminUrl
-        ? settings.restateAdminUrl
-        : cloudAdminUrl(plan.environmentId, plan.region),
-    endpointUrl: tunnel.deploymentUrl,
-  };
-}
-if (register) {
-  const reg = await registerDeployment({
-    ...register,
-    http: httpClient(),
-    authToken: settings.restateAuthToken ?? null,
-  });
-  log.info({ deployment: reg.id, services: reg.services }, "registered with restate");
-}
+// one store for the process: the runner and this process's clients share its wake
+const runnerStore = sqliteStore(expandHome(settings.runnerFile));
 
 // The person hears once a day when the model budget is spent; `app` exists by the time any call is made.
 const llm = llmFor(settings, undefined, (err) => {
@@ -104,10 +62,21 @@ const backend = backendFor(settings, app, {
     url: settings.restateIngressUrl,
     authToken: settings.restateAuthToken ?? null,
     owner: settings.owner,
+    runner: runnerStore,
   }),
   ...(app.channel.note ? { notify: app.channel.note.bind(app.channel) } : {}),
 });
 app.doer = backend.do;
+// after the doer: a queued `do` row is claimed at once
+const runner = await startRunner({
+  store: runnerStore,
+  services: app.services,
+  log: (msg, err) => log.warn({ err: err === undefined ? undefined : String(err) }, msg),
+});
+log.info(
+  { file: settings.runnerFile, dispatching: runner.dispatching, browser: settings.browser },
+  "autobrowse runner",
+);
 if (!approverFor(settings, gmailFor(settings))) {
   log.warn("no channel a person can answer on: payment steps will be refused");
 }
@@ -198,36 +167,18 @@ else if (settings.idleStopMinutes > 0) {
   const { EC2Client } = await import("@aws-sdk/client-ec2");
   const { ec2Port, instanceIdFromMetadata, selfStopper } = await import("./box.js");
   const { scheduleIdleStop } = await import("./idle.js");
-  const { pendingInvocations } = await import("./pending.js");
   const busyStates = new Set(["starting", "running"]);
   const services = app.services.map((s) => s.name);
-  const admin = register
-    ? { adminUrl: register.adminUrl, authToken: settings.restateAuthToken ?? null }
-    : null;
-  if (!admin)
-    log.warn(
-      "idle stop cannot see Restate's queue (no admin URL): a call queued while the box boots may find it stopping",
-    );
   scheduleIdleStop({
     idle: app.idle,
     minutes: settings.idleStopMinutes,
     // An agent mid-goal is work; a session waiting on a person is not (it is not durable, and the person left).
-    // Work Restate holds for our services is work too, even before it reaches us.
+    // A run or call due on the runner is work too; one waiting on a person or a timer resumes on the next boot.
     alsoBusy: async () => {
       if ((backend.agent?.list() ?? []).some((s) => busyStates.has(s.status))) return true;
-      if (!admin) return false;
-      try {
-        const n = await pendingInvocations({ ...admin, http: httpClient(), services });
-        if (n > 0) log.info({ pending: n }, "idle, but Restate holds work for this worker");
-        return n > 0;
-      } catch (err) {
-        // Better a box that stays up than one stopped under queued work.
-        log.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "pending check failed; staying up",
-        );
-        return true;
-      }
+      const n = await runnerStore.due(services);
+      if (n > 0) log.info({ due: n }, "idle, but the runner holds work");
+      return n > 0;
     },
     stop: selfStopper({
       ec2: ec2Port(new EC2Client(awsFor(settings))),

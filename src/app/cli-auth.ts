@@ -131,7 +131,6 @@ export function registerAuthCommands(
                 settings.llmProvider === "cohere",
               codesInbox: !!settings.codesInbox,
               phone: !!settings.phoneNumber,
-              restate: !!settings.restateAdminUrl,
             },
             has: onPath,
             mac: process.platform === "darwin",

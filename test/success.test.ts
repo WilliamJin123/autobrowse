@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LlmCall } from "../src/llm/ledger.js";
 import { fileSiteCalls, readSiteCalls, type SiteCallRow, settledCalls } from "../src/runs/calls.js";
-import { fromCaps, fromRestate, newRows } from "../src/runs/import.js";
+import { fromCaps, newRows } from "../src/runs/import.js";
 import type { RunSummary } from "../src/runs/log.js";
 import {
   callFailure,
@@ -240,35 +240,7 @@ describe("success report", () => {
 });
 
 describe("import", () => {
-  it("reads Restate's finished calls off their step names", () => {
-    const rows = fromRestate([
-      {
-        id: "inv_a",
-        service: "desk",
-        created_at: "2026-10-09T00:00:00.000Z",
-        modified_at: "2026-10-09T00:00:02.000Z",
-        completion_result: "failure",
-        completion_failure: "[400] Too big: expected number to be <=100",
-        invoked_by_target: "RedditReads/wren/loop",
-        name: "sites reddit-public GET /comments/1x02rzo",
-      },
-      { id: "inv_b", service: "desk", created_at: "2026-10-09T00:00:00.000Z", name: "other step" },
-    ]);
-    expect(rows).toEqual([
-      expect.objectContaining({
-        site: "reddit-public",
-        route: "GET /comments/1x02rzo",
-        ok: false,
-        status: 400,
-        terminal: true,
-        error: "Too big: expected number to be <=100",
-        ms: 2000,
-        from: "restate",
-      }),
-    ]);
-  });
-
-  it("keeps each caps try, numbered; skips what the ledger or Restate has", () => {
+  it("keeps each caps try, numbered; skips what the ledger has", () => {
     const caps = fromCaps([
       {
         at: "2026-10-05T10:00:01.000Z",
@@ -312,14 +284,10 @@ describe("import", () => {
         outcome: "ok",
       },
     ]);
-    const rows = newRows(
-      [call({ invocation: "inv_h" })],
-      [call({ invocation: "inv_r", from: "restate" })],
-      caps,
-    );
+    const rows = newRows([call({ invocation: "inv_h" })], caps);
     expect(rows.map((r) => [r.invocation, r.attempt, r.ok, r.from])).toEqual([
-      ["inv_r", 1, true, "restate"],
       ["inv_c", 1, true, "caps"],
+      ["inv_r", 1, false, "caps"],
       ["inv_c", 2, false, "caps"],
     ]);
   });

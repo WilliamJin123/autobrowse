@@ -96,6 +96,7 @@ const api = ingress({
   url: settings.restateIngressUrl,
   authToken: settings.restateAuthToken ?? null,
   owner: settings.owner,
+  runner: settings.runnerFile,
 });
 
 const local = localBackend(settings, api);
@@ -103,15 +104,15 @@ const local = localBackend(settings, api);
 const plans = filePlans(settings.plansDir);
 
 /**
- * A Restate call with a stopped worker behind it waits, silently, until the
- * box is back: say so after a while instead of looking hung. The call itself
- * is left to finish (Restate holds it; the box's idle stop is by design).
+ * A call with no dispatcher behind it waits, silently, until the desk or a
+ * worker is up: say so after a while instead of looking hung. The call itself
+ * is left to finish (the runner's file holds it).
  */
 async function patient<T>(call: PromiseLike<T>, afterMs = 10_000): Promise<T> {
   const note = setTimeout(
     () =>
       console.error(
-        `still waiting after ${afterMs / 1000} s: Restate at ${settings.restateIngressUrl} has the call, but no worker is answering (start one: pnpm worker)`,
+        `still waiting after ${afterMs / 1000} s: ${settings.runnerFile} holds the call, but nothing runs it (the desk, or start a worker: autobrowse worker)`,
       ),
     afterMs,
   );
@@ -427,7 +428,7 @@ program
 program
   .command("worker")
   .description(
-    "Serve the workflows: Restate endpoint on RESTATE_PORT (9081), UI and API on UI_PORT (9080); tier 2",
+    "Serve the workflows: the engine on RUNNER_FILE, UI and API on UI_PORT (9080); tier 2",
   )
   .action(async () => {
     await import("./main.js");
