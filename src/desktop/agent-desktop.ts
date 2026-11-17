@@ -213,7 +213,7 @@ const READ_RETRY = new Set(["APP_UNRESPONSIVE"]);
 const READ_RETRY_MS = 300;
 
 export function agentDesktop(
-  base: Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady">,
+  base: Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady" | "idleMs" | "frontPid">,
   opts: AgentDesktopOptions = {},
 ): Desktop {
   const bin = adBinary();
@@ -248,12 +248,21 @@ export function agentDesktop(
       );
     },
     async snapshot(windowId) {
+      // depth 40: Electron apps (Claude, Slack) nest controls past agent-desktop's default 10
       const d = await read<{
         app: string;
         snapshot_id: string;
         window?: { id: string; title: string };
         tree: AdNode;
-      }>(["snapshot", "--window-id", windowId, "--include-bounds", "--compact"]);
+      }>([
+        "snapshot",
+        "--window-id",
+        windowId,
+        "--include-bounds",
+        "--compact",
+        "--max-depth",
+        "40",
+      ]);
       return { id: d.snapshot_id, app: d.app, windowId, nodes: flatten(d.tree) } satisfies Snapshot;
     },
     async find(windowId, t: ControlTarget) {
@@ -344,6 +353,8 @@ export function agentDesktop(
     screenshot: base.screenshot,
     exists: base.exists,
     rootReady: base.rootReady,
+    ...(base.idleMs ? { idleMs: base.idleMs } : {}),
+    ...(base.frontPid ? { frontPid: base.frontPid } : {}),
     async permissions(): Promise<Permissions> {
       const p = await call<{ accessibility?: { state?: string } }>(["permissions"]).catch(
         () => ({}) as { accessibility?: { state?: string } },

@@ -313,6 +313,7 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
               control: op.control ? ctl(op.control) : null,
               value:
                 op.secret !== undefined ? { from: "secret", key } : { from: "plan", field: key },
+              ...(op.human ? { human: true } : {}),
               headed: op.headed ?? false,
             });
             break;

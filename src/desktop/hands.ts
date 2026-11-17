@@ -4,9 +4,16 @@
  *   unique in the snapshot they came from, so the journaled op replays;
  * - replay (`run`): targets → fresh refs by `find`; none or two fail, never a guess.
  * Input is headless; a headless refusal (POLICY_DENIED, not delivered) runs
- * again headed once, behind the focus guard. Waits answer found or not, never text.
+ * again headed once, behind the focus lease. Waits answer found or not, never text.
+ *
+ * Focus lease (headed input goes to whatever has focus): wait until the person
+ * is idle, take focus, check it before every key, stop when the person takes
+ * it back and go on from the same key once they are idle, then give focus back.
  */
 import { join } from "node:path";
+import { freshSeed, type Random, seeded } from "../browser/human/draw.js";
+import { HUMAN_PACE } from "../browser/human/index.js";
+import { BACKSPACE, typingPlan } from "../browser/human/typing.js";
 import {
   type Bounds,
   type ControlTarget,
@@ -37,6 +44,10 @@ export interface HandsOptions {
   windowTries?: number;
   /** Around real input (the guard and the headed send): the overlay hides so it takes no click or key. */
   headed?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** Draws for human typing; absent: a fresh seed per act. */
+  random?: Random;
+  /** After a headed act, focus goes back to the app that had it (default true). */
+  giveFocusBack?: boolean;
 }
 
 /** What one act did: the agent's answer, the row to journal, where it happened (for the overlay). */
@@ -52,10 +63,75 @@ const WAIT_DEFAULT_S = 120;
 /** Never poll faster than this, nor faster than a snapshot takes (Ghostty: about 2.4 s). */
 const POLL_MIN_MS = 1500;
 
+/** No input from the person this long, ms, before a headed act takes focus. */
+export const IDLE_MS = 2_000;
+/** After a focus switch: the app's first key raced it live (one key lost in 3 runs). */
+const FOCUS_SETTLE_MS = 150;
+/** Most a headed act waits for the person to stop, ms. */
+const IDLE_WAIT_MS = 120_000;
+/** Most times the person may take focus back during one act. */
+const MAX_TAKEBACKS = 20;
+
+/** Headless input the target refused, nothing sent: a terminal, or a key to a window not in front. */
 const refused = (e: unknown): boolean => {
-  const x = e as { code?: string; notDelivered?: boolean };
-  return x?.code === "POLICY_DENIED" && x.notDelivered === true;
+  const x = e as { code?: string; notDelivered?: boolean; message?: string };
+  if (x?.notDelivered !== true) return false;
+  return x.code === "POLICY_DENIED" || /focus/i.test(x.message ?? "");
 };
+
+const PLAIN_KEY: Record<string, string> = {
+  " ": "space",
+  "\n": "shift+return",
+  "\t": "tab",
+  "`": "grave",
+  "-": "minus",
+  "=": "equal",
+  "[": "leftbracket",
+  "]": "rightbracket",
+  "\\": "backslash",
+  ";": "semicolon",
+  "'": "quote",
+  ",": "comma",
+  ".": "period",
+  "/": "slash",
+};
+const SHIFTED_KEY: Record<string, string> = {
+  "~": "grave",
+  "!": "1",
+  "@": "2",
+  "#": "3",
+  $: "4",
+  "%": "5",
+  "^": "6",
+  "&": "7",
+  "*": "8",
+  "(": "9",
+  ")": "0",
+  _: "minus",
+  "+": "equal",
+  "{": "leftbracket",
+  "}": "rightbracket",
+  "|": "backslash",
+  ":": "semicolon",
+  '"': "quote",
+  "<": "comma",
+  ">": "period",
+  "?": "slash",
+};
+
+/** The key combo that types one character on a US layout. */
+export function keyOf(ch: string): string {
+  if (/^[a-z0-9]$/.test(ch)) return ch;
+  if (/^[A-Z]$/.test(ch)) return `shift+${ch.toLowerCase()}`;
+  const plain = PLAIN_KEY[ch];
+  if (plain) return plain;
+  const shifted = SHIFTED_KEY[ch];
+  if (shifted) return `shift+${shifted}`;
+  throw new Error(`type human: no US key types "${ch}"; drop human for this text`);
+}
+
+/** Keys that send text in a shell command: a side door past the focus lease. */
+const SHELL_KEYS = /\bkeystroke\b|\bkey code\b|cliclick\s/;
 
 /** What a replay can find again; null when the control has neither a name nor an id. */
 export function controlOf(n: SnapNode): ControlTarget | null {
@@ -125,9 +201,85 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
         `${what} needs ${w.app} "${w.title}" to be its instance's only window (pid ${w.pid} has ${mine.length}); launch {app, fresh:true} gives one. Nothing was sent.`,
       );
   }
+  async function frontPid(): Promise<number | null> {
+    if (d.frontPid) return d.frontPid();
+    return (await d.windows()).find((x) => x.focused)?.pid ?? null;
+  }
+
+  /** Waits until no keyboard or mouse input for IDLE_MS: never take focus from a person mid-act. */
+  async function personIdle(): Promise<void> {
+    if (!d.idleMs) return;
+    const t0 = now();
+    for (;;) {
+      const idle = await d.idleMs();
+      if (idle >= IDLE_MS) return;
+      if (now() - t0 >= IDLE_WAIT_MS)
+        throw new Error(
+          `a person used the keyboard or mouse for ${IDLE_WAIT_MS / 1000} s; nothing was sent`,
+        );
+      await sleep(Math.max(IDLE_MS - idle, 250));
+    }
+  }
+
+  /** The focus lease: wait for the person, take focus, run, give focus back. */
+  async function lease<T>(w: DesktopWindow, fn: () => Promise<T>): Promise<T> {
+    await personIdle();
+    const before = await frontPid();
+    await guard(w);
+    try {
+      return await fn();
+    } finally {
+      if (o.giveFocusBack !== false && before !== null && before !== w.pid) {
+        const back = (await d.windows().catch(() => [])).find(
+          (x) => x.pid === before && !x.minimized,
+        );
+        if (back) await d.focusWindow(back.id).catch(() => undefined);
+      }
+    }
+  }
+
+  /**
+   * Key by key from `typingPlan`, each key checked in front first. The person takes focus:
+   * stop, wait until they are idle, take it again, go on from the same key.
+   */
+  async function typeHuman(w: DesktopWindow, ref: string | null, text: string): Promise<void> {
+    for (const ch of text) keyOf(ch); // every key known before focus moves
+    const plan = typingPlan(text, HUMAN_PACE.typing, o.random ?? seeded(freshSeed()));
+    const keys = plan.map((k) => ({ ...k, combo: k.ch === BACKSPACE ? "backspace" : keyOf(k.ch) }));
+    let takebacks = 0;
+    const takenBack = async () => {
+      if (++takebacks > MAX_TAKEBACKS)
+        throw new Error(`type human: focus left ${w.app} ${MAX_TAKEBACKS} times; stopped`);
+      await personIdle();
+      await guard(w);
+    };
+    await lease(w, async () => {
+      if (ref) await d.click(ref, "headed");
+      for (let i = 0; i < keys.length; ) {
+        if ((await frontPid()) !== w.pid) {
+          await takenBack();
+          continue;
+        }
+        const k = keys[i] as (typeof keys)[number];
+        const t0 = now();
+        try {
+          await d.press(k.combo, { windowId: w.id }, "headed");
+        } catch (e) {
+          // agent-desktop checks focus per key; a refusal sent nothing, so the same key goes again
+          if (!refused(e)) throw e;
+          await takenBack();
+          continue;
+        }
+        i++;
+        await sleep(Math.max(0, k.hold + k.after - (now() - t0)));
+      }
+    });
+  }
+
   async function guard(w: DesktopWindow): Promise<void> {
     await onlyWindow(w, "headed input");
     await d.focusWindow(w.id);
+    await sleep(FOCUS_SETTLE_MS);
     const front = (await d.windows()).find((x) => x.focused);
     if (front?.pid !== w.pid)
       throw new Error(
@@ -150,10 +302,7 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
       }
     }
     const around = o.headed ?? (<T>(fn: () => Promise<T>) => fn());
-    await around(async () => {
-      await guard(w);
-      await send("headed");
-    });
+    await around(() => lease(w, () => send("headed")));
     return true;
   }
 
@@ -311,6 +460,10 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
         };
       }
       case "type": {
+        if (a.human && a.secret !== undefined)
+          throw new Error(
+            "type: human sends each key as a command line; a secret goes without human",
+          );
         const value = await textOf(a.text, a.secret);
         let window: DesktopWindow;
         let control: ControlTarget | undefined;
@@ -328,7 +481,13 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
           if (!f) throw new Error(`type: ${window.app} "${window.title}" has no focused control`);
           ref = f;
         }
-        const headed = await deliver(window, false, (m) => d.type(ref, value, m));
+        let headed: boolean;
+        if (a.human) {
+          await onlyWindow(window, "type human");
+          const around = o.headed ?? (<T>(fn: () => Promise<T>) => fn());
+          await around(() => typeHuman(window, a.ref ? ref : null, value));
+          headed = true;
+        } else headed = await deliver(window, false, (m) => d.type(ref, value, m));
         use(window);
         return {
           answer: { ok: true, ...(headed ? { headed } : {}) },
@@ -337,6 +496,7 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
             window: targetOf(window, a.ref ? undefined : a.window),
             ...(control ? { control } : {}),
             ...(a.secret !== undefined ? { secret: a.secret } : { text: a.text as string }),
+            ...(a.human ? { human: true } : {}),
             ...(headed ? { headed } : {}),
           },
           window,
@@ -422,6 +582,10 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
         return { answer: { file }, op: null, ...none };
       }
       case "shell": {
+        if (SHELL_KEYS.test(a.command))
+          throw new Error(
+            "shell: keys sent from a shell skip the focus lease; use {op:type, human:true} or {op:key}",
+          );
         const r = await d.shell(a.command, a.root ?? false);
         return {
           answer: { code: r.code, stdout: r.stdout, stderr: r.stderr },
@@ -455,7 +619,11 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
         const w = await windowFor(op.window);
         const ref = op.control ? await refFor(w, op.control) : await d.focused(w.id);
         if (!ref) throw new Error(`type: ${describeWindow(op.window)} has no focused control`);
-        await deliver(w, op.headed ?? false, (m) => d.type(ref, value, m));
+        if (op.human) {
+          await onlyWindow(w, "type human");
+          const around = o.headed ?? (<T>(fn: () => Promise<T>) => fn());
+          await around(() => typeHuman(w, op.control ? ref : null, value));
+        } else await deliver(w, op.headed ?? false, (m) => d.type(ref, value, m));
         return { window: w, box: null };
       }
       case "key": {

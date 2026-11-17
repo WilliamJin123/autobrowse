@@ -333,6 +333,7 @@ function desktopOpSrc(op: DesktopOutlineOp): string | null {
         ["window", windowSrc(op.window)],
         ["control", op.control ? controlSrc(op.control) : undefined],
         ["text", renderDesktopValue(op.value)],
+        ["human", op.human ? "true" : undefined],
         ["headed", headedSrc(op.headed)],
       ]);
     case "key":

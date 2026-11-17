@@ -155,6 +155,8 @@ const desktopOpSchema = z.discriminatedUnion("kind", [
     /** null: the window's focused control. */
     control: controlSchema.nullable(),
     value: valueSchema,
+    /** Key by key at a person's pace, behind the focus lease. */
+    human: z.boolean().optional(),
     headed: z.boolean(),
   }),
   z.object({

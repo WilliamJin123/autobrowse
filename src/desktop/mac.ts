@@ -21,11 +21,25 @@ function defaultRun(file: string, args: string[]): Promise<ShellResult> {
   });
 }
 
-/** The non-accessibility half: shell, root, the screen picture. */
+/** The non-accessibility half: shell, root, the screen picture, idle time, the front app. */
 export function macBase(
   run: RunFile = defaultRun,
-): Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady"> {
+): Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady" | "idleMs" | "frontPid"> {
   return {
+    async idleMs() {
+      // HIDIdleTime, ns: any keyboard or mouse event resets it, ours included
+      const r = await run("/usr/sbin/ioreg", ["-c", "IOHIDSystem", "-d", "4"]);
+      const ns = /"HIDIdleTime" = (\d+)/.exec(r.stdout)?.[1];
+      return ns ? Math.floor(Number(ns) / 1e6) : Number.POSITIVE_INFINITY;
+    },
+    async frontPid() {
+      // lsappinfo: ~5 ms, against ~150 ms for an agent-desktop window list
+      const asn = (await run("/usr/bin/lsappinfo", ["front"])).stdout.trim();
+      if (!asn) return null;
+      const r = await run("/usr/bin/lsappinfo", ["info", "-only", "pid", asn]);
+      const pid = /"pid"=(\d+)/.exec(r.stdout)?.[1];
+      return pid ? Number(pid) : null;
+    },
     async shell(command, root = false) {
       // Root goes through one audited helper, never a bare `sudo sh`: see `rootHelper()`.
       return root ? run("sudo", ["-n", ROOT_HELPER, command]) : run("/bin/sh", ["-c", command]);

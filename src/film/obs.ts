@@ -4,7 +4,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { promisify } from "node:util";
@@ -100,6 +100,22 @@ export async function obsStart(o: { scene?: string } = {}): Promise<{ scene: str
   });
 }
 
+/** StopRecord answers before the muxer finishes (an .mov without its index): wait for the size to hold. */
+async function settled(file: string, timeoutMs = 15_000): Promise<void> {
+  const end = Date.now() + timeoutMs;
+  let last = -1;
+  for (;;) {
+    const size = await stat(file).then(
+      (s) => s.size,
+      () => -1,
+    );
+    if (size > 0 && size === last) return;
+    if (Date.now() > end) throw new Error(`obs: ${file} still growing after ${timeoutMs / 1000} s`);
+    last = size;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 /** Stop; `out` moves the file OBS wrote there, with OBS's extension. */
 export async function obsStop(o: { out?: string } = {}): Promise<{ path: string }> {
   const written = await using(async (obs) => {
@@ -107,6 +123,7 @@ export async function obsStop(o: { out?: string } = {}): Promise<{ path: string 
     if (!outputActive) throw new Error("obs: it is not recording");
     return (await obs.call("StopRecord")).outputPath;
   });
+  await settled(written);
   if (!o.out) return { path: written };
   // OBS's format wins: an .mkv moved to demo.mp4 stays an .mkv, as demo.mkv
   const out = o.out.replace(/(\.[^./]+)?$/, extname(written));

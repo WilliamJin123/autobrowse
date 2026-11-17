@@ -90,6 +90,8 @@ const timeoutS = z.number().positive().max(WAIT_MAX_S).optional();
 const replayTimeoutS = z.number().positive().optional();
 /** `secret` names a stored value (`profile.phone`, `<site>.<detail>`): typed by stdin, never seen. */
 const typed = { text: z.string().optional(), secret: z.string().optional() };
+/** Key by key at a person's pace (runs, beats, slips fixed), behind the focus lease. Not with `secret`. */
+const human = { human: z.boolean().optional() };
 
 /** One act, as the agent sends it (explore `os`, autocomp `send`). */
 export const desktopActSchema = z.discriminatedUnion("op", [
@@ -109,6 +111,7 @@ export const desktopActSchema = z.discriminatedUnion("op", [
     ref: z.string().optional(),
     window: windowRefSchema.optional(),
     ...typed,
+    ...human,
   }),
   /** "cmd+shift+4", "return", "escape"… to the window's process, or the front app's. */
   z.object({ op: z.literal("key"), combo: z.string(), window: windowRefSchema.optional() }),
@@ -143,6 +146,7 @@ export const desktopOpSchema = z.discriminatedUnion("op", [
     /** Absent: the window's focused control. */
     control: controlTargetSchema.optional(),
     ...typed,
+    ...human,
     headed: z.boolean().optional(),
   }),
   z.object({
@@ -197,6 +201,10 @@ export interface Desktop {
     o?: { fresh?: boolean; args?: string[] },
   ): Promise<{ pid: number; window: DesktopWindow | null }>;
   focusWindow(windowId: string): Promise<void>;
+  /** Ms since the last keyboard or mouse input (a person's or ours). Absent: never waits. */
+  idleMs?(): Promise<number>;
+  /** The front app's pid. Absent: the focused window's, from `windows()`. */
+  frontPid?(): Promise<number | null>;
   place(windowId: string, b: Bounds): Promise<void>;
   screenshot(file: string): Promise<void>;
   shell(command: string, root?: boolean): Promise<ShellResult>;
@@ -269,6 +277,8 @@ export interface FakeDesktopOptions {
   focusedId?: string;
   /** Files `exists` finds. */
   files?: string[];
+  /** What `idleMs` answers, call after call (the last repeats); absent: always idle. */
+  idle?: number[];
 }
 
 /**
@@ -277,6 +287,7 @@ export interface FakeDesktopOptions {
  */
 export function fakeDesktop(windows: FakeWindow[] = [], o: FakeDesktopOptions = {}) {
   const calls: FakeCall[] = [];
+  const idle = [...(o.idle ?? [])];
   let snapN = 0;
   let focusedId = o.focusedId ?? windows.find((w) => w.focused)?.id ?? null;
   /** ref → [window id, node index]; only the newest snapshot per window is live. */
@@ -303,10 +314,20 @@ export function fakeDesktop(windows: FakeWindow[] = [], o: FakeDesktopOptions = 
       return ref;
     });
   };
-  const d: Desktop & { calls: FakeCall[]; windowsList: FakeWindow[] } = {
+  const d: Desktop & {
+    calls: FakeCall[];
+    windowsList: FakeWindow[];
+    /** A person brings this window forward (tests of the focus lease). */
+    focus(id: string | null): void;
+  } = {
     id: "fake",
     calls,
     windowsList: windows,
+    focus(id) {
+      focusedId = id;
+    },
+    idleMs: async () => (idle.length > 1 ? (idle.shift() as number) : (idle[0] ?? 60_000)),
+    frontPid: async () => windows.find((w) => w.id === focusedId)?.pid ?? null,
     async windows(app) {
       return windows
         .filter((w) => !app || w.app.toLowerCase() === app.toLowerCase())
