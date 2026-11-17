@@ -1,4 +1,4 @@
-# Worker image: Restate endpoint (:9081) + UI/API (:9080) + a headed Google
+# Worker image: the local runner (runs in SQLite on /data) + UI/API (:9080) + a headed Google
 # Chrome on a virtual screen for local-tier flows. Playwright's image pins the browser to the SDK version.
 # Secrets never enter the image: they come from the environment at run time.
 FROM mcr.microsoft.com/playwright:v1.63.0-noble AS base
@@ -33,6 +33,6 @@ COPY deploy/worker-entry.sh ./deploy/
 # Profiles, artifacts, recordings, locator fixes, learned screens and daily caps live on a volume; the image is stateless.
 ENV PROFILES_DIR=/data/profiles ARTIFACTS_DIR=/data/artifacts RECORDINGS_DIR=/data/recordings FIXES_FILE=/data/fixes.json SCREENS_FILE=/data/screens.json CAPS_FILE=/data/caps.json
 VOLUME ["/data"]
-EXPOSE 9080 9081
+EXPOSE 9080
 USER pwuser
 CMD ["sh", "deploy/worker-entry.sh"]

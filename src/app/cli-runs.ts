@@ -11,7 +11,7 @@
  *   send the whole page (src/runs/tokens).
  * - `success`: how often runs and site calls reach what they were asked for,
  *   and every try that did not (src/runs/success); `stats success import` backfills
- *   site calls from Restate and the caps ledger.
+ *   site calls from the caps ledger.
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";

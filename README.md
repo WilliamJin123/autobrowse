@@ -39,7 +39,7 @@ install can run.
 |------|-----|---------|
 | 0 | nothing | explore, `compile --no-llm`, `try` on public pages |
 | 1 | a Claude Code subscription or one API key; `autobrowse setup` | the agent, `do`, your signed-in sites, 2FA and codes |
-| 2 | a local Restate (`brew install restatedev/tap/restate`) | `autobrowse worker`: durable runs that survive restarts, the UI on :9080 |
+| 2 | nothing more | `autobrowse worker`: durable runs that survive restarts (one SQLite file), the UI on :9080 |
 
 `autobrowse setup` asks which tier, then only what that tier needs.
 Settings go to `.env` in the folder you run from; [`.env.example`](https://github.com/WilliamJin123/autobrowse/blob/main/.env.example)
@@ -76,8 +76,8 @@ other words lands on the same ability. With nothing ready, the
 agent explores the site once; what it achieved is saved and compiled,
 under the missing leg's name when a route was waiting on one, so the second
 same ask runs deterministically. Gates hold inside every leg. The same verb
-is `POST /api/do` (a job; `dryRun` answers at once), the Restate service
-`do/run` for wren (`restateDo` in `@wren/core/content`). `src/do/`.
+is `POST /api/do` (a job; `dryRun` answers at once) and the service
+`do/run`. `src/do/`.
 
 ## Hands off
 
@@ -106,12 +106,14 @@ a row; it is work.
 
 ## How it works
 
-- **Durable.** Every flow is a Restate Virtual Object. Each step is one
-  short invocation that sends itself the next, so the object is never
+- **Durable.** Every flow is a run object in the local runner (`src/runtime/`):
+  one SQLite file holds the queue, the journal and the state, so a run
+  survives a crash or a restart and a finished act never runs twice. Each
+  step is one short call that sends itself the next, so the object is never
   busy for longer than one step: `pause`, `reset`, `approve` always get in.
 - **Gated.** A gate is state, not a parked invocation. The step that needs
   an answer stops the run; `approve`/`reject` record the answer and send
-  the next step. Restate keeps the state for as long as it takes.
+  the next step. The runner keeps the state for as long as it takes.
 - **Hand-offs.** A browser flow that meets a login, captcha or consent
   throws `NeedsHuman`. The runner saves a screenshot and a Playwright trace,
   the run waits at gate `human`, the person does the thing in the
@@ -402,7 +404,7 @@ a row; it is work.
   sent to Instantly), each domain on its own Route 53 name servers, its site
   masked by CloudFront, then warming. One purchase yes covers domains and
   mailboxes.
-- **Hand-written legs** (`src/browser/flows/`, callable as the Restate
+- **Hand-written legs** (`src/browser/flows/`, callable as the
   `browser` service's `flow`): `google-admin/dkim-*`,
   `google-admin/workspace-logo`, `google/profile-photo`, `google/oauth-consent`,
   `linkedin/oauth-consent`, `instagram/oauth-consent`, `tiktok/oauth-consent`,
@@ -432,8 +434,7 @@ a row; it is work.
 ```sh
 cp .env.example .env            # optional keys by tier; operator keys in deploy/operator.env.example
 pnpm ui:build                   # the SPA the worker serves
-pnpm worker                     # Restate endpoint on :9081, UI + API on :9080
-restate cloud env tunnel        # expose it to the shared Restate Cloud env, register it
+pnpm worker                     # the local runner + UI and API on :9080
 pnpm ui:dev                     # SPA with hot reload on :5173, proxied to :9080
 
 pnpm autobrowse setup --all                    # the operator roster: every known site in turn (hidden input, sealed store)
@@ -483,7 +484,7 @@ pnpm autobrowse signup instagram --email hello@wrenautomation.com --name "Wren A
 pnpm autobrowse workspace inbox accounts will@new.com       # the free accounts in src/auth/free-accounts.ts for one inbox (email signups + Google logins); skips what it holds
 pnpm autobrowse record buy-domain --site cloudflare --url https://dash.cloudflare.com/ --terminal
 pnpm autobrowse compile buy-domain             # → src/workflows/buy-domain/ in a clone, ~/.config/autobrowse/workflows/buy-domain/ in an install (AUTOBROWSE_WORKFLOWS moves it); on the Runs page at once
-pnpm autobrowse try google-name                # run a compiled workflow here, no Restate: the proof it is deterministic
+pnpm autobrowse try google-name                # run a compiled workflow in process, no worker: the proof it is deterministic
 # Every value the recording typed lands in ~/.config/autobrowse/plans/<workflow>.json (PLANS_DIR), not in the module: the module names no one and still runs for you. Every run, try and prove merges that file under --plan; `workflows <name>` shows the saved values.
 pnpm autobrowse compile buy-domain --no-llm --from-outline
 pnpm autobrowse compile buy-domain --finish     # …then a model finishes it until tsc and its test pass
@@ -492,7 +493,7 @@ pnpm autobrowse finish buy-domain --brief "the Buy button charges the card"
 pnpm autobrowse domains wren automation --max 15   # sending-domain ideas: ours / free at $price, from Cloudflare
 pnpm autobrowse domain wren-six.com --inbox will:William:Jin --inbox hello:William:Jin --dry-run
 pnpm autobrowse domain wren-six.com --inbox will:William:Jin --inbox hello:William:Jin
-pnpm autobrowse try domain --plan plan.json --ask     # same workflow in-process, no Restate (more inboxes on a live domain too)
+pnpm autobrowse try domain --plan plan.json --ask     # same workflow in process, no worker (more inboxes on a live domain too)
 pnpm autobrowse workspace inbox add will@wren-six.com Will Jin      # one inbox, ready: user, sign-in, signature, Gmail consent, accounts row
 pnpm autobrowse warmup copy will@wren-six.com --dry-run   # which Instantly inboxes differ from that one's warmup settings; drop --dry-run to copy them
 pnpm autobrowse workflows                      # what this worker can run
@@ -513,7 +514,7 @@ pnpm autobrowse mods add <npm-name|dir|tgz>     # checks hashes, domains, gates,
                                                   # (the UI Mods page lists, searches, adds data mods, removes; sample: walkthrough/mods/)
 pnpm autobrowse stats tokens --days 30               # model calls by purpose, explore answers vs whole-page reads, the verdict
 pnpm autobrowse stats success --days 30 [--site x]   # success rates: explore verdicts, failed commands by kind, site calls by route
-pnpm autobrowse stats success import                 # backfill site calls from Restate (~1 day) and the caps ledger (14 days)
+pnpm autobrowse stats success import                 # backfill site calls from the caps ledger (14 days)
 pnpm autobrowse status domain wren-six.com     # every run is <workflow> <key>
 pnpm autobrowse approve domain wren-six.com purchase
 pnpm autobrowse approve domain wren-six.com human     # after doing what the email asked
@@ -527,36 +528,33 @@ pnpm autobrowse reset domain wren-six.com
 pnpm autobrowse desktop                        # the Mac outside the browser: apps, menus, root commands
 ```
 
-`pnpm gates` = lint + typecheck + tests (the Restate test needs Docker).
+`pnpm gates` = lint + typecheck + tests (no Docker needed).
 `pnpm test:live` runs the calls that cost money (Backboard, the configured
 LLM) when `.env` has the keys; skipped otherwise.
 
 ### Containers
 
 ```sh
-docker compose up -d --build    # Restate + worker; .env supplies every secret
+docker compose up -d --build    # the worker; .env supplies every secret
 open http://localhost:9080      # UI (host side is loopback-only)
-HOST_INGRESS_PORT=18080 HOST_ADMIN_PORT=19070 HOST_UI_PORT=19080 docker compose up -d   # beside another Restate
+HOST_UI_PORT=19080 docker compose up -d   # beside another worker
 ```
 
-The worker registers itself with Restate on start (`RESTATE_ADMIN_URL` +
-`RESTATE_ENDPOINT_URL`). `wren` is Lambda behind Restate Cloud;
-autobrowse is a long-lived container because browser steps run for
-minutes and hold a profile.
+Runs live in `/data/runner.sqlite` on the data volume. autobrowse is a
+long-lived process because browser steps run for minutes and hold a profile.
 
 ### AWS
 
 The AWS box was retired on 2026-10-02 (cost). Prod is the desk worker on the
-operator's Mac, which dials Restate Cloud's tunnel (`RESTATE_TUNNEL_NAME` +
-`RESTATE_ENVIRONMENT_ID` + `RESTATE_CLOUD_REGION` + `RESTATE_IDENTITY_KEY`)
-and registers the tunnel URL itself. `deploy/README.md` is the runbook.
+operator's Mac. It runs its own runs locally and pulls wren's calls from
+wren's door (`src/app/door-pull.ts`). `deploy/README.md` is the runbook.
 `IDLE_STOP_MINUTES` still stops an EC2 host the worker runs on, if one is
 ever used again.
 
 ### Owners
 
 One autobrowse serves many businesses, one per process. `--owner <name>` or
-`AUTOBROWSE_OWNER` picks whose accounts, files, SSM path and Restate names
+`AUTOBROWSE_OWNER` picks whose accounts, files, SSM path and service names
 load. The default owner is the operator: its names carry no suffix, and
 `AUTOBROWSE_OPERATOR` names it (`me` on a fresh install; Wren sets `wren`). An owner's files live in
 `~/.config/autobrowse/owners/<name>/` (its `.env` holds its accounts), its
@@ -568,7 +566,7 @@ search, browsers) are shared; its accounts, cards and phone are not.
 
 ```sh
 pnpm autobrowse --owner acme needs                                 # what acme still owes
-AUTOBROWSE_OWNER=acme RESTATE_PORT=9181 UI_PORT=9180 pnpm worker   # acme's worker beside wren's
+AUTOBROWSE_OWNER=acme UI_PORT=9180 pnpm worker   # acme's worker beside wren's (its own runner file)
 ```
 
 Why and the full split: `designs/2026-09-30-owner-keys.md`.
@@ -576,7 +574,7 @@ Why and the full split: `designs/2026-09-30-owner-keys.md`.
 ## Layout
 
 ```
-src/engine/     workflow/step types, effects seam, guards, run (advance/answer), the Restate run object, Runs registry, events
+src/engine/     workflow/step types, effects seam, guards, run (advance/answer), the run object, Runs registry, events
 src/browser/    session (profiles, Browserbase), lock, flow runner (trace, hand-off, fp.act), locate, repair, film, flows/
 src/film/       film tapes and their director (ttyd in our Chrome): a run as a take for a product video
 src/clients/    http.ts (timeouts, retries, safe errors) + one client per API
@@ -601,7 +599,7 @@ Dockerfile, compose.yml   the deploy unit; designs/2026-09-19-deploy.md
 ui/             React SPA (Vite); ui/dist is served by the worker
 designs/        architecture and per-workflow design docs
 map/            system map: nouns, verbs, what a change hits (map/CLAUDE.md)
-test/           one file per module; restate.test needs Docker
+test/           one file per module
 ```
 
 ## Channels
@@ -790,10 +788,10 @@ pnpm autobrowse site call linkedin POST /rest/posts --body '{"author":"urn:li:pe
 
 Keys and tokens land in the env store (`autobrowse env`) through the same
 sink `keep` uses. `OAUTH_PORT` (9400) is the loopback redirect the OAuth
-clients register. The same facade is the Restate service `sites`
-(`sites/call`, `sites/status`, `sites/setup`) for an orchestrator on the same
-Restate (wren's `Content` service): no port on the box, a call queues while
-the box is down, a write runs once. A write with a `sendKey` answers a typed
+clients register. The same facade is the service `sites`
+(`sites/call`, `sites/status`, `sites/setup`) for an orchestrator (wren's
+`Content` service, through its door): no port on the Mac, a call queues while
+the Mac is down, a write runs once. A write with a `sendKey` answers a typed
 verdict (`sent`, `not_sent` or `unknown`) instead of words in an error, and
 `sites/verdict {sendKey}` reads it back after a killed call. Design:
 `designs/2026-09-21-site-apis.md`, `designs/2026-10-16-send-verdicts.md`.
@@ -898,7 +896,7 @@ const verb = doerFor({ llm, catalog, browser, sink, sites, agent, compile }); //
 await verb.do({ goal: "upload this to youtube", inputs: { file: "talk.mp4" } });
 ```
 
-Or over HTTP/Restate from any language: `POST /api/do`, `do/run`. Sites, workflows and flows you hand `abilitiesOf` are what it can
+Or over HTTP from any language: `POST /api/do`, `do/run`. Sites, workflows and flows you hand `abilitiesOf` are what it can
 route to; anything else the agent explores once.
 
 **One site, your wiring.** The facade takes your env store, HTTP client,
@@ -956,7 +954,7 @@ flowRunner(opts, { resume: false });                                  // off for
 ```
 
 **Mail, Google and OAuth, no browser.** `autobrowse/mail`, `autobrowse/google`
-and `autobrowse/oauth` are pure libraries. They import no Playwright, no Restate and nothing from
+and `autobrowse/oauth` are pure libraries. They import no Playwright, no runner and nothing from
 `src/browser`, `src/app` or `src/sites`; `test/pieces.test.ts` checks this.
 They take a `fetch` (or an IMAP login) and do no retries; you set the time
 limit and the retry policy.
