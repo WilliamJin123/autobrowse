@@ -470,6 +470,8 @@ async function launchLocal(
       ...(headless ? [] : X11_ARGS),
     ],
     ignoreDefaultArgs: ["--enable-automation"],
+    // else Playwright adds --no-sandbox: an infobar and a bot tell; the Linux worker runs as root, keeps it
+    chromiumSandbox: process.platform === "darwin",
     timeout: LAUNCH_TIMEOUT_MS,
     ...(proxy ? { proxy } : {}),
     // written on close; scrubbed then (`browser/har`)
