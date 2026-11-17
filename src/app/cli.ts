@@ -446,7 +446,7 @@ program
   .option("--prove", "write the outcome as proof.json beside the compiled workflow")
   .option(
     "--overlay",
-    "draw the terminal panel and act boxes (default: when headed and not filmed; a film gets the rows in its json)",
+    "draw the terminal panel and act boxes, over the page and over desktop steps' windows (default: when headed and not filmed; a film gets the rows in its json)",
   )
   .option("--no-overlay", "never draw them")
   .option(
@@ -508,6 +508,14 @@ program
         if (!isProven(proof)) process.exitCode = 1;
         return;
       }
+      // desktop steps draw the native overlay on the same switch as the browser's
+      const os =
+        o.overlay === true || (o.overlay === undefined && o.headed)
+          ? (await import("../desktop/overlaid.js")).overlaidDesktop(
+              (await import("../desktop/mac.js")).localDesktop(),
+              { name },
+            )
+          : null;
       const out = await runFlow(
         memoryEffects({ sleep: (ms) => new Promise((r) => setTimeout(r, ms)) }).fx,
         workflow as never,
@@ -519,7 +527,10 @@ program
               ? workspaceInboxDepsFor(settings, browser, parts.sites, sinkFor(settings))
               : handWritten
                 ? domainDepsFor(settings, browser)
-                : compiledDeps(browser, { keys: keyKeeperFor(settings) })) as never,
+                : compiledDeps(browser, {
+                    keys: keyKeeperFor(settings),
+                    ...(os ? { desktop: os.desktop } : {}),
+                  })) as never,
         plan,
         // A human gate means a person must act first; approving it here reruns the step, forever.
         (g) =>
@@ -527,7 +538,7 @@ program
             ? null
             : { approved: true, note: "autobrowse try", at: new Date().toISOString() },
         recorded(),
-      );
+      ).finally(() => os?.close());
       const steps = Object.entries(out.results).flatMap(([name, r]) => (r ? [{ name, ...r }] : []));
       for (const line of stepLines(steps)) console.log(line);
       console.log(out.status);

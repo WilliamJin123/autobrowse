@@ -27,7 +27,7 @@ clicks to the front window.
 - **Stage 1 (built):** the engine, the hands (record and replay), the compiler, and the film. The director is
   recorded once through explore's `os` command, which already journals desktop rows. Takes are compiled replays.
 - **Stage 2 (built, William: "nah build it bro"):** the browserless session (D2), the overlay over any window (D7)
-  and the CLI names (D9). The film does not need them: a take has no overlay or steering. Live proof (11-16,
+  and the CLI names (D9). A take has no steering; it draws the overlay with `try --overlay` (D7). Live proof (11-16,
   Calculator): Pause held a command, an unchanged Resume ran it, a person's press and note refused the next one
   with `changed` and `notes`.
 
@@ -155,6 +155,12 @@ A pause captures the scene (~0.5 s on the desktop); a resume waits for that capt
 - Boxes and the cursor take the control's bounds from the snapshot, in screen points.
 - The panel, Pause and note box are unchanged. The overlay follows the window of the last act.
 
+- A compiled run draws it too: `try --overlay` wraps the run's `Desktop` (`src/desktop/overlaid.ts`). Each
+  click and type aims at its control (`Desktop.bounds`, agent-desktop `get --property bounds`); each act is one
+  trace row; a typed row gives the length, never the text. No Pause or notes: a replay takes no steer.
+  A wrapper, not a render change, so workflows compiled before it draw too.
+- Overlays do not stack: each session owns one host window, glued over its own app's window.
+
 ### D8. Compile and run
 
 - An outline may have only desktop steps. The run opens a browser only when a step asks
@@ -196,6 +202,15 @@ A pause captures the scene (~0.5 s on the desktop); a resume waits for that capt
 7. Double reveal: the inner run compiles into a workflow on screen, then the camera pulls back to the autocomp workflow that typed the first prompt. No captions.
 
 Layout (William, 11-17): the Claude app on the left half of the screen, Chrome with X on the right half.
+
+Who drives what:
+- The director: `autobrowse try film-director --overlay`, a compiled desktop workflow, run from a terminal off
+  screen. It launches the Claude app, places it on the left half and types the prompt. Its overlay sits over
+  the Claude app.
+- Claude in the app: a live agent. It starts an explore session (headed Chrome on the right half) and drives
+  X. That session's overlay sits over Chrome. Its sign-in is the compiled `x-login` workflow, called inside it.
+- The end: the X run is saved and compiled on screen (reveal 1), then the pull-back shows the director's overlay
+  over the Claude app (reveal 2).
 
 Cut: profile edit, approval gate.
 
@@ -246,5 +261,6 @@ Cut: profile edit, approval gate.
 - 2026-11-16: Old JXA-era desktop rows are dropped, not migrated (engineering bar: break compat).
 - 2026-11-16: goldfish review: 39 findings (3 merged): 25 applied, 5 rejected (already in code or disproved by it), 6 wait on stage 2 or stay open questions (a menu or sheet as a find surface, pruning old snapshots); open: stage 2 now or after the film (William).
 - 2026-11-16: Stage 2 built now, not after the film (William: "nah build it bro").
+- 2026-11-17: Compiled desktop runs draw the native overlay (William: "add overlay yes"), by a `Desktop` wrapper, not the renderer: old workflows draw with no recompile.
 - 2026-11-16: Steering moved to `explore/steer.ts` (D2 B); a held command counts as sent before the resume whatever the clock says, and a resume waits for the pause's capture (both races seen in tests and live).
 - 2026-11-16: Adapter reads retry once on `APP_UNRESPONSIVE`; acts never retry (a resent click is a second click).

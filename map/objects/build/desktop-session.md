@@ -22,6 +22,7 @@ Explore needs a page; a desktop task does not. The session is its own small serv
 - Steering: `steering({scene, journal, held, takeNotes, busy, now, change, redact})`; `Scene {where, rows, short, key, noun, actedBy}` — `src/explore/steer.ts`
 - Wire: `commandId`, `withRepeat`, `SENT_KEEP` (a resend with the same id answers the first answer) — `src/explore/wire.ts`
 - Overlay over a window: `overlayFor<WindowHandle>`, `aim`, `hidden`, `hostPid` — `src/explore/overlay.ts`
+- Overlay over a compiled run's desktop steps: `overlaidDesktop(desktop, {name})` wraps `Desktop`, one row per act, aims by `Desktop.bounds` — `src/desktop/overlaid.ts`; `try <workflow> --overlay`
 - CLI: `autobrowse desktop start <name> [--port 9095] [--idle <s>] [--hold] [--fresh] [--no-overlay]` — `src/app/cli-desktop.ts`; `start.sh desktop:<name> "" <port>`
 
 ## State

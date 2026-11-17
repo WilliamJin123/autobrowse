@@ -290,6 +290,12 @@ export function agentDesktop(
       ]);
       return t.match?.ref_id ?? null;
     },
+    async bounds(ref) {
+      const g = await read<{ value: AdBounds | null }>(["get", ref, "--property", "bounds"]).catch(
+        () => null,
+      );
+      return g?.value ? bounds(g.value) : null;
+    },
     async click(ref, mode) {
       await call(["click", ref, ...headedFlag(mode)]);
     },

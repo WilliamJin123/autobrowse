@@ -182,6 +182,8 @@ export interface Desktop {
   find(windowId: string, target: ControlTarget): Promise<string[]>;
   /** The focused control's ref, or the window's first text row; null when neither. */
   focused(windowId: string): Promise<string | null>;
+  /** A ref's screen rect, points; null when the control is gone. Optional: the overlay aims with it. */
+  bounds?(ref: string): Promise<Bounds | null>;
   click(ref: string, mode?: InputMode): Promise<void>;
   type(ref: string, text: string, mode?: InputMode): Promise<void>;
   press(
@@ -340,6 +342,11 @@ export function fakeDesktop(windows: FakeWindow[] = [], o: FakeDesktopOptions = 
       const i = nodes.findIndex((n) => n.states.includes("focused"));
       const j = i >= 0 ? i : nodes.findIndex((n) => n.role === "textfield");
       return j >= 0 ? (refs[j] ?? null) : null;
+    },
+    async bounds(ref) {
+      const [w, i] = deref(ref);
+      // node bounds are screen points, as agent-desktop's
+      return win(w).nodes[i]?.bounds ?? null;
     },
     async click(ref, mode = "headless") {
       const [w, i] = deref(ref);
