@@ -195,7 +195,9 @@ A pause captures the scene (~0.5 s on the desktop); a resume waits for that capt
 6. Post. Draft 2 is fixed text in the prompt, so William's yes covers the exact words.
 7. Double reveal: the inner run compiles into a workflow on screen, then the camera pulls back to the autocomp workflow that typed the first prompt. No captions.
 
-Cut: profile edit, approval gate. Open: the Claude app sign-in (it timed out twice under swap).
+Layout (William, 11-17): the Claude app on the left half of the screen, Chrome with X on the right half.
+
+Cut: profile edit, approval gate.
 
 ## Tests
 
