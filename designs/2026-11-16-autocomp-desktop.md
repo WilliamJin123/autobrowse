@@ -198,7 +198,16 @@ A pause captures the scene (~0.5 s on the desktop); a resume waits for that capt
 3. It scrolls X through a few computer-use demos.
 4. It types draft 1, the long draft, into the composer.
 5. Pause, then the steer note "make it way shorter and to the point", then Resume. Cmd+A and Backspace clear the draft (`key` command), and draft 2 is typed.
-6. Post. Draft 2 is fixed text in the prompt, so William's yes covers the exact words.
+6. Post. Draft 2 is fixed text in the prompt, so William's yes covers the exact words (William, 11-17):
+
+   ```
+   Introducing autobrowse, a browser automation framework.
+
+   • Deterministic runs compiled from agent steps
+   • Sign-ins handled (2FA, email, SMS)
+   • Works for desktop apps too
+   ```
+6b. Reply to the post with `github.com/WilliamJin123/autobrowse` (a link in the post body cuts reach). On camera.
 7. Double reveal: the inner run compiles into a workflow on screen, then the camera pulls back to the autocomp workflow that typed the first prompt. No captions.
 
 Layout (William, 11-17): the Claude app on the left half of the screen, Chrome with X on the right half.
