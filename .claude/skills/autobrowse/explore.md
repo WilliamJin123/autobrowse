@@ -74,7 +74,7 @@ person must do: `{"cmd":"pause"}`, then report the port. Paused, it waits 40
 minutes.
 
 `<site>` is a profile name (`google`, `cloudflare`, `aws`, `scratch` = no login;
-`<site>@<label>` for a second account). One session per site; `start.sh` on an
+`<site>@<label>` for a second account). A bare `<site>` opens the site's `main` account ("account main" = `x`); `<site>@<role>` opens another (`x@lana`). `autobrowse creds list <site>` shows each account's roles. One session per site; `start.sh` on an
 open port just reports it. A session that died left its journal:
 `start.sh <site> "" <same port>` resumes on its last page, so `save` still has
 every act. `autobrowse stop` ends it for good. Flags for secrets: signup.md.
