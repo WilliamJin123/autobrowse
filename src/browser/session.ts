@@ -33,6 +33,7 @@ import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js"
 import { addTab, backgroundTab, dropTab, ownTabsFile, reapTabs } from "./own-tabs.js";
 import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { listProcs, reapOrphans, reapTempDirs } from "./reap.js";
+import { assertNotReserved, isDesk } from "./reserve.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
 
 const run = promisify(execFile);
@@ -231,6 +232,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     context = browser.contexts()[0] ?? (await browser.newContext());
   } else {
     const profileDir = join(expandHome(opts.profilesDir), profile);
+    if (isDesk()) assertNotReserved(profile, profileDir);
     // A browser left by a dead owner would hold this profile; stop those first.
     const reaped = await reapOrphans(expandHome(opts.profilesDir));
     await assertProfileFree(

@@ -57,6 +57,8 @@ multi-loop work or a long wait on a person, and scheduled posts on that
 profile wait meanwhile. You stop a held session yourself (`autobrowse stop`);
 `doctor` flags one held over 12 hours.
 
+The desk's watchers and reads on a profile (x@wren) can take it before you start. To keep the desk off it for a while (a film take, a person at the account): `autobrowse browsers reserve <profile> --minutes 60 --by <id> --why "…"`. Its desk browser closes, its watcher pauses, its calls wait; your session still opens it. `browsers unreserve <profile>` ends it early.
+
 `--headed` (`start.sh <site> "" <port> --headed`): a window a person watches (the panel, a film, a hand-off). Sessions are headless without it; ask for a visible or placed window, start with it.
 
 `--look-only` (a page you do not trust): only reads, `open`, `wait`, `done`, `close`; a click, a script, a `place` or a `flow` is refused.

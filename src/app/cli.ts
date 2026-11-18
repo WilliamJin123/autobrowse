@@ -975,6 +975,39 @@ const browsers = program
       ),
     );
     for (const w of warnings(v)) console.log(warn(w));
+    const { reserves } = await import("../browser/reserve.js");
+    for (const [profile, r] of Object.entries(reserves()))
+      console.log(warn(`${profile} reserved from the desk until ${r.until} (${r.by}: ${r.why})`));
+  });
+browsers
+  .command("reserve <profile>")
+  .description(
+    "The desk opens no browser on <profile> until the reserve ends: its browser there closes now, its watcher pauses, its calls wait. Explore sessions still open it",
+  )
+  .option("--minutes <n>", "how long", "60")
+  .requiredOption("--by <who>", "your session id")
+  .requiredOption("--why <text>", "what it is for")
+  .action(async (profile: string, o: { minutes: string; by: string; why: string }) => {
+    const minutes = Number(o.minutes);
+    if (!(minutes > 0 && minutes <= 24 * 60)) throw new Error("--minutes: 1 to 1440");
+    const { reserve } = await import("../browser/reserve.js");
+    const { browsersNow } = await import("../browser/browsers.js");
+    const { expandHome } = await import("../google/auth.js");
+    const r = reserve(profile, minutes, { by: o.by, why: o.why });
+    const v = await browsersNow(expandHome(settings.profilesDir));
+    const closed: number[] = [];
+    for (const b of v.browsers.filter((b) => b.profile === profile && b.opener === "desk")) {
+      process.kill(b.pid, "SIGTERM");
+      closed.push(b.pid);
+    }
+    console.log(JSON.stringify({ profile, ...r, closed }));
+  });
+browsers
+  .command("unreserve <profile>")
+  .description("End a reserve: the desk opens <profile> again at its next call or watcher sweep")
+  .action(async (profile: string) => {
+    const { unreserve } = await import("../browser/reserve.js");
+    console.log(JSON.stringify({ profile, unreserved: unreserve(profile) }));
   });
 browsers
   .command("stop <target>")
