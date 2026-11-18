@@ -62,7 +62,7 @@ async function replay() {
 }
 
 describe("overlaidDesktop", () => {
-  it("aims at the control from its window's top-left and adds a row per act", async () => {
+  it("aims at the control from its display's top-left and adds a row per act", async () => {
     const { h, o, hands, win } = await replay();
     await hands.run({ op: "click", window: win, control: { role: "button", name: "Send" } });
     const ds = draws(h.sent);

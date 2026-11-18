@@ -4,7 +4,7 @@
  * render change: workflows compiled before it draw too. No Pause or notes: a replay takes no steer.
  */
 import { type OverlayDeps, overlayFor, type TraceRow } from "../explore/overlay.js";
-import { type WindowHandle, windowSurface } from "./session.js";
+import { SCREEN_PREFS, screenSurface, type WindowHandle } from "./session.js";
 import type { Bounds, ControlTarget, Desktop, InputMode } from "./types.js";
 
 export interface OverlaidDesktop {
@@ -20,8 +20,10 @@ export function overlaidDesktop(
   // the overlay is a window too: never one a step lists or targets
   const windows: Desktop["windows"] = async (app) =>
     (await base.windows(app)).filter((w) => w.pid !== (overlay.hostPid ?? -1));
+  const surface = screenSurface({ windows, displays: () => base.displays() });
   const overlay = overlayFor<WindowHandle>(true, {
-    surface: windowSurface({ windows, displays: () => base.displays() }),
+    surface,
+    prefs: SCREEN_PREFS,
     ...o.deps,
   });
   overlay.who(o.name);
@@ -87,7 +89,7 @@ export function overlaidDesktop(
     }
   };
 
-  /** The control's rect from its window's top-left; null: no box, the row still shows. */
+  /** The control's rect from its display's top-left; null: no box, the row still shows. */
   const aimBox = async (ref: string): Promise<Bounds | null> => {
     if (!current || !base.bounds) return null;
     const [box, w] = await Promise.all([
@@ -97,7 +99,7 @@ export function overlaidDesktop(
         .catch(() => undefined),
     ]);
     if (!box || !w) return null;
-    return { x: box.x - w.bounds.x, y: box.y - w.bounds.y, w: box.w, h: box.h };
+    return surface.local(box, w.bounds);
   };
 
   const label = () => (sought ? `${sought.role} "${sought.name}"` : "focused control");

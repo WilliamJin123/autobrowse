@@ -53,7 +53,7 @@ clicks to the front window.
   The focus guard, the headed retry, waits and secrets live here, once, for both.
 - `src/desktop/mac.ts`: `shell`, root shell, screenshot and file checks; the root helper.
 - `compiler/structure.ts`, `render.ts`: desktop ops become outline ops, then `hands.run(...)` lines.
-- `src/desktop/session.ts`: the browserless session (D2), `windowSurface` (D7). `src/explore/steer.ts`: the
+- `src/desktop/session.ts`: the browserless session (D2), `screenSurface` (D7). `src/explore/steer.ts`: the
   steering both sessions share. `src/explore/wire.ts`: command ids and repeats. Card: `map/objects/build/desktop-session.md`.
 - Consumers of the op shape: explore's `os` command (`explore/server.ts`), autotrack import
   (`autotrack/import.ts`), the agent prompt (`agent/explorer.ts`). Old recordings with JXA-era desktop rows
@@ -146,14 +146,16 @@ A pause captures the scene (~0.5 s on the desktop); a resume waits for that capt
 
 ### D7. Overlay over any window (stage 2, built)
 
-- Geometry has two sources (`Surface<S>`). Page: CDP, as before (`pageSurface`). Window: `windowSurface`, the
-  `list-windows` bounds and pid, with `view` equal to the bounds and `dpr` from the display under the window's center.
+- Geometry has two sources (`Surface<S>`). Page: CDP, as before (`pageSurface`). Desktop: `screenSurface`, the
+  whole display under the act's window (`screen: true`, pid 0, `dpr` = its scale). The host covers that display
+  above every app (`NSStatusWindowLevel`), so one panel spans every app the session touches. Was a window-glued
+  panel: it slid under other apps and moved with each act's window (changed 2026-11-17, for the film).
 - The overlay host is a window too: the session leaves its pid out of every `windows` answer.
 - Headed input runs with the overlay hidden (`hidden`), so a physical click never lands on the panel.
-- Before the first act the overlay follows the front window, which may be another app.
+- Before the first act the overlay covers the front window's display.
 - The panel's web view has no accessibility tree: an agent cannot press Pause by ref. Only a person can.
 - Boxes and the cursor take the control's bounds from the snapshot, in screen points.
-- The panel, Pause and note box are unchanged. The overlay follows the window of the last act.
+- The panel, Pause and note box are unchanged. The overlay covers the display of the last act's window.
 
 - A compiled run draws it too: `try --overlay` wraps the run's `Desktop` (`src/desktop/overlaid.ts`). Each
   click and type aims at its control (`Desktop.bounds`, agent-desktop `get --property bounds`); each act is one

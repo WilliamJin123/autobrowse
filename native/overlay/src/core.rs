@@ -1,5 +1,5 @@
 //! The OS-free half: protocol, panel state, follow and pointer logic. Ported from host.swift.
-//! in:  {t:"html",html} {t:"js",js} {t:"target",pid,x,y,w,h} {t:"view",outerW,outerH,innerW,innerH,dpr} {t:"hide"} {t:"show"}
+//! in:  {t:"html",html} {t:"js",js} {t:"target",pid,x,y,w,h,screen?} {t:"view",outerW,outerH,innerW,innerH,dpr} {t:"hide"} {t:"show"}
 //! ipc: the panel's postMessage; `rect` sets the hit box, `key` takes or gives back key
 //! out: {t:"ready"} {t:"found"} {t:"lost"} {t:"moved"} {t:"js",...} (the panel's postMessage, less `rect`)
 use serde_json::{Map, Value, json};
@@ -37,6 +37,8 @@ pub trait Os {
         None
     }
     fn place(&mut self, r: Rect);
+    /// Above every app's windows: a screen overlay (desktop session) has no window to sit on.
+    fn float(&mut self) {}
     /// Directly above `id`: other apps cover both, as they cover Chrome.
     fn order(&mut self, id: Self::Id);
     fn hide(&mut self);
@@ -110,6 +112,8 @@ pub struct Host<O: Os> {
     queued: VecDeque<String>,
     pid: u32,
     want: Option<Rect>,
+    /// `target` with `screen:true`: a whole display, no window to follow
+    screen: Option<Rect>,
     wid: Option<O::Id>,
     cg: Rect,
     onscreen: bool,
@@ -135,6 +139,7 @@ impl<O: Os> Host<O> {
             queued: VecDeque::new(),
             pid: 0,
             want: None,
+            screen: None,
             wid: None,
             cg: Rect::default(),
             onscreen: false,
@@ -183,14 +188,23 @@ impl<O: Os> Host<O> {
             Some("target") => {
                 self.pid = num("pid").unwrap_or(0.0) as u32;
                 let n = |k| num(k).unwrap_or(0.0);
-                self.want = Some(Rect {
+                let r = Rect {
                     x: n("x"),
                     y: n("y"),
                     w: n("w"),
                     h: n("h"),
-                });
+                };
                 self.wid = None;
-                self.follow();
+                if o.get("screen").and_then(Value::as_bool) == Some(true) {
+                    self.want = None;
+                    self.screen = Some(r);
+                    emit(&json!({"t": "found"}));
+                    self.place();
+                } else {
+                    self.screen = None;
+                    self.want = Some(r);
+                    self.follow();
+                }
             }
             Some("view") => {
                 self.view = match (num("outerW"), num("outerH"), num("innerW"), num("innerH")) {
@@ -278,6 +292,15 @@ impl<O: Os> Host<O> {
 
     /// The viewport on screen: the window less its toolbar and any right-side pane.
     fn place(&mut self) {
+        if let Some(s) = self.screen {
+            if self.shown && s.w > 0.0 {
+                self.os.place(s);
+                self.os.float();
+            } else {
+                self.os.hide();
+            }
+            return;
+        }
         let Some(wid) = self
             .wid
             .filter(|_| self.onscreen && self.shown && self.cg.w > 0.0)

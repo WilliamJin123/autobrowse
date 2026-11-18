@@ -393,7 +393,7 @@ const CSS = [
 ].join("");
 
 /** How a person left the panel: carried into each new document. */
-interface Prefs {
+export interface Prefs {
   /** Folded to a tab at the left edge. */
   min: boolean;
   trace: boolean;
@@ -403,13 +403,15 @@ interface Prefs {
   theme: "light" | "dark" | null;
   /** The floating panel, or the old terminal look. */
   look: "panel" | "term";
-  /** Top-left corner, px; null = bottom left. */
+  /** Top-left corner, px; null = the bottom corner `corner` names. */
   x: number | null;
   y: number | null;
   /** Panel width and height, px; `sized` once a person dragged the grip. */
   w: number;
   h: number;
   sized: boolean;
+  /** Where an unmoved panel sits: bottom left (a page) or bottom right (a screen). */
+  corner?: "left" | "right";
 }
 
 /**
@@ -421,7 +423,7 @@ export const panelHtml = (
   prefs: Prefs,
 ) => `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style><style id="ph"></style></head><body><script>(() => {
   const ui = window.ui = { ...${JSON.stringify(prefs)} };
-  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, look: ui.look, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized });
+  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, look: ui.look, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized, corner: ui.corner });
   const el = (tag, cls, text, css) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; };
   const COLOURS = ${JSON.stringify(MARK_COLOURS)};
   const at = (b) => 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;';
@@ -536,6 +538,7 @@ export const panelHtml = (
     st.left = ui.x + 'px';
     st.top = ui.y + 'px';
     st.bottom = 'auto';
+    st.right = 'auto';
   });
   const drop = () => { if (ui.drag) { ui.drag = null; post(); } };
   tui.addEventListener('pointerup', drop);
@@ -665,7 +668,7 @@ export const panelHtml = (
     } else {
       tab.style.display = 'none';
       clamp();
-      const place = ui.x == null ? 'left:12px;bottom:12px' : 'left:' + ui.x + 'px;top:' + ui.y + 'px';
+      const place = ui.x != null ? 'left:' + ui.x + 'px;top:' + ui.y + 'px' : (ui.corner === 'right' ? 'right' : 'left') + ':12px;bottom:12px';
       tui.className = 'tui' + (s.busy ? ' busy' : '') + (ui.sized ? ' sized' : '');
       // a redraw mid-open keeps the origin
       tui.style.cssText = place + ';width:' + ui.w + 'px' + (ui.sized ? ';height:' + ui.h + 'px' : '') + (ui.origin ? ';transform-origin:' + ui.origin : '');
@@ -877,6 +880,8 @@ export interface Geometry {
   windowId: number;
   bounds: { x: number; y: number; w: number; h: number };
   view: { outerW: number; outerH: number; innerW: number; innerH: number; dpr: number };
+  /** `bounds` is a whole display: the host covers it above every app, no window to find. */
+  screen?: boolean;
 }
 
 const cdps = new WeakMap<Page, { cdp: CDPSession; world?: number | undefined }>();
@@ -1000,6 +1005,8 @@ export interface OverlayDeps<S = Page> {
   surface?: Surface<S>;
   /** Default the surface's. */
   geometry?: (s: S) => Promise<Geometry | null>;
+  /** The panel's first prefs, over the defaults (a screen overlay: `corner: "right"`). */
+  prefs?: Partial<Prefs>;
 }
 
 /** One session's overlay; `enabled` false makes every call a no-op. */
@@ -1022,6 +1029,7 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     w: 460,
     h: 320,
     sized: false,
+    ...deps.prefs,
   };
   /** The newest row the window holds; -1: none, so the next draw sends every row. */
   let sentN = -1;
@@ -1127,7 +1135,7 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     const key = `${g.pid}:${g.windowId}`;
     if (key !== windowKey) {
       windowKey = key;
-      host.send({ t: "target", pid: g.pid, ...g.bounds });
+      host.send({ t: "target", pid: g.pid, ...g.bounds, ...(g.screen ? { screen: true } : {}) });
       const n = ++targets;
       setTimeout(() => {
         if (host && targets === n && found < n) why = NOT_FOUND;
@@ -1445,6 +1453,16 @@ function noteOf(c: Command, failed: unknown, seen: TraceSeen | undefined): strin
     .join(" · ");
 }
 
+/** A desktop act's row words: the op and its one safe detail; typed text by length only. */
+function osAim(a: Record<string, unknown>): string {
+  const op = String(a.op);
+  if (op === "type")
+    return `type ${typeof a.text === "string" ? `${a.text.length} chars` : "secret"}`;
+  if (op === "key") return `key ${String(a.combo)}`;
+  if (op === "launch") return `launch ${String(a.app)}`;
+  return op;
+}
+
 /** A command as one trace row: what it aimed at, never a typed value. */
 export function traceRow(
   c: Command,
@@ -1466,7 +1484,7 @@ export function traceRow(
             : c.cmd === "batch"
               ? `${(f.cmds as unknown[]).length} commands`
               : c.cmd === "os"
-                ? String((f.act as { kind?: string }).kind)
+                ? osAim(f.act as Record<string, unknown>)
                 : String(f.as ?? f.env ?? f.name ?? f.outcome ?? (hints ? hintLabel(hints) : ""));
   const what = typeof f.goal === "string" && f.goal ? `${f.goal} · ${aim}` : aim;
   const detail = [

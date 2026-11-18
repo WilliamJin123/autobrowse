@@ -18,7 +18,7 @@ Explore needs a page; a desktop task does not. The session is its own small serv
 ## Shape
 
 - `startDesktopSession(opts)` → `{exec, port, paused, done, resumedFrom}`; `DESKTOP_COMMANDS` (anything else answers 400 "page commands need explore") — `src/desktop/session.ts`
-- `windowSurface(d)`: a window's bounds and pid as the overlay's geometry (`view` = bounds, `dpr` from the display under its center, `displayOf`) — `src/desktop/session.ts`
+- `screenSurface(d)`: the whole display under the act's window as the overlay's geometry (`screen: true`, pid 0, `dpr` = its scale, `displayOf`; a gone window: the primary); `local(box, win)` makes a box display-relative. The host floats it above every app — `src/desktop/session.ts`, `native/overlay/src/core.rs`
 - Steering: `steering({scene, journal, held, takeNotes, busy, now, change, redact})`; `Scene {where, rows, short, key, noun, actedBy}` — `src/explore/steer.ts`
 - Wire: `commandId`, `withRepeat`, `SENT_KEEP` (a resend with the same id answers the first answer) — `src/explore/wire.ts`
 - Overlay over a window: `overlayFor<WindowHandle>`, `aim`, `hidden`, `hostPid` — `src/explore/overlay.ts`

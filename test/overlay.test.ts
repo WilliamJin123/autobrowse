@@ -863,4 +863,14 @@ describe("headed overlay, out of the page", () => {
     expect(bad.ok).toBe(false);
     expect(bad.detail.at(-1)).toBe("error no such");
   });
+
+  it("a desktop act's row: its op and one safe detail, typed text by length", () => {
+    const os = (act: Record<string, unknown>) =>
+      traceRow({ cmd: "os", act } as unknown as Command, null, 1).what;
+    expect(os({ op: "snapshot", window: "w-1" })).toBe("snapshot");
+    expect(os({ op: "type", ref: "@a", text: "hello there" })).toBe("type 11 chars");
+    expect(os({ op: "type", secret: "x.password" })).toBe("type secret");
+    expect(os({ op: "key", combo: "cmd+n" })).toBe("key cmd+n");
+    expect(os({ op: "launch", app: "Claude" })).toBe("launch Claude");
+  });
 });

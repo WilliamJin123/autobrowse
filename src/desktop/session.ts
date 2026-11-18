@@ -118,36 +118,46 @@ export function displayOf(ds: readonly Display[], b: Bounds): Display | null {
   );
 }
 
+/** A screen panel sits bottom right: apps the session drives tend to sit left (the film: Claude). */
+export const SCREEN_PREFS = { corner: "right" } as const;
+
+export interface ScreenSurface extends Surface<WindowHandle> {
+  /** A box in screen points, made relative to the display its window sits on: the overlay's px. */
+  local(box: Bounds, win: Bounds): Promise<Bounds>;
+}
+
 /**
- * The overlay over a native window (D7): the host finds it by pid and bounds; view = the bounds, so a
- * box is in points from the window's top-left; dpr = the display's scale.
+ * The overlay over the whole display of the act's window (D7): one panel for every app the session
+ * touches, above all of them. Box = points from the display's top-left; dpr = its scale. pid 0: no
+ * window to find. A window gone or minimized: the primary display, so the panel stays up.
  */
-export function windowSurface(d: Pick<Desktop, "windows" | "displays">): Surface<WindowHandle> {
-  // the overlay keys a target by pid and a number: a window id becomes one, stable per session
-  const nums = new Map<string, number>();
+export function screenSurface(d: Pick<Desktop, "windows" | "displays">): ScreenSurface {
+  let ds: Display[] = [];
+  const displays = async () => {
+    ds = await d.displays().catch(() => ds);
+    return ds;
+  };
+  const on = (all: Display[], win: Bounds | null) =>
+    win ? displayOf(all, win) : (all.find((x) => x.primary) ?? all[0] ?? null);
   return {
     async geometry(h): Promise<Geometry | null> {
-      const [ws, ds] = await Promise.all([d.windows(), d.displays().catch(() => [])]);
+      const [ws, all] = await Promise.all([d.windows(), displays()]);
       const w = ws.find((x) => x.id === h.id);
-      if (!w || w.minimized) return null;
-      let n = nums.get(w.id);
-      if (n === undefined) {
-        n = nums.size + 1;
-        nums.set(w.id, n);
-      }
-      const { w: width, h: height } = w.bounds;
+      const disp = on(all, w && !w.minimized ? w.bounds : null);
+      if (!disp) return null;
+      const { w: width, h: height } = disp.bounds;
       return {
-        pid: w.pid,
-        windowId: n,
-        bounds: { ...w.bounds },
-        view: {
-          outerW: width,
-          outerH: height,
-          innerW: width,
-          innerH: height,
-          dpr: displayOf(ds, w.bounds)?.scale ?? 1,
-        },
+        pid: 0,
+        windowId: all.indexOf(disp) + 1,
+        bounds: { ...disp.bounds },
+        view: { outerW: width, outerH: height, innerW: width, innerH: height, dpr: disp.scale },
+        screen: true,
       };
+    },
+    async local(box, win) {
+      const disp = on(ds.length ? ds : await displays(), win);
+      const o = disp?.bounds ?? { x: 0, y: 0 };
+      return { x: box.x - o.x, y: box.y - o.y, w: box.w, h: box.h };
     },
     // boxes come from snapshots (`aim`), never from page hints
     box: async () => null,
@@ -155,9 +165,6 @@ export function windowSurface(d: Pick<Desktop, "windows" | "displays">): Surface
     gone: () => undefined,
   };
 }
-
-/** A control's screen box, from its window's top-left. */
-const within = (box: Bounds, w: Bounds) => ({ x: box.x - w.x, y: box.y - w.y, w: box.w, h: box.h });
 
 export async function startDesktopSession(opts: DesktopSessionOptions): Promise<DesktopSession> {
   const now = opts.now ?? Date.now;
@@ -183,8 +190,10 @@ export async function startDesktopSession(opts: DesktopSessionOptions): Promise<
     windows: async (app) =>
       (await base.windows(app)).filter((w) => w.pid !== (overlay.hostPid ?? -1)),
   };
+  const surface = screenSurface(desktop);
   const overlay = overlayFor<WindowHandle>(opts.overlay ?? true, {
-    surface: windowSurface(desktop),
+    surface,
+    prefs: SCREEN_PREFS,
     ...opts.overlayDeps,
   });
   overlay.who(opts.name);
@@ -294,7 +303,7 @@ export async function startDesktopSession(opts: DesktopSessionOptions): Promise<
         if (at)
           await overlay.aim(
             handle(at.window.id),
-            within(at.box, at.window.bounds),
+            await surface.local(at.box, at.window.bounds),
             `${a.op} in ${at.window.app}`,
           );
         const r = await hands.act(a);

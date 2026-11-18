@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   type DesktopSession,
   displayOf,
+  screenSurface,
   startDesktopSession,
-  windowSurface,
 } from "../src/desktop/session.js";
 import { fakeDesktop, fakeWindow } from "../src/desktop/types.js";
 import type { HostEvent, OverlayHost } from "../src/explore/overlay-host.js";
@@ -224,7 +224,7 @@ describe("desktop session: acts", () => {
     expect(d.calls.filter((c) => c.call === "click")).toEqual([]);
   });
 
-  it("aims the overlay at the control, in points from the window's top-left", async () => {
+  it("aims the overlay at the control, in points from its display's top-left", async () => {
     const w = calc();
     w.nodes = w.nodes.map((n) =>
       n.name === "7" ? { ...n, bounds: { x: 320, y: 600, w: 40, h: 30 } } : n,
@@ -240,7 +240,7 @@ describe("desktop session: acts", () => {
     for (const m of h.sent.slice(before))
       if (m.t === "js" && String(m.js).startsWith("ui.draw"))
         seen.push(JSON.parse(/^ui\.draw\((.*), \[/.exec(String(m.js))?.[1] ?? "{}").target);
-    expect(seen).toContainEqual({ x: 20, y: 200, w: 40, h: 30 });
+    expect(seen).toContainEqual({ x: 320, y: 600, w: 40, h: 30 });
   });
 
   it("headed input runs with the overlay hidden", async () => {
@@ -322,17 +322,40 @@ describe("desktop session: the wire", () => {
   });
 });
 
-describe("window geometry", () => {
-  it("the window's bounds and pid; view = bounds; dpr = its display's scale", async () => {
+describe("screen geometry", () => {
+  const ds = [
+    { id: "a", bounds: { x: 0, y: 0, w: 1512, h: 982 }, scale: 2, primary: true },
+    { id: "b", bounds: { x: 1512, y: 0, w: 1920, h: 1080 }, scale: 1, primary: false },
+  ];
+
+  it("the whole display of the window; no pid; a gone window: the primary", async () => {
     const d = fakeDesktop([calc()]);
-    const g = await windowSurface(d).geometry({ id: "w-1" });
-    expect(g).toEqual({
-      pid: 101,
+    const screen = {
+      pid: 0,
       windowId: 1,
-      bounds: { x: 300, y: 400, w: 230, h: 410 },
-      view: { outerW: 230, outerH: 410, innerW: 230, innerH: 410, dpr: 2 },
+      bounds: { x: 0, y: 0, w: 1512, h: 982 },
+      view: { outerW: 1512, outerH: 982, innerW: 1512, innerH: 982, dpr: 2 },
+      screen: true,
+    };
+    expect(await screenSurface(d).geometry({ id: "w-1" })).toEqual(screen);
+    expect(await screenSurface(d).geometry({ id: "w-404" })).toEqual(screen);
+  });
+
+  it("a second display: its own bounds and scale; boxes from its top-left", async () => {
+    const w = { ...calc(), bounds: { x: 1600, y: 100, w: 230, h: 410 } };
+    const d = { ...fakeDesktop([w]), displays: async () => ds };
+    const s = screenSurface(d);
+    expect(await s.geometry({ id: "w-1" })).toMatchObject({
+      windowId: 2,
+      bounds: ds[1]?.bounds,
+      view: { dpr: 1 },
     });
-    expect(await windowSurface(d).geometry({ id: "w-404" })).toBeNull();
+    expect(await s.local({ x: 1700, y: 300, w: 40, h: 30 }, w.bounds)).toEqual({
+      x: 188,
+      y: 300,
+      w: 40,
+      h: 30,
+    });
   });
 
   it("picks the display under the window's center, else the primary", () => {
@@ -344,10 +367,20 @@ describe("window geometry", () => {
     expect(displayOf(ds, { x: -5000, y: 0, w: 10, h: 10 })?.id).toBe("a");
   });
 
-  it("the host is sent the window as its target", async () => {
+  it("the host is sent the window's display as a screen target", async () => {
     const { s, h } = await session();
     await s.exec({ cmd: "os", act: { op: "snapshot", window: "w-1" } });
-    expect(h.sent).toContainEqual({ t: "target", pid: 101, x: 300, y: 400, w: 230, h: 410 });
-    expect(h.sent).toContainEqual(expect.objectContaining({ t: "view", innerW: 230, dpr: 2 }));
+    expect(h.sent).toContainEqual({
+      t: "target",
+      pid: 0,
+      x: 0,
+      y: 0,
+      w: 1512,
+      h: 982,
+      screen: true,
+    });
+    expect(h.sent).toContainEqual(expect.objectContaining({ t: "view", innerW: 1512, dpr: 2 }));
+    // the screen panel starts bottom right, off the app on the left
+    expect(String(h.sent.find((m) => m.t === "html")?.html)).toContain('"corner":"right"');
   });
 });

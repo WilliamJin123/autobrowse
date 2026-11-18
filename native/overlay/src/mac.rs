@@ -224,6 +224,16 @@ impl Os for Mac {
         }
     }
 
+    fn float(&mut self) {
+        // NSStatusWindowLevel: over every app's windows, under menus
+        if self.win.level() != 25 {
+            self.win.setLevel(25);
+        }
+        if !self.win.isVisible() {
+            self.win.orderFrontRegardless();
+        }
+    }
+
     fn hide(&mut self) {
         self.win.orderOut(None);
     }
@@ -257,6 +267,10 @@ impl Os for Mac {
             return;
         }
         self.win.resignKeyWindow();
+        // pid 0: a screen overlay, no app to hand key back to
+        if pid == 0 {
+            return;
+        }
         // hand key back to Chrome's window; a no-op when Chrome is still the active app
         if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid as i32)
         {
