@@ -781,7 +781,7 @@ export function fileSignInHolds(file: string): SignInHolds {
 export function liftHolds(
   holds: SignInHolds,
   key: string,
-  cred: { username: string; roles?: readonly string[] },
+  cred: { username: string; roles?: readonly string[] | undefined },
   oldUsername?: string,
 ): string[] {
   const site = siteOf(key);
