@@ -2267,6 +2267,11 @@ async function serve(
       );
     switch (c.cmd) {
       case "window": {
+        // headless Chrome still answers bounds: a placed window nobody sees
+        if (opts.browser.headless !== false)
+          throw new Error(
+            "this session is headless: no window to place. Stop it, then start it again with --headed",
+          );
         const { cmd: _, ...want } = c;
         return { window: await windowBounds(page, want) };
       }

@@ -154,15 +154,10 @@ describe("explore mode", () => {
     await busy;
   });
 
-  it("places its own window: no fields read it, a box moves and sizes it", async () => {
-    const before = (await send({ cmd: "window" })).body.window as Record<string, number>;
-    expect(before.w).toBeGreaterThan(0);
-    const placed = await send({ cmd: "window", x: 40, y: 60, w: 800, h: 600 });
-    expect(placed.body.window).toMatchObject({ x: 40, y: 60, w: 800, h: 600, state: "normal" });
-    expect((await send({ cmd: "window" })).body.window).toMatchObject({ w: 800, h: 600 });
-    // no page work: the journal never keeps it
-    const j = (await send({ cmd: "journal" })).body;
-    expect(JSON.stringify(j)).not.toContain('"window"');
+  it("refuses to place a window on a headless session", async () => {
+    const r = await send({ cmd: "window", x: 40, y: 60, w: 800, h: 600 });
+    expect(r.status).toBe(500);
+    expect(r.body.error).toMatch(/headless.*--headed/);
   });
 
   it("compacts a long eval answer: TOON, then an even cut, the whole in a file", async () => {
