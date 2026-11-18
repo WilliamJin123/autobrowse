@@ -435,6 +435,9 @@ const LOCAL_ARGS = [
 const X11_ARGS =
   process.platform === "linux" && process.env.DISPLAY ? ["--ozone-platform=x11"] : [];
 
+/** Headed: no "unsupported command-line flag" infobar over the page (shows in films, shifts the view). */
+const HEADED_ARGS = ["--test-type"];
+
 /**
  * Behind a proxy, WebRTC would still ask STUN over UDP from the machine's
  * own address and show the page the IP the proxy hides; only proxied UDP
@@ -467,7 +470,7 @@ async function launchLocal(
       ...(proxy ? PROXIED_ARGS : []),
       ...sizeArgs,
       ...uaArgs(ua),
-      ...(headless ? [] : X11_ARGS),
+      ...(headless ? [] : [...X11_ARGS, ...HEADED_ARGS]),
     ],
     ignoreDefaultArgs: ["--enable-automation"],
     // else Playwright adds --no-sandbox: an infobar and a bot tell; the Linux worker runs as root, keeps it

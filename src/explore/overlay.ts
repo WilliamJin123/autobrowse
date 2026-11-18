@@ -57,6 +57,8 @@ export interface OverlayState {
   notes: Array<{ id: number; text: string; read: boolean }>;
   /** The cursor's name pill and colour. */
   who: { name: string; color: string };
+  /** The director opens or closes the island; `n` counts the asks, so one ask acts once. */
+  expand: { n: number; on: boolean } | null;
 }
 
 const EMPTY: OverlayState = {
@@ -74,6 +76,7 @@ const EMPTY: OverlayState = {
   held: null,
   notes: [],
   who: { name: "agent", color: "#3380ff" },
+  expand: null,
 };
 
 /** Cursor colours, one per session port: Clicky's blue first. */
@@ -114,6 +117,20 @@ const PHASES: Record<string, string[]> = {
 };
 /** Seconds per phase word. */
 const PHASE_S = 0.55;
+
+/** A damped spring as CSS `linear()`: about 2% past the mark, settled by `ms`. */
+const spring = (zeta = 0.78, period = 0.42, ms = 600) => {
+  const w = (2 * Math.PI) / period;
+  const wd = w * Math.sqrt(1 - zeta * zeta);
+  const pts = Array.from({ length: 29 }, (_, i) => {
+    const t = ((ms / 1000) * i) / 28;
+    const x =
+      1 - Math.exp(-zeta * w * t) * (Math.cos(wd * t) + ((zeta * w) / wd) * Math.sin(wd * t));
+    return Math.round(x * 1000) / 1000;
+  });
+  return `linear(${pts.join(",")})`;
+};
+const SPRING = spring();
 
 /** A CSS `content` cycle: the page runs no timer of ours. */
 const contentKeys = (name: string, words: string[]) =>
@@ -156,6 +173,8 @@ const ICONS = {
   pause: "M14 5h3v14h-3zM7 5h3v14H7z",
   play: "M7 4.5v15l12-7.5z",
   chevron: "m6 9 6 6 6-6",
+  island: "M7 4h10a3 3 0 0 1 0 6H7a3 3 0 0 1 0-6M5 14h14M5 18h9",
+  panel: "M4 5h16v14H4zM4 9h16",
 };
 
 /** Prefix each rule's selectors; one rule a string, at-rules as they are. */
@@ -228,7 +247,7 @@ const SHARED_CSS = [
   ".notes{display:grid;gap:1px}",
   ".notes .nt{display:flex;align-items:baseline;gap:6px;overflow-wrap:anywhere}",
   ".notes .nt>:first-child{flex:1;min-width:0}",
-  "@media (prefers-reduced-motion:reduce){.target,.target::after,.in,.enter,.row.new,.hand .bub.pop,.ripple,.focus{animation:none!important}.shim{animation:none!important;background:none!important;color:inherit!important}*{transition:none!important}}",
+  "@media (prefers-reduced-motion:reduce){.target,.target::after,.in,.enter,.row.new,.hand .bub.pop,.ripple,.focus,.isl .spin,.isl .dot{animation:none!important}.shim{animation:none!important;background:none!important;color:inherit!important}*{transition:none!important}}",
 ];
 
 /** The panel: a floating macOS-style sheet, light or dark, purple accents (2026-11-03). */
@@ -386,10 +405,69 @@ const TERM_CSS = [
   "@container (max-width:360px){.wrap.term .row .at{display:none}.wrap.term .rows .row .note{grid-column:3/-1}}",
 ];
 
+/**
+ * The island: a black pill at top centre, as the Dynamic Island (William, 11-18). Small, it shows
+ * the act under way and the one before; a click opens it to the goal, the thought, the last rows
+ * and the note box. Size moves on a spring; words that change blur across.
+ */
+const ISLAND_CSS = [
+  `.isl{position:fixed;left:50%;top:var(--top,8px);transform:translateX(-50%);background:#000;color:#f5f5f7;border-radius:22px;overflow:hidden;isolation:isolate;cursor:pointer;user-select:none;-webkit-user-select:none;font:13px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased;box-shadow:0 0 0 .5px rgb(255 255 255/.12),0 12px 32px -10px rgb(0 0 0/.6);transition:width .6s cubic-bezier(.34,1.25,.64,1),height .6s cubic-bezier(.34,1.25,.64,1),border-radius .6s cubic-bezier(.34,1.25,.64,1);transition:width .6s ${SPRING},height .6s ${SPRING},border-radius .6s ${SPRING}}`,
+  ".isl.still{transition:none}",
+  ".isl.open{border-radius:26px;cursor:default}",
+  ".isl .in{position:absolute;left:0;top:0;width:max-content;min-width:200px;max-width:min(480px,calc(100vw - 24px))}",
+  ".isl.open .in{width:min(420px,calc(100vw - 24px))}",
+  ".isl .top{display:grid;grid-template-columns:18px minmax(0,1fr) 28px;align-items:center;gap:10px;padding:8px 8px 8px 13px;cursor:pointer}",
+  ".isl .lines{display:grid;gap:1px;min-width:0}",
+  // A slot holds one line; on a change the old and new words share its cell while they cross.
+  ".isl .slot{display:grid;min-width:0}",
+  ".isl .slot>*{grid-area:1/1;min-width:0;overflow-wrap:anywhere}",
+  ".isl .l1{font-weight:600;letter-spacing:-.01em}",
+  ".isl .l1 .verb{color:var(--accent);font-weight:500;margin-right:6px}",
+  ".isl .l2{font-size:11.5px;color:rgb(245 245 247/.5)}",
+  ".isl .l2 .no{color:#ff6b5e}",
+  ".isl .glyph{width:18px;height:18px;display:grid;place-items:center}",
+  ".isl .spin{width:13px;height:13px;border-radius:50%;border:2px solid rgb(255 255 255/.16);border-top-color:var(--accent);animation:ispin .8s linear infinite}",
+  "@keyframes ispin{to{transform:rotate(1turn)}}",
+  ".isl .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:ibreathe 1.6s var(--ease) infinite}",
+  ".isl .dot.off{background:rgb(255 255 255/.3);animation:none}",
+  "@keyframes ibreathe{50%{opacity:.35;transform:scale(.8)}}",
+  ".isl .glyph svg{width:13px;height:13px;color:var(--accent);fill:currentColor;stroke:none}",
+  ".isl .btn{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:rgb(255 255 255/.12);color:#f5f5f7;cursor:pointer;transition:background-color .15s var(--ease),transform .15s var(--ease)}",
+  ".isl .btn:hover{background:rgb(255 255 255/.2)}",
+  ".isl .btn:active{transform:scale(.92)}",
+  ".isl .btn.on{background:var(--accent);color:#15121f}",
+  ".isl .btn svg{width:13px;height:13px;fill:currentColor;stroke:none}",
+  ".isl .more{display:grid;gap:8px;padding:2px 14px 12px}",
+  ".isl .goal{font-weight:600;font-size:13.5px;letter-spacing:-.01em;overflow-wrap:anywhere}",
+  ".isl .thought{color:rgb(245 245 247/.62);overflow-wrap:anywhere}",
+  ".isl .list{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:8px;row-gap:3px;font-size:12px}",
+  ".isl .list>span{min-width:0;overflow-wrap:anywhere}",
+  ".isl .list .c{color:rgb(245 245 247/.45)}",
+  ".isl .list .ms{color:rgb(245 245 247/.4);text-align:right;font-variant-numeric:tabular-nums}",
+  ".isl .list .no{color:#ff6b5e}",
+  ".isl .ask,.isl .held{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-radius:14px;background:rgb(255 255 255/.08)}",
+  ".isl .ask .q,.isl .held .q{flex:1 1 160px;font-weight:600}",
+  ".isl .go{flex:none;padding:3px 12px;border-radius:999px;cursor:pointer;font-weight:600;background:rgb(255 255 255/.12)}",
+  ".isl .go.yes,.isl .held .go{background:#f5f5f7;color:#000}",
+  ".isl .steer{display:grid;gap:4px}",
+  ".isl .say{font:inherit;color:#f5f5f7;background:rgb(255 255 255/.08);border:0;border-radius:12px;padding:7px 11px;box-shadow:inset 0 0 0 1px rgb(255 255 255/.06)}",
+  ".isl .say::placeholder{color:rgb(245 245 247/.4)}",
+  ".isl .say:focus{box-shadow:inset 0 0 0 1.5px var(--accent)}",
+  ".isl .notes .nt{color:rgb(245 245 247/.7);font-size:12px}",
+  ".isl .notes .st{flex:none;font-size:11px;color:rgb(245 245 247/.4)}",
+  ".isl .notes .st.q{color:var(--accent)}",
+  ".isl .foot{display:flex;justify-content:flex-end;gap:6px}",
+  ".isl .foot .btn{width:24px;height:24px;background:transparent;color:rgb(245 245 247/.55)}",
+  ".isl .foot .btn svg{fill:none;stroke:currentColor;stroke-width:1.75}",
+  ".isl .foot .btn:hover{background:rgb(255 255 255/.1);color:#f5f5f7}",
+  ".isl .foot .btn.on{background:transparent;color:var(--accent)}",
+];
+
 const CSS = [
   ...SHARED_CSS,
   ...scope(".wrap.panel", PANEL_CSS),
   ...scope(".wrap.term", TERM_CSS),
+  ...scope(".wrap.island", ISLAND_CSS),
 ].join("");
 
 /** How a person left the panel: carried into each new document. */
@@ -401,8 +479,12 @@ export interface Prefs {
   marks: boolean;
   /** null: the system's. */
   theme: "light" | "dark" | null;
-  /** The floating panel, or the old terminal look. */
-  look: "panel" | "term";
+  /** The floating panel, the old terminal look, or the island at top centre. */
+  look: "panel" | "term" | "island";
+  /** The island opened to its full card. */
+  open: boolean;
+  /** The island's top inset, px: below the menu bar on a screen overlay. */
+  top?: number;
   /** Top-left corner, px; null = the bottom corner `corner` names. */
   x: number | null;
   y: number | null;
@@ -423,7 +505,7 @@ export const panelHtml = (
   prefs: Prefs,
 ) => `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style><style id="ph"></style></head><body><script>(() => {
   const ui = window.ui = { ...${JSON.stringify(prefs)} };
-  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, look: ui.look, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized, corner: ui.corner });
+  ui.prefs = () => ({ min: ui.min, trace: ui.trace, marks: ui.marks, theme: ui.theme, look: ui.look, open: ui.open, top: ui.top, x: ui.x, y: ui.y, w: ui.w, h: ui.h, sized: ui.sized, corner: ui.corner });
   const el = (tag, cls, text, css) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; };
   const COLOURS = ${JSON.stringify(MARK_COLOURS)};
   const at = (b) => 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;';
@@ -469,22 +551,67 @@ export const panelHtml = (
     g.dataset.c = c;
     tui.appendChild(g);
   }
+  // The island: built once; each paint swaps only the words that changed.
+  const isl = el('div', 'isl still'), iin = el('div', 'in'), itop = el('div', 'top'), more = el('div', 'more');
+  itop.setAttribute('data-a', 'open');
+  const glyph = el('div', 'glyph'), lines = el('div', 'lines'), l1 = el('div', 'slot l1'), l2 = el('div', 'slot l2'), ihold = el('span', 'btn');
+  ihold.setAttribute('data-a', 'hold');
+  lines.append(l1, l2);
+  itop.append(glyph, lines, ihold);
+  const mGoal = el('div', 'slot goal'), mThought = el('div', 'slot thought'), mList = el('div', 'list'), mBox = el('div'), mFoot = el('div', 'foot');
+  more.append(mGoal, mThought, mList, mBox, mFoot);
+  iin.append(itop, more);
+  isl.appendChild(iin);
   const wrap = el('div', 'wrap');
-  wrap.append(marks, hands, tab, tui);
+  wrap.append(marks, hands, tab, tui, isl);
   document.body.append(wrap);
   const ICONS = ${JSON.stringify(ICONS)};
   const NS = 'http://www.w3.org/2000/svg';
   const icon = (d) => { const s = document.createElementNS(NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); s.appendChild(p); return s; };
   const dark = () => ui.theme ? ui.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const island = () => ui.look === 'island';
+  // The island's size: its content's, set on the pill so the spring carries it.
+  const fit = () => {
+    const w = iin.offsetWidth, h = iin.offsetHeight;
+    if (!w || (ui.iw === w && ui.ih === h)) return;
+    ui.iw = w; ui.ih = h;
+    isl.style.width = w + 'px';
+    isl.style.height = h + 'px';
+    post();
+  };
+  new ResizeObserver(fit).observe(iin);
+  // The words in a slot blur out as the new ones blur in; the same key redrawn stays still.
+  const swap = (slot, key, make) => {
+    if (slot.dataset.k === key) return;
+    const first = slot.dataset.k == null;
+    slot.dataset.k = key;
+    const old = [...slot.children];
+    const nu = make();
+    if (nu) slot.appendChild(nu);
+    if (first || still()) { for (const o of old) o.remove(); return; }
+    // blur only on the pill's top lines: inside the card a blurred layer stopped painting in WKWebView
+    const f = more.contains(slot) ? (_) => ({}) : (px) => ({ filter: 'blur(' + px + 'px)' });
+    for (const o of old) o.animate([
+      { opacity: 1, ...f(0), transform: 'none' },
+      { opacity: 0, ...f(6), transform: 'translateY(-5px) scale(.97)' },
+    ], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).onfinish = () => o.remove();
+    if (nu) nu.animate([
+      { opacity: 0, ...f(6), transform: 'translateY(5px) scale(.97)' },
+      { opacity: 1, ...f(0), transform: 'none' },
+    ], { duration: 340, delay: 50, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+  };
   // The host: the rect that takes the mouse, and the prefs (boxes on or off) for the session.
   const post = (extra) => {
-    const r = (ui.min ? tab : tui).getBoundingClientRect();
+    const r = island()
+      ? { x: (innerWidth - (ui.iw || 0)) / 2, y: ui.top ?? 8, width: ui.iw || 0, height: ui.ih || 0 }
+      : (ui.min ? tab : tui).getBoundingClientRect();
     const m = { rect: [r.x, r.y, r.width, r.height], prefs: ui.prefs(), ...extra };
     if (ui.answer) { m.answer = ui.answer; ui.answer = null; }
     try { window.webkit.messageHandlers.host.postMessage(m); } catch {}
   };
   // a rect read mid-animation (peek, spring) is not where it lands
   for (const n of [tab, tui]) for (const k of ['animationend', 'transitionend']) n.addEventListener(k, () => post());
+  // steer moves between the panel and the island; one listener set serves both
   // The window takes the keyboard only while the note box has focus (host: \`key\`).
   // A press on it asks first: a window that is not key never focuses a field itself.
   say.addEventListener('pointerdown', () => {
@@ -551,7 +678,8 @@ export const panelHtml = (
     if (act === 'min') { ui.min = !ui.min; ui.enter = ui.min ? 'tab' : 'tui'; if (ui.min) say.blur(); }
     // Pause shows at once; the session's next draw says whether it holds now or after the act.
     else if (act === 'hold') { const on = !ui.s.held; ui.s.held = on ? { since: Date.now(), arming: ui.s.busy } : null; post({ pause: on }); }
-    else if (act === 'look') ui.look = ui.look === 'term' ? 'panel' : 'term';
+    else if (act === 'look') ui.look = ui.look === 'panel' ? 'term' : ui.look === 'term' ? 'island' : 'panel';
+    else if (act === 'open') { ui.open = !ui.open; if (!ui.open) say.blur(); }
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
     else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
@@ -596,6 +724,106 @@ export const panelHtml = (
         : [{ transform: 'translateY(-' + dh + 'px)' }, { transform: 'none' }], o));
     }
   };
+  const paintIsland = (s, since) => {
+    isl.style.setProperty('--top', (ui.top ?? 8) + 'px');
+    isl.classList.toggle('open', !!ui.open);
+    // the glyph: spinning while the hands act, breathing while the agent thinks
+    const g = s.held ? 'held' : s.busy ? 'busy' : s.goal ? 'think' : 'wait';
+    if (glyph.dataset.k !== g) {
+      glyph.dataset.k = g;
+      glyph.textContent = '';
+      if (g === 'held') glyph.appendChild(icon(ICONS.pause));
+      else glyph.appendChild(el('span', g === 'busy' ? 'spin' : g === 'think' ? 'dot' : 'dot off'));
+    }
+    // line 1: the act under way; between acts, what the agent is doing
+    const k1 = s.held ? 'held:' + s.held.arming : s.doing ? 'd:' + s.doing : s.busy ? 'b:' + s.cmd : s.goal ? 'think' : 'wait';
+    swap(l1, k1, () => {
+      const d = el('span');
+      if (s.held) d.textContent = s.held.arming ? 'Pausing after this act' : 'Paused';
+      else if (s.doing) {
+        const i = s.doing.indexOf(': ');
+        if (i > 0) d.appendChild(el('span', 'verb', s.doing.charAt(0).toUpperCase() + s.doing.slice(1, i)));
+        d.appendChild(el('span', '', i > 0 ? s.doing.slice(i + 2) : s.doing));
+      } else if (s.busy) d.append(el('span', 'phase', '', '--d:' + s.ph.n * ${PHASE_S} + 's;--t:-' + since + 's'), el('span', 'dots'));
+      else if (s.goal) d.append(el('span', '', 'Thinking'), el('span', 'dots'));
+      else d.textContent = 'Waiting for the agent';
+      return d;
+    });
+    // line 2: the step before, dim
+    const last = (ui.rows || []).at(-1);
+    swap(l2, last ? 'r' + last.n : 'none', () => {
+      if (!last) return el('span', '', s.goal || 'autobrowse');
+      const d = el('span', last.ok ? '' : 'no');
+      d.textContent = (last.ok ? '' : 'Failed: ') + last.cmd.charAt(0).toUpperCase() + last.cmd.slice(1) + ' ' + last.what;
+      return d;
+    });
+    ihold.textContent = '';
+    ihold.appendChild(icon(s.held ? ICONS.play : ICONS.pause));
+    ihold.className = 'btn' + (s.held ? ' on' : '');
+    ihold.title = s.held ? 'Resume the agent' : 'Pause the agent';
+    // Open: the card's parts blur in as the pill grows. Close: they blur out, then the pill shrinks.
+    const was = ui.wasOpen;
+    ui.wasOpen = !!ui.open;
+    if (was && !ui.open && !still() && more.style.display !== 'none') {
+      ui.closing = more.animate([
+        { opacity: 1, transform: 'none' },
+        { opacity: 0, transform: 'scale(.97)' },
+      ], { duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+      // the end state never lingers: a reopen mid-close would keep it at 0
+      ui.closing.onfinish = () => { const a = ui.closing; ui.closing = null; if (!ui.open) { more.style.display = 'none'; fit(); } a?.cancel(); };
+    } else if (!ui.closing || ui.open) {
+      ui.closing?.cancel();
+      ui.closing = null;
+      more.style.display = ui.open ? '' : 'none';
+    }
+    if (ui.open && !was && !still() && !isl.classList.contains('still'))
+      more.animate([
+        { opacity: 0, transform: 'translateY(-6px) scale(.98)' },
+        { opacity: 1, transform: 'none' },
+      ], { duration: 340, delay: 70, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+    if (ui.open) {
+      swap(mGoal, 'g:' + (s.goal || ''), () => s.goal ? el('span', '', s.goal) : null);
+      swap(mThought, 't:' + (s.thought || ''), () => s.thought ? el('span', '', s.thought) : null);
+      mList.textContent = '';
+      for (const r of (ui.rows || []).slice(-6).reverse()) {
+        mList.appendChild(el('span', 'c', r.cmd));
+        mList.appendChild(el('span', r.ok ? '' : 'no', r.what));
+        mList.appendChild(el('span', 'ms', r.ms < 1000 ? r.ms + ' ms' : (r.ms / 1000).toFixed(1) + ' s'));
+      }
+      mList.style.display = mList.childElementCount ? '' : 'none';
+      mBox.textContent = '';
+      if (s.ask) {
+        const q = el('div', 'ask');
+        q.appendChild(el('span', 'q', s.ask.text));
+        const go = (a, t) => { const b = el('span', 'go ' + a, t); b.setAttribute('data-a', a); return b; };
+        q.append(go('yes', s.ask.yes), go('no', s.ask.no));
+        mBox.appendChild(q);
+      }
+      if (s.held) {
+        const q = el('div', 'held');
+        q.appendChild(el('span', 'q', s.held.arming ? 'Pausing after this act' : 'Paused. The agent waits for you.'));
+        const b = el('span', 'go', 'Resume');
+        b.setAttribute('data-a', 'hold');
+        q.appendChild(b);
+        mBox.appendChild(q);
+      }
+      if (steer.parentNode !== more) more.insertBefore(steer, mFoot);
+      say.placeholder = s.held && !s.held.arming ? 'Tell the agent · Enter resumes' : 'Tell the agent…';
+      notesEl.textContent = '';
+      for (const n of (s.notes || []).slice(-${NOTES_SHOWN})) {
+        const r = el('div', 'nt');
+        r.appendChild(el('span', '', n.text));
+        r.appendChild(el('span', 'st' + (n.read ? '' : ' q'), n.read ? 'Read' : 'Queued'));
+        notesEl.appendChild(r);
+      }
+      mFoot.textContent = '';
+      const fb = (a, d, tip, on) => { const b = el('span', 'btn' + (on ? ' on' : '')); b.appendChild(icon(d)); b.setAttribute('data-a', a); b.title = tip; return b; };
+      mFoot.append(fb('marks', ICONS.boxes, ui.marks ? 'Hide the boxes' : 'Show the boxes', ui.marks), fb('look', ICONS.panel, 'Panel look'), fb('open', ICONS.chevron, 'Close'));
+    }
+    fit();
+    // the first size lands without a spring; later ones ride it
+    if (isl.classList.contains('still')) requestAnimationFrame(() => requestAnimationFrame(() => isl.classList.remove('still')));
+  };
   ui.paint = () => {
     const s = ui.s;
     const term = ui.look === 'term';
@@ -604,7 +832,7 @@ export const panelHtml = (
     ui.wasBusy = s.busy;
     const since = ((Date.now() - (ui.since || Date.now())) / 1000).toFixed(2);
     if (phase.textContent !== s.ph.keys) phase.textContent = s.ph.keys;
-    wrap.className = 'wrap ' + (term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
+    wrap.className = 'wrap ' + (island() ? 'island dark' : term ? 'term' : 'panel ' + (dark() ? 'dark' : 'light'));
     // Page px to window px: the page's zoom over ours.
     marks.style.transform = hands.style.transform = 'scale(' + (s.dpr || devicePixelRatio) / devicePixelRatio + ')';
     hands.style.setProperty('--hand', s.who.color);
@@ -645,6 +873,21 @@ export const panelHtml = (
     // the tab's point in the panel's own px (layout box: a running animation does not move it)
     const toTab = () => (-tui.offsetLeft) + 'px ' + (innerHeight / 2 - tui.offsetTop) + 'px';
     const FOLDED = 'scale(.03,.14)';
+    if (island()) {
+      tab.style.display = 'none';
+      tui.style.display = 'none';
+      ui.tuiEl = null;
+      isl.style.display = '';
+      paintIsland(s, since);
+      post();
+      return ui.prefs();
+    }
+    isl.style.display = 'none';
+    ui.iw = ui.ih = 0;
+    isl.classList.add('still');
+    for (const n of [glyph, l1, l2, mGoal, mThought]) delete n.dataset.k;
+    ui.wasOpen = false;
+    if (steer.parentNode !== tui) tui.insertBefore(steer, rule);
     if (ui.min) {
       let late = false;
       if (enter === 'tab' && genie && ui.tuiEl) {
@@ -694,7 +937,7 @@ export const panelHtml = (
         bar.appendChild(el('span', 'fill'));
         if (s.meta) bar.appendChild(el('span', 'meta', s.meta));
         bar.appendChild(tbtn('hold', s.held ? '[▶]' : '[‖]', s.held ? 'resume the agent' : 'pause the agent', s.held ? 'on' : ''));
-        bar.appendChild(tbtn('look', '[▤]', 'panel look'));
+        bar.appendChild(tbtn('look', '[▤]', 'island look'));
         bar.appendChild(tbtn('marks', ui.marks ? '[◆]' : '[◇]', ui.marks ? 'hide the boxes' : 'show the boxes', ui.marks ? 'on' : ''));
         bar.appendChild(tbtn('min', '[_]', 'minimize'));
         const line = (k, cls, t) => { const d = el('div'); d.appendChild(el('span', 'k', k)); d.appendChild(el('span', cls, t)); return d; };
@@ -784,7 +1027,8 @@ export const panelHtml = (
         q.appendChild(b);
         body.appendChild(q);
       }
-      say.placeholder = term ? '> note to the agent' : 'Tell the agent…';
+      const resumes = s.held && !s.held.arming;
+      say.placeholder = term ? (resumes ? '> note, Enter resumes' : '> note to the agent') : resumes ? 'Tell the agent · Enter resumes' : 'Tell the agent…';
       notesEl.textContent = '';
       for (const n of (s.notes || []).slice(-${NOTES_SHOWN})) {
         const r = el('div', 'nt');
@@ -860,7 +1104,8 @@ export const panelHtml = (
   };
   /** \`reset\`: the rows are all of them, not the new ones. */
   ui.draw = (s, list, reset) => {
-    if (s.ask && s.ask.id !== ui.askId) { ui.askId = s.ask.id; if (ui.min) { ui.min = false; ui.enter = 'tui'; } }
+    if (s.ask && s.ask.id !== ui.askId) { ui.askId = s.ask.id; ui.open = true; if (ui.min) { ui.min = false; ui.enter = 'tui'; } }
+    if (s.expand && s.expand.n !== ui.expandN) { ui.expandN = s.expand.n; ui.open = s.expand.on; }
     ui.s = s;
     add(list, reset);
     return ui.paint();
@@ -1023,7 +1268,8 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     trace: true,
     marks: true,
     theme: null,
-    look: "panel",
+    look: "island",
+    open: false,
     x: null,
     y: null,
     w: 460,
@@ -1218,10 +1464,12 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
       } & {
         refs?: Array<{ n: number; hints: Hints }> | undefined;
         clear?: boolean | undefined;
+        /** The island opens (true) or closes. */
+        open?: boolean | undefined;
       },
     ): Promise<{ drawn: boolean; boxes?: number; why?: string }> {
       if (!enabled) return { drawn: false };
-      const { refs, clear, ...fields } = patch;
+      const { refs, clear, open: expand, ...fields } = patch;
       if (clear)
         state = {
           ...EMPTY,
@@ -1233,9 +1481,11 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
           held: state.held,
           notes: state.notes,
           who: state.who,
+          expand: state.expand,
         };
       for (const [k, v] of Object.entries(fields))
         if (v !== undefined) (state as unknown as Record<string, unknown>)[k] = clipLine(v, 240);
+      if (expand !== undefined) state.expand = { n: (state.expand?.n ?? 0) + 1, on: expand };
       if (refs && !prefs.marks) state.boxes = [];
       else if (refs) {
         const boxes = await Promise.all(refs.map((r) => boxOf(page, r.hints)));
@@ -1481,11 +1731,13 @@ export function traceRow(
           ? `${String(f.text ?? "").length} chars`
           : c.cmd === "key" || c.cmd === "press"
             ? String(f.key)
-            : c.cmd === "batch"
-              ? `${(f.cmds as unknown[]).length} commands`
-              : c.cmd === "os"
-                ? osAim(f.act as Record<string, unknown>)
-                : String(f.as ?? f.env ?? f.name ?? f.outcome ?? (hints ? hintLabel(hints) : ""));
+            : c.cmd === "scroll"
+              ? `${Number(f.dy) > 0 ? "down" : "up"} ${Math.abs(Number(f.dy))} px`
+              : c.cmd === "batch"
+                ? `${(f.cmds as unknown[]).length} commands`
+                : c.cmd === "os"
+                  ? osAim(f.act as Record<string, unknown>)
+                  : String(f.as ?? f.env ?? f.name ?? f.outcome ?? (hints ? hintLabel(hints) : ""));
   const what = typeof f.goal === "string" && f.goal ? `${f.goal} · ${aim}` : aim;
   const detail = [
     ...(hints ? [`target ${JSON.stringify(hints)}`] : []),

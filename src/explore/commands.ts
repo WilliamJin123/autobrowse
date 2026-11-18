@@ -70,6 +70,14 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   /** Keyboard into whatever is focused; not journaled as a locator act. */
   z.object({ cmd: z.literal("type"), text: z.string() }),
   z.object({ cmd: z.literal("key"), key: z.string() }),
+  /** Wheel the page by `dy` px (minus = up), human-paced; acts on a control scroll it into view themselves. */
+  z.object({
+    cmd: z.literal("scroll"),
+    dy: z
+      .number()
+      .int()
+      .refine((n) => n !== 0, "dy is 0"),
+  }),
   /** Play/pause for an agent driving this session: a person takes over, then hands back. */
   z.object({ cmd: z.literal("pause") }),
   z.object({ cmd: z.literal("resume") }),
@@ -158,6 +166,8 @@ export const commandSchema = z.discriminatedUnion("cmd", [
       .max(200)
       .optional(),
     clear: z.boolean().optional(),
+    /** The island opens to its full card (true) or closes. */
+    open: z.boolean().optional(),
   }),
   /**
    * The page's JSON calls, redacted, grouped by URL shape and GraphQL query name: the newest
@@ -354,6 +364,7 @@ export type Command = z.infer<typeof commandSchema>;
 /** Acts whose answer says what changed on the page, so the caller need not look again. */
 export const LOOKS = new Set<Command["cmd"]>([
   "open",
+  "scroll",
   "flow",
   "code",
   "captcha",
@@ -374,6 +385,7 @@ export const LOOKS = new Set<Command["cmd"]>([
  */
 export const LOOK_ONLY = new Set<Command["cmd"]>([
   "open",
+  "scroll",
   "aria",
   "snapshot",
   "text",

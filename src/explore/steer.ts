@@ -147,7 +147,13 @@ export function steering(d: SteerDeps) {
     journal({ kind: "note", text: "a person paused the agent from the panel" });
     await d.held({ since, arming: false });
   };
-  const personResume = async () => {
+  /** One resume at a time: a note's resume and a Resume press right after are one. */
+  let resuming: Promise<void> | null = null;
+  const personResume = (): Promise<void> =>
+    (resuming ??= resumeOnce().finally(() => {
+      resuming = null;
+    }));
+  const resumeOnce = async () => {
     if (holdArmed && !paused) {
       holdArmed = false;
       await d.held(null);
@@ -215,6 +221,8 @@ export function steering(d: SteerDeps) {
     onSteer(s: Steer): void {
       if ("note" in s) {
         journal({ kind: "note", text: `person: ${d.redact(s.note)}` });
+        // a note under the person's Pause is their go: the held command answers with it
+        if (pausedBy === "person") void personResume();
         return;
       }
       if (!s.pause) return void personResume();

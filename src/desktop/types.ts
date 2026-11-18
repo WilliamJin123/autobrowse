@@ -189,6 +189,12 @@ export interface Desktop {
   /** A ref's screen rect, points; null when the control is gone. Optional: the overlay aims with it. */
   bounds?(ref: string): Promise<Bounds | null>;
   click(ref: string, mode?: InputMode): Promise<void>;
+  /** The real pointer, screen points; null when unknown. Absent with moveTo/clickAt: clicks jump. */
+  pointer?(): Promise<{ x: number; y: number } | null>;
+  /** Headed only: the real pointer to a screen point. */
+  moveTo?(x: number, y: number): Promise<void>;
+  /** Headed only: a left click at a screen point. */
+  clickAt?(x: number, y: number): Promise<void>;
   /** `intervalMs`: headed, one key per interval (agent-desktop `--interval-ms`). */
   type(ref: string, text: string, mode?: InputMode, intervalMs?: number): Promise<void>;
   press(
@@ -263,6 +269,8 @@ export interface FakeWindow extends DesktopWindow {
 /** One engine call the fake saw; typed text kept so tests can check secrets went by stdin. */
 export type FakeCall =
   | { call: "click"; windowId: string; node: string; mode: InputMode }
+  | { call: "move"; x: number; y: number }
+  | { call: "clickAt"; x: number; y: number }
   | {
       call: "type";
       windowId: string;
@@ -287,6 +295,24 @@ export interface FakeDesktopOptions {
   files?: string[];
   /** What `idleMs` answers, call after call (the last repeats); absent: always idle. */
   idle?: number[];
+  /** A real pointer: `pointer`, `moveTo`, `clickAt` (hands then click by a mouse path). */
+  pointer?: { x: number; y: number };
+}
+
+/** The fake's real pointer: moves and clicks logged, `pointer` answers the last move. */
+function pointerOf(start: { x: number; y: number }, calls: FakeCall[]) {
+  let at = { ...start };
+  return {
+    pointer: async () => ({ ...at }),
+    async moveTo(x: number, y: number) {
+      at = { x, y };
+      calls.push({ call: "move", x, y });
+    },
+    async clickAt(x: number, y: number) {
+      at = { x, y };
+      calls.push({ call: "clickAt", x, y });
+    },
+  };
 }
 
 /**
@@ -336,6 +362,7 @@ export function fakeDesktop(windows: FakeWindow[] = [], o: FakeDesktopOptions = 
     },
     idleMs: async () => (idle.length > 1 ? (idle.shift() as number) : (idle[0] ?? 60_000)),
     frontPid: async () => windows.find((w) => w.id === focusedId)?.pid ?? null,
+    ...(o.pointer ? pointerOf(o.pointer, calls) : {}),
     async windows(app) {
       return windows
         .filter((w) => !app || w.app.toLowerCase() === app.toLowerCase())

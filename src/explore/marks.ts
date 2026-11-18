@@ -272,7 +272,7 @@ export interface Scroll {
   below: number;
 }
 
-async function scrollOf(page: Page): Promise<Scroll | undefined> {
+export async function scrollOf(page: Page): Promise<Scroll | undefined> {
   const s = await page
     // in-page source as text: this file has no DOM lib
     .evaluate<{ y: number; h: number; view: number }>(

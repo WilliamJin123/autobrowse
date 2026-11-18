@@ -161,6 +161,9 @@ interface AdMatch {
 
 const bounds = (b: AdBounds): Bounds => ({ x: b.x, y: b.y, w: b.width, h: b.height });
 
+/** Points a placed window may sit off its target: macOS keeps it under the menu bar and on screen. */
+export const PLACE_SLACK = 48;
+
 export const toWindow = (w: AdWindow): DesktopWindow => ({
   id: w.id,
   app: w.app_name,
@@ -213,7 +216,10 @@ const READ_RETRY = new Set(["APP_UNRESPONSIVE"]);
 const READ_RETRY_MS = 300;
 
 export function agentDesktop(
-  base: Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady" | "idleMs" | "frontPid">,
+  base: Pick<
+    Desktop,
+    "shell" | "screenshot" | "exists" | "rootReady" | "idleMs" | "frontPid" | "pointer"
+  >,
   opts: AgentDesktopOptions = {},
 ): Desktop {
   const bin = adBinary();
@@ -308,6 +314,12 @@ export function agentDesktop(
     async click(ref, mode) {
       await call(["click", ref, ...headedFlag(mode)]);
     },
+    async moveTo(x, y) {
+      await call(["mouse-move", `--xy=${Math.round(x)},${Math.round(y)}`, "--headed"]);
+    },
+    async clickAt(x, y) {
+      await call(["mouse-click", `--xy=${Math.round(x)},${Math.round(y)}`, "--headed"]);
+    },
     async type(ref, text, mode, intervalMs) {
       const every = intervalMs ?? opts.typeIntervalMs ?? 40;
       const spacing = mode === "headed" ? ["--interval-ms", String(every)] : [];
@@ -339,7 +351,16 @@ export function agentDesktop(
       await call(["focus-window", "--window-id", windowId]);
     },
     async place(windowId, b) {
-      await call(["move-window", "--window-id", windowId, `--x=${b.x}`, `--y=${b.y}`]);
+      // move/resize can land, then miss their own check (TIMEOUT): the window's real bounds decide
+      const landed = (ok: (w: Bounds) => boolean) => async (err: unknown) => {
+        const ws = await read<AdWindow[]>(["list-windows"]).catch(() => [] as AdWindow[]);
+        const w = ws.find((x) => x.id === windowId);
+        if (!w || !ok(bounds(w.bounds))) throw err;
+      };
+      const near = (a: number, z: number) => Math.abs(a - z) <= PLACE_SLACK;
+      await call(["move-window", "--window-id", windowId, `--x=${b.x}`, `--y=${b.y}`]).catch(
+        landed((w) => near(w.x, b.x) && near(w.y, b.y)),
+      );
       await call([
         "resize-window",
         "--window-id",
@@ -348,7 +369,7 @@ export function agentDesktop(
         String(b.w),
         "--height",
         String(b.h),
-      ]);
+      ]).catch(landed((w) => near(w.w, b.w) && near(w.h, b.h)));
     },
     shell: base.shell,
     screenshot: base.screenshot,
@@ -356,6 +377,7 @@ export function agentDesktop(
     rootReady: base.rootReady,
     ...(base.idleMs ? { idleMs: base.idleMs } : {}),
     ...(base.frontPid ? { frontPid: base.frontPid } : {}),
+    ...(base.pointer ? { pointer: base.pointer } : {}),
     async permissions(): Promise<Permissions> {
       const p = await call<{ accessibility?: { state?: string } }>(["permissions"]).catch(
         () => ({}) as { accessibility?: { state?: string } },

@@ -136,7 +136,7 @@ describe("headed overlay, out of the page", () => {
       page.on("request", () => requests++);
       const aria = await page.locator("body").ariaSnapshot();
       const shot = await page.screenshot();
-      const o = overlayFor(true, { host: h.factory });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory });
       const drawn = await o.set(page, {
         goal: "save the form",
         step: "1 of 25",
@@ -192,7 +192,7 @@ describe("headed overlay, out of the page", () => {
         }),
       );
       await page.goto("https://tt.test/");
-      const o = overlayFor(true, { host: h.factory });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory });
       expect(await o.set(page, { goal: "x" })).toMatchObject({ drawn: true });
       await h.idle();
       expect(
@@ -235,6 +235,7 @@ describe("headed overlay, out of the page", () => {
       const page = await browser.newPage();
       let calls = 0;
       const o = overlayFor(true, {
+        prefs: { look: "panel" },
         host: h.factory,
         geometry: async () => {
           calls++;
@@ -259,7 +260,11 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo({ dpr: 2.5 }) });
+      const o = overlayFor(true, {
+        prefs: { look: "panel" },
+        host: h.factory,
+        geometry: geo({ dpr: 2.5 }),
+      });
       await o.marked(page, [{ n: 1, box: { x: 10, y: 10, w: 10, h: 10 } }]);
       await h.idle();
       expect(await h.view.evaluate("document.querySelector('.marks').style.transform")).toBe(
@@ -275,7 +280,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "save the form" });
       await o.end(page, row);
       await h.idle();
@@ -301,7 +306,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "sign in" });
       await h.idle();
       const yes = o.ask(page, "Keep this sign-in for x@ada?", { ms: 20_000 });
@@ -338,7 +343,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       o.who("Ada", "#ff5a1f");
       await o.set(page, { goal: "save the form" });
       await h.idle();
@@ -391,7 +396,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "save the form" });
       await h.idle();
       // a reach of 400 px in 14 ms steps, sent as one clump: drawn over its 280 ms, never as one jump
@@ -423,7 +428,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       const got: Steer[] = [];
       o.onSteer((s) => got.push(s));
       await o.set(page, { goal: "save the form" });
@@ -475,7 +480,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "save the form" });
       await o.end(page, { ...row, ok: false, note: "not visible" });
       await h.idle();
@@ -497,12 +502,139 @@ describe("headed overlay, out of the page", () => {
     }
   });
 
-  it("the bar drags the panel anywhere and any corner sizes it", async () => {
+  it("the island: top centre by default, the act and the step before, a click opens it", async () => {
     const browser = await chromium.launch();
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
       const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      await o.set(page, { goal: "post the update", thought: "the composer is open" });
+      await o.end(page, { ...row, cmd: "click", what: "Compose" });
+      await o.flash(page, { text: "Save" }, "type: the post text");
+      await h.idle();
+      await settled(h.view);
+      const at = () =>
+        h.view.evaluate<{ cls: string; l1: string; l2: string; more: string; r: number[] }>(
+          "(() => { const i = document.querySelector('.isl'), r = i.getBoundingClientRect(); return { cls: i.parentNode.className, l1: i.querySelector('.l1').textContent, l2: i.querySelector('.l2').textContent, more: getComputedStyle(i.querySelector('.more')).display, r: [r.x, r.y, r.width, r.height] }; })()",
+        );
+      const a = await at();
+      expect(a.cls).toBe("wrap island dark");
+      expect(a.l1).toBe("Typethe post text");
+      expect(a.l2).toBe("Click Compose");
+      expect(a.more).toBe("none");
+      // centred, 8px from the top; the host's rect is the pill's
+      expect(Math.abs(a.r[0] + a.r[2] / 2 - 500)).toBeLessThan(1);
+      expect(a.r[1]).toBe(8);
+      const last = h.rects.at(-1) as number[];
+      expect(last.map(Math.round)).toEqual(a.r.map(Math.round));
+      // the panel's parts are not drawn
+      expect(
+        await h.view.evaluate("getComputedStyle(document.querySelector('.tui')).display"),
+      ).toBe("none");
+      // a click on the pill opens it: goal, thought, rows and the note box
+      await h.view.mouse.click(500, a.r[1] + a.r[3] / 2 - 4);
+      await settled(h.view);
+      const b = await at();
+      expect(b.more).not.toBe("none");
+      expect(b.r[3]).toBeGreaterThan(a.r[3]);
+      expect(
+        await h.view.evaluate(
+          "[...document.querySelectorAll('.isl .goal, .isl .thought, .isl .list, .isl .say')].map((e) => e.textContent || e.placeholder)",
+        ),
+      ).toEqual([
+        "post the update",
+        "the composer is open",
+        "clickCompose12 ms",
+        "Tell the agent…",
+      ]);
+      expect((h.posts.at(-1)?.prefs as { open?: boolean } | undefined)?.open).toBe(true);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("the island: a changed act crosses over, Pause works small, an ask and the director open it", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const steers: Steer[] = [];
+      o.onSteer((x) => steers.push(x));
+      await o.flash(page, { text: "Save" }, "click: Compose");
+      await h.idle();
+      await settled(h.view);
+      await o.flash(page, { text: "Save" }, "click: Post");
+      await h.idle();
+      // the old words leave while the new ones come: both in the slot for a moment
+      expect(await h.view.evaluate("document.querySelector('.isl .l1').childElementCount")).toBe(2);
+      await settled(h.view);
+      expect(await h.view.evaluate("document.querySelector('.isl .l1').textContent")).toBe(
+        "ClickPost",
+      );
+      // Pause from the small island
+      const p = await h.view.evaluate<{ x: number; y: number }>(
+        "(() => { const r = document.querySelector('.isl .top .btn').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()",
+      );
+      await h.view.mouse.click(p.x, p.y);
+      await expect.poll(() => steers).toEqual([{ pause: true }]);
+      const open = () =>
+        h.view.evaluate("getComputedStyle(document.querySelector('.isl .more')).display");
+      expect(await open()).toBe("none");
+      // an ask opens it
+      const asked = o.ask(page, "Keep this sign-in?");
+      await h.idle();
+      expect(await open()).not.toBe("none");
+      expect(await h.view.evaluate("document.querySelector('.isl .ask .q').textContent")).toBe(
+        "Keep this sign-in?",
+      );
+      await h.view.evaluate("document.querySelector('.isl .ask .go.yes').click()");
+      expect(await asked).toBe(true);
+      // the director closes and opens it; one ask acts once
+      await o.set(page, { open: false });
+      await h.idle();
+      await settled(h.view);
+      expect(await open()).toBe("none");
+      await o.set(page, { goal: "redrawn" });
+      await h.idle();
+      expect(await open()).toBe("none");
+      await o.set(page, { open: true });
+      await h.idle();
+      expect(await open()).not.toBe("none");
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("the look button cycles panel, terminal, island", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
+      await o.set(page, { goal: "save the form" });
+      await h.idle();
+      const cls = () => h.view.evaluate<string>("document.querySelector('.wrap').className");
+      await h.view.evaluate("document.querySelector('.tui [data-a=look]').click()");
+      expect(await cls()).toBe("wrap term");
+      await h.view.evaluate("document.querySelector('.tui [data-a=look]').click()");
+      expect(await cls()).toBe("wrap island dark");
+      await h.view.evaluate("document.querySelector('.isl .top').click()");
+      await h.view.evaluate("document.querySelector('.isl .foot [data-a=look]').click()");
+      expect(await cls()).toMatch(/^wrap panel (light|dark)$/);
+      // the note box is back in the panel
+      expect(await h.view.evaluate("!!document.querySelector('.tui .say')")).toBe(true);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("the bar drags the panel anywhere and any corner sizes it", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "save the form" });
       await o.end(page, { ...row, note: "→ a.com/next" });
       await h.idle();
@@ -562,7 +694,7 @@ describe("headed overlay, out of the page", () => {
       const h = await webHost(browser);
       const page = await browser.newPage();
       await page.setContent(PAGE);
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       const refs = [{ n: 1, hints: { role: "button", name: "Save" } }] as const;
       expect(await o.set(page, { goal: "x", refs: [...refs] })).toEqual({ drawn: true, boxes: 1 });
       await h.idle();
@@ -587,7 +719,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "x" });
       await o.end(page, row);
       await h.idle();
@@ -619,7 +751,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.marked(page, [{ n: 1, box: { x: 20, y: 40, w: 60, h: 20 } }]);
       await h.idle();
       expect(await h.view.evaluate("document.querySelectorAll('.box').length")).toBe(1);
@@ -642,7 +774,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "read" });
       for (let i = 0; i < 40; i++) await o.end(page, { ...row, what: `r${i}` });
       await h.idle();
@@ -681,7 +813,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "save the form" });
       await o.end(page, row);
       await o.toggle(page, false);
@@ -709,6 +841,7 @@ describe("headed overlay, out of the page", () => {
       await off.flash(page, { role: "button", name: "Save" }, "click");
       expect(h.made).toBe(0);
       const none = overlayFor(true, {
+        prefs: { look: "panel" },
         host: async (why) => {
           why("the overlay has no window host for freebsd");
           return null;
@@ -743,7 +876,7 @@ describe("headed overlay, out of the page", () => {
       const h = await webHost(browser);
       const page = await browser.newPage();
       const a = slow(h);
-      const o = overlayFor(true, { host: a.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: a.factory, geometry: geo() });
       const drawing = o.set(page, { goal: "x" });
       await o.toggle(page, false);
       a.go();
@@ -755,7 +888,7 @@ describe("headed overlay, out of the page", () => {
       const h2 = await webHost(browser);
       const ctx = await browser.newContext();
       const b = slow(h2);
-      const o2 = overlayFor(true, { host: b.factory, geometry: geo() });
+      const o2 = overlayFor(true, { prefs: { look: "panel" }, host: b.factory, geometry: geo() });
       const drawing2 = o2.set(await ctx.newPage(), { goal: "x" });
       await ctx.close();
       b.go();
@@ -772,7 +905,7 @@ describe("headed overlay, out of the page", () => {
     try {
       const h = await webHost(browser);
       const page = await browser.newPage();
-      const o = overlayFor(true, { host: h.factory, geometry: geo() });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
       await o.set(page, { goal: "x" });
       h.emit({ t: "found" });
       await wait(3_200);
@@ -794,7 +927,7 @@ describe("headed overlay, out of the page", () => {
     const h = await webHost(browser);
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
-    const o = overlayFor(true, { host: h.factory, geometry: geo() });
+    const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
     await o.set(page, { goal: "x" });
     await ctx.close();
     expect(h.closed).toBe(true);

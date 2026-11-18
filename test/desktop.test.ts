@@ -126,6 +126,32 @@ describe("agent-desktop adapter", () => {
     expect(calls).toEqual(["click"]);
   });
 
+  it("a place whose move lands but misses its own check goes on to the resize", async () => {
+    const timeout = JSON.stringify({
+      version: "2.6",
+      ok: false,
+      command: "move-window",
+      error: { code: "TIMEOUT", message: "Strict element resolution deadline exhausted" },
+    });
+    const calls: string[] = [];
+    const run: AdRun = async (args) => {
+      calls.push(args[0] ?? "");
+      const out = args[0] === "list-windows" ? fixture("list-windows").replace(/\n\s*/g, "") : timeout;
+      return { code: 0, stdout: `${out}\n`, stderr: "" };
+    };
+    const base = {
+      shell: async () => ({ code: 0, stdout: "", stderr: "" }),
+      screenshot: async () => undefined,
+      exists: async () => false,
+      rootReady: async () => false,
+    };
+    const d = agentDesktop(base, { run, sleep: async () => undefined });
+    // the fixture window sits at 306,456 230×408
+    await d.place("w-233741", { x: 300, y: 450, w: 230, h: 400 });
+    expect(calls).toEqual(["move-window", "list-windows", "resize-window", "list-windows"]);
+    await expect(d.place("w-233741", { x: 0, y: 33, w: 230, h: 408 })).rejects.toThrow(/TIMEOUT/);
+  });
+
   it("a launch whose window has no size yet answers no window", async () => {
     const { d, calls } = scripted();
     const r = await d.launch("Calculator", { fresh: true, args: ["-x"] });

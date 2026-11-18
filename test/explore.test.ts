@@ -794,6 +794,30 @@ describe("explore mode", () => {
     }
   }, 60_000);
 
+  it("scroll wheels the page, answers the room left, journals the scroll; dy 0 is refused", async () => {
+    await send({
+      cmd: "open",
+      url: "data:text/html,<p>top</p><div style='height:4000px'></div><p>end</p>",
+    });
+    expect((await send({ cmd: "scroll", dy: 0 })).status).toBe(400);
+    const got = (await send({ cmd: "scroll", dy: 600 })).body as {
+      scroll: { above: number; below: number };
+      changed: unknown;
+    };
+    expect(got.scroll.above).toBeGreaterThan(300);
+    expect(got.scroll.below).toBeGreaterThan(0);
+    expect(got).toHaveProperty("changed");
+    const back = (await send({ cmd: "scroll", dy: -2000 })).body as { scroll: { above: number } };
+    expect(back.scroll.above).toBe(0);
+    const { actions } = (await send({ cmd: "journal", last: 2 })).body as {
+      actions: Array<Record<string, unknown>>;
+    };
+    expect(actions).toMatchObject([
+      { kind: "scroll", dy: 600 },
+      { kind: "scroll", dy: -2000 },
+    ]);
+  }, 30_000);
+
   it("a resent act with the same id answers once and acts once (U6); dialogs show on the act (U7)", async () => {
     const page = `data:text/html,${encodeURIComponent(
       `<button onclick="n.textContent=+n.textContent+1">Add</button><p id="n">0</p>

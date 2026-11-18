@@ -118,8 +118,11 @@ export function displayOf(ds: readonly Display[], b: Bounds): Display | null {
   );
 }
 
-/** A screen panel sits bottom right: apps the session drives tend to sit left (the film: Claude). */
-export const SCREEN_PREFS = { corner: "right" } as const;
+/**
+ * A screen panel sits bottom right: apps the session drives tend to sit left (the film: Claude).
+ * The island sits below the menu bar.
+ */
+export const SCREEN_PREFS = { corner: "right", top: 40 } as const;
 
 export interface ScreenSurface extends Surface<WindowHandle> {
   /** A box in screen points, made relative to the display its window sits on: the overlay's px. */

@@ -21,10 +21,16 @@ function defaultRun(file: string, args: string[]): Promise<ShellResult> {
   });
 }
 
+const POINTER_JXA =
+  'ObjC.import("AppKit");var p=$.NSEvent.mouseLocation;var h=$.NSScreen.screens.objectAtIndex(0).frame.size.height;JSON.stringify({x:p.x,y:h-p.y})';
+
 /** The non-accessibility half: shell, root, the screen picture, idle time, the front app. */
 export function macBase(
   run: RunFile = defaultRun,
-): Pick<Desktop, "shell" | "screenshot" | "exists" | "rootReady" | "idleMs" | "frontPid"> {
+): Pick<
+  Desktop,
+  "shell" | "screenshot" | "exists" | "rootReady" | "idleMs" | "frontPid" | "pointer"
+> {
   return {
     async idleMs() {
       // HIDIdleTime, ns: any keyboard or mouse event resets it, ours included
@@ -39,6 +45,16 @@ export function macBase(
       const r = await run("/usr/bin/lsappinfo", ["info", "-only", "pid", asn]);
       const pid = /"pid"=(\d+)/.exec(r.stdout)?.[1];
       return pid ? Number(pid) : null;
+    },
+    async pointer() {
+      // AppKit's origin is the main screen's bottom left; agent-desktop's is its top left
+      const r = await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", POINTER_JXA]);
+      try {
+        const p = JSON.parse(r.stdout) as { x: number; y: number };
+        return Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null;
+      } catch {
+        return null;
+      }
     },
     async shell(command, root = false) {
       // Root goes through one audited helper, never a bare `sudo sh`: see `rootHelper()`.

@@ -11,8 +11,9 @@
  * it back and go on from the same key once they are idle, then give focus back.
  */
 import { join } from "node:path";
-import { freshSeed, type Random, seeded } from "../browser/human/draw.js";
+import { drawMs, freshSeed, type Random, seeded } from "../browser/human/draw.js";
 import { HUMAN_PACE } from "../browser/human/index.js";
+import { aimPoint, mousePath, type PathStep } from "../browser/human/mouse.js";
 import { BACKSPACE, typingPlan } from "../browser/human/typing.js";
 import {
   type Bounds,
@@ -124,6 +125,23 @@ const SHIFTED_KEY: Record<string, string> = {
 };
 
 /** The key combo that types one character on a US layout. */
+/** One real pointer move per this many ms: each is a ~15 ms agent-desktop call. */
+export const MOVE_MS = 30;
+
+/** A path at ~70 fps cut to one point per `every` ms; the waits add up the same. */
+export function coarsePath(path: PathStep[], every = MOVE_MS): PathStep[] {
+  const out: PathStep[] = [];
+  let wait = 0;
+  path.forEach((s, i) => {
+    wait += s.after;
+    if (wait >= every || i === path.length - 1) {
+      out.push({ x: s.x, y: s.y, after: wait });
+      wait = 0;
+    }
+  });
+  return out;
+}
+
 export function keyOf(ch: string): string {
   if (/^[a-z0-9]$/.test(ch)) return ch;
   if (/^[A-Z]$/.test(ch)) return `shift+${ch.toLowerCase()}`;
@@ -210,6 +228,30 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
     return (await d.windows()).find((x) => x.focused)?.pid ?? null;
   }
 
+  /**
+   * A headed click as a hand: a curved, timed reach to a point inside the control
+   * (the browser's `mousePath`), a rest, the press. No pointer API: agent-desktop's
+   * click, which jumps.
+   */
+  async function headedClick(ref: string): Promise<void> {
+    const box = d.moveTo && d.clickAt && d.bounds ? await d.bounds(ref) : null;
+    if (!box || !d.moveTo || !d.clickAt) return d.click(ref, "headed");
+    const random = o.random ?? seeded(freshSeed());
+    const pace = HUMAN_PACE.mouse;
+    const aim = aimPoint({ x: box.x, y: box.y, width: box.w, height: box.h }, random);
+    const from = (await d.pointer?.().catch(() => null)) ?? aim;
+    const size = Math.max(1, Math.min(box.w, box.h));
+    for (const s of coarsePath(mousePath(from, aim, size, pace, random))) {
+      const t0 = now();
+      await d.moveTo(s.x, s.y);
+      await sleep(Math.max(0, s.after - (now() - t0)));
+    }
+    await sleep(drawMs(pace.hover, random));
+    await d.clickAt(aim.x, aim.y);
+  }
+  const clickBy = (ref: string) => (m: InputMode) =>
+    m === "headed" ? headedClick(ref) : d.click(ref, m);
+
   /** Waits until no keyboard or mouse input for IDLE_MS: never take focus from a person mid-act. */
   async function personIdle(): Promise<void> {
     if (!d.idleMs) return;
@@ -277,7 +319,7 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
       await guard(w);
     };
     await lease(w, async () => {
-      if (ref) await d.click(ref, "headed");
+      if (ref) await headedClick(ref);
       const target = ref ?? (await d.focused(w.id));
       for (let i = 0; i < runs.length; ) {
         if ((await frontPid()) !== w.pid) {
@@ -472,7 +514,7 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
       case "click": {
         const { node, window, control } = targetFor(a.ref);
         await o.gateClick?.(window.app, control);
-        const headed = await deliver(window, false, (m) => d.click(a.ref, m));
+        const headed = await deliver(window, false, clickBy(a.ref));
         use(window);
         return {
           answer: { ok: true, ...(headed ? { headed } : {}) },
@@ -638,7 +680,7 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
         const w = await windowFor(op.window);
         const ref = await refFor(w, op.control);
         await o.gateClick?.(w.app, op.control);
-        await deliver(w, op.headed ?? false, (m) => d.click(ref, m));
+        await deliver(w, op.headed ?? false, clickBy(ref));
         return { window: w, box: null };
       }
       case "type": {

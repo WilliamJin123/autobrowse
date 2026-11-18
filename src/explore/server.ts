@@ -213,7 +213,7 @@ import { compactValue } from "./compact.js";
 import { fitText, keepWhole } from "./fit.js";
 import { type Journaled, readJournal } from "./journal.js";
 import { DEFAULT_IDLE_MINUTES, leaseMs } from "./lease.js";
-import { type Box, marksFor, missed, missText, refHints } from "./marks.js";
+import { type Box, marksFor, missed, missText, refHints, scrollOf } from "./marks.js";
 import { handColour, type OverlayDeps, overlayFor, traceRow } from "./overlay.js";
 import { COLLECT_SCRIPTS, type ScriptText, scanScripts } from "./script-scan.js";
 import {
@@ -2441,6 +2441,28 @@ async function serve(
         await settle(page);
         if (spent?.charges) return { url: page.url(), told: await reportSpend(spent) };
         return { url: page.url() };
+      }
+      case "scroll": {
+        // the wheel at the view's middle, as a person scrolls a feed
+        const v = page.viewportSize();
+        if (v) await page.mouse.move(v.width / 2, v.height / 2);
+        const y = () =>
+          page.evaluate<number>(
+            "(document.scrollingElement ?? document.documentElement).scrollTop",
+          );
+        const start = await y().catch(() => 0);
+        await hands.scroll(page, c.dy);
+        // smooth wheel scroll lands after the event: wait for it to start, then hold still
+        for (let i = 0, last = start, still = 0; i < 30 && still < 2; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+          const now_ = await y().catch(() => last);
+          // unmoved past 350 ms: at an edge, nothing to wait for
+          still = now_ === last && (now_ !== start || i > 6) ? still + 1 : 0;
+          last = now_;
+        }
+        await settle(page);
+        journal({ kind: "scroll", dy: c.dy });
+        return { url: page.url(), scroll: (await scrollOf(page)) ?? null };
       }
       case "aria": {
         // refs: `[ref=e12]` per line, iframes inline (`f1e3`), for `hints:{ref}`

@@ -21,7 +21,7 @@ const pending = async (p: Promise<unknown>, ms = 300) =>
   Promise.race([p.then(() => false), new Promise<boolean>((r) => setTimeout(() => r(true), ms))]);
 
 describe("the panel's Pause and notes steer the agent", () => {
-  it("holds commands, runs them on an unchanged resume, refuses them after a person acted; notes ride answers", async () => {
+  it("holds commands, runs them on an unchanged resume, refuses them after a person acted; notes ride answers, a note resumes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "explore-steer-"));
     const fns: Array<(e: HostEvent) => void> = [];
     let page: Page | null = null;
@@ -84,9 +84,9 @@ describe("the panel's Pause and notes steer the agent", () => {
       const second = ex.exec({ cmd: "eval", js: "document.title" });
       expect(await pending(first)).toBe(true);
       await (page as unknown as Page).evaluate("document.getElementById('go').click()");
+      // the note is the person's go: no Resume press
       panel({ note: "I clicked it for you" });
-      await new Promise((r) => setTimeout(r, 300));
-      panel({ pause: false });
+      await expect.poll(() => ex.paused()).toBe(false);
       const a = (await first) as { ran: boolean; steer: Record<string, unknown> };
       expect(a.ran).toBe(false);
       expect(a.steer).toMatchObject({ acts: 1, notes: ["I clicked it for you"] });

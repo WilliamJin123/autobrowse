@@ -515,6 +515,8 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
         add({ kind: "human", reason: `a ${a.kind} acted here: build this run as a walk` });
         break;
       case "cut":
+      case "scroll":
+        // scroll: each act on a control scrolls to it
         break;
     }
   }

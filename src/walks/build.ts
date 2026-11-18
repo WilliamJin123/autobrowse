@@ -240,7 +240,8 @@ export function visitsOf(
       continue;
     }
     // A cut mark splits the run before this builder sees it (`walks cut`); here it is no op.
-    if (a.kind === "submit" || a.kind === "cut") continue;
+    // scroll: an act on a control scrolls to it; a feed read scrolls itself (`records` max)
+    if (a.kind === "submit" || a.kind === "cut" || a.kind === "scroll") continue;
     const again = !!cur && !!around?.(a)?.again;
     if (r.look && (!cur || !last || !samePage(last, r.look) || again)) visit(r.look, again);
     if (r.look) last = r.look;

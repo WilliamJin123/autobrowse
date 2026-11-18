@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { seeded } from "../src/browser/human/draw.js";
-import { desktopHands, IDLE_MS, keyOf, RUN_INTERVAL_MS } from "../src/desktop/hands.js";
+import {
+  coarsePath,
+  desktopHands,
+  IDLE_MS,
+  keyOf,
+  MOVE_MS,
+  RUN_INTERVAL_MS,
+} from "../src/desktop/hands.js";
 import { type FakeCall, fakeDesktop, fakeWindow } from "../src/desktop/types.js";
 
 const claude = () => fakeWindow("w-1", "Claude", "Claude", [["textfield", "Prompt"]]);
@@ -181,5 +188,42 @@ describe("render", () => {
         }),
       ).files["index.ts"] ?? "";
     expect(src).toContain("human: true, headed: true })");
+  });
+});
+
+describe("mouse path", () => {
+  it("coarsePath keeps the end and the total wait", () => {
+    const path = Array.from({ length: 10 }, (_, i) => ({ x: i, y: i, after: 14 }));
+    const c = coarsePath(path);
+    expect(c.at(-1)).toMatchObject({ x: 9, y: 9 });
+    expect(c.reduce((n, s) => n + s.after, 0)).toBe(140);
+    expect(c.slice(0, -1).every((s) => s.after >= MOVE_MS)).toBe(true);
+  });
+
+  it("a headed click reaches the control along a path, then clicks inside it", async () => {
+    const d = fakeDesktop([claude()], { headedOnly: ["Claude"], pointer: { x: 700, y: 500 } });
+    const h = desktopHands(d, { ...clock(), random: seeded(3) });
+    await h.act({ op: "snapshot", window: "w-1" });
+    const r = await h.act({ op: "click", ref: "@s1:e1" });
+    expect(r.op).toMatchObject({ op: "click", headed: true });
+    const moves = d.calls.filter((c) => c.call === "move");
+    const at = d.calls.find((c) => c.call === "clickAt");
+    expect(moves.length).toBeGreaterThan(3);
+    expect(d.calls.some((c) => c.call === "click" && c.mode === "headed")).toBe(false);
+    // inside the field's box (10,10 100×24), not its exact middle every time
+    expect(at).toBeDefined();
+    if (at?.call !== "clickAt") return;
+    expect(at.x).toBeGreaterThan(10);
+    expect(at.x).toBeLessThan(110);
+    expect(at.y).toBeGreaterThan(10);
+    expect(at.y).toBeLessThan(34);
+  });
+
+  it("no pointer API: the headed click is agent-desktop's", async () => {
+    const d = fakeDesktop([claude()], { headedOnly: ["Claude"] });
+    const h = desktopHands(d, { ...clock(), random: seeded(3) });
+    await h.act({ op: "snapshot", window: "w-1" });
+    await h.act({ op: "click", ref: "@s1:e1" });
+    expect(d.calls.some((c) => c.call === "click" && c.mode === "headed")).toBe(true);
   });
 });
