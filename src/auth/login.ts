@@ -23,6 +23,7 @@ import { type CodeKind, type CodeSource, inboxLock } from "./codes.js";
 import { guardedPage, hostNamed, hostUnder, registrable } from "./guard.js";
 import { pageLogin } from "./page-login.js";
 import { type IdentityProvider, type Provider, providerOf } from "./providers.js";
+import { claims, MAIN, siteOf } from "./roles.js";
 
 /** The page left the address it was at: a person's step is past. */
 export const movedOn = (fp: FlowPage): (() => Promise<boolean>) => {
@@ -770,6 +771,30 @@ export function fileSignInHolds(file: string): SignInHolds {
       write(m);
     },
   };
+}
+
+/**
+ * A stored login changed (username, address, password): its refusal holds go, since the refused
+ * value is gone. Holds are kept by the name asked (`x@main`, `x@itswilljin`), so each name that
+ * reaches the credential is cleared. Answers the names lifted.
+ */
+export function liftHolds(
+  holds: SignInHolds,
+  key: string,
+  cred: { username: string; roles?: readonly string[] },
+  oldUsername?: string,
+): string[] {
+  const site = siteOf(key);
+  const claimed = claims({ key, username: cred.username, roles: cred.roles ?? [] });
+  const names = new Set([
+    key,
+    ...claimed.map((r) => `${site}@${r}`),
+    ...[cred.username, oldUsername].filter((u): u is string => !!u).map((u) => `${site}@${u}`),
+    ...(claimed.includes(MAIN) ? [site] : []),
+  ]);
+  const lifted = [...names].filter((n) => holds.get(n));
+  for (const n of lifted) holds.clear(n);
+  return lifted;
 }
 
 /**

@@ -24,7 +24,7 @@ import {
   totpSource,
   viaLogin,
 } from "../src/auth/index.js";
-import { EMAIL_CODE, EMAIL_CODE_PAGE } from "../src/auth/login.js";
+import { EMAIL_CODE, EMAIL_CODE_PAGE, liftHolds } from "../src/auth/login.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import type { Hints } from "../src/browser/locate.js";
 import { NeedsHuman } from "../src/browser/session.js";
@@ -387,6 +387,33 @@ describe("loginProvider", () => {
     t += SIGN_IN_HOLD_MS + 1;
     await expect(login(page(), "s")).rejects.toThrow(/still on the login page/);
     expect(tries).toBe(2);
+  });
+  it("a changed login lifts its holds under every name that reaches it, not another account's", () => {
+    const hold = { until: Date.parse("2026-11-18T16:00:00Z"), error: "x: password rejected" };
+    const marks: Record<string, typeof hold> = {
+      "x@main": hold,
+      "x@old_handle": hold,
+      "x@lana": hold,
+      gmail: hold,
+    };
+    const holds: SignInHolds = {
+      get: (n) => marks[n] ?? null,
+      set: (n, h) => {
+        marks[n] = h;
+      },
+      clear: (n) => {
+        delete marks[n];
+      },
+    };
+    const lifted = liftHolds(
+      holds,
+      "x@wren",
+      { username: "new_handle", roles: ["main"] },
+      "old_handle",
+    );
+    expect(lifted.sort()).toEqual(["x@main", "x@old_handle"]);
+    expect(Object.keys(marks).sort()).toEqual(["gmail", "x@lana"]);
+    expect(liftHolds(holds, "x@wren", { username: "new_handle", roles: ["main"] })).toEqual([]);
   });
   it("answers codes for the credential an OAuth sign-in swaps in, not the site's own", async () => {
     const viaGoogle: SiteLogin = {

@@ -27,7 +27,7 @@ import {
 } from "../auth/index.js";
 import { CRED_ENV } from "../auth/keep.js";
 import { type LinkField, linkLabel, linkTtl, mintCredentialLink } from "../auth/link.js";
-import { EMAIL_CODE } from "../auth/login.js";
+import { EMAIL_CODE, fileSignInHolds, liftHolds } from "../auth/login.js";
 import { dropRole, giveRole } from "../auth/roles.js";
 import { defineFlow, type FlowPage, flowRunner } from "../browser/flow.js";
 import { envFileSink } from "../deps/sink.js";
@@ -401,6 +401,11 @@ export function registerAuthCommands(
         );
       },
     );
+  // the refusal that set a hold was on the old value
+  const lifted = (site: string, cred: Parameters<typeof liftHolds>[2], old?: string) => {
+    const names = liftHolds(fileSignInHolds(expandHome(settings.signInHoldsFile)), site, cred, old);
+    if (names.length) console.log(`${site}: sign-in hold lifted (${names.join(", ")})`);
+  };
   creds
     .command("username <site> <name>")
     .description(
@@ -417,6 +422,7 @@ export function registerAuthCommands(
         codesInbox: cred.codesInbox ?? cred.username,
       });
       console.log(`${site}: signs in as ${name}; codes still from its inbox; copied to the store`);
+      lifted(site, { ...cred, username: name }, cred.username);
     });
   creds
     .command("address <site> <address>")
@@ -430,6 +436,7 @@ export function registerAuthCommands(
       if (!cred) throw new Error(`no credential stored for ${site}`);
       await store.put(site, { ...cred, username: address, codesInbox: address });
       console.log(`${site}: username and codes inbox set; copied to the store`);
+      lifted(site, { ...cred, username: address }, cred.username);
     });
   creds
     .command("rotate <site>")
@@ -472,6 +479,7 @@ export function registerAuthCommands(
         ...(cred.password ? { previousPassword: cred.password } : {}),
       });
       console.log(`${site}: stored; copied to the store`);
+      lifted(site, cred);
     });
   creds
     .command("copy <site> [account]")
