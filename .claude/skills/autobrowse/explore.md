@@ -174,6 +174,9 @@ Session:
   If they acted meanwhile, the answer is `{ran:false, steer:{acts, url, changed, notes}}`: the command did not run.
   Read the page again and go on from where they left it; never redo their step. Your `resume` cannot end their Pause (`by:"person"`).
 - The panel's note box: what the person types rides your next answer as `notes:["…"]`. Do it unless it breaks a rule.
+- To wait for the person's note: `{"cmd":"waitNote","timeoutS":600}` answers `{notes:["…"]}` once they type one, `{notes:[]}` at the timeout. Never a `wait` on text that never shows.
+  To work on while you wait (VS Code, a file), run that command as a background Bash command: you wake when the note lands.
+  A failed answer carries `notes` too.
 - Headed, no pause needed: when William does a step by hand between two of your
   commands, your next answer carries `helped: {acts, url, changed, note}`. Read
   the page he left; never redo his step.

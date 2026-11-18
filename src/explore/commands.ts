@@ -280,6 +280,11 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   }),
   /** What this run is for, in words: the history groups runs by it and walks are built from it. */
   z.object({ cmd: z.literal("goal"), text: z.string().min(1).max(500) }),
+  /** Wait up to `timeoutS` (60; 600 at most) for the person's next note on the panel: `{notes}`, `[]` at the timeout. Not journaled. */
+  z.object({
+    cmd: z.literal("waitNote"),
+    timeoutS: z.number().int().min(1).max(600).optional(),
+  }),
   /** The goal is met, or cannot be: ends this run in the history. The session stays open; the next command starts a new run. */
   z.object({
     cmd: z.literal("done"),
@@ -426,11 +431,13 @@ export const LOOK_ONLY = new Set<Command["cmd"]>([
   "close",
   "overlay",
   "window",
+  "waitNote",
   "batch",
 ]);
 /** Session controls and nesting stay out of a batch. */
 export const UNBATCHABLE = new Set<Command["cmd"]>([
   "batch",
+  "waitNote",
   "flow",
   "code",
   "close",

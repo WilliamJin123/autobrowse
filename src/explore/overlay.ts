@@ -416,8 +416,13 @@ const ISLAND_CSS = [
   ".isl.open{border-radius:26px;cursor:default}",
   ".isl .in{position:absolute;left:0;top:0;width:max-content;min-width:200px;max-width:min(480px,calc(100vw - 24px))}",
   ".isl.open .in{width:min(420px,calc(100vw - 24px))}",
-  ".isl .top{display:grid;grid-template-columns:18px minmax(0,1fr) 28px;align-items:center;gap:10px;padding:8px 8px 8px 13px;cursor:pointer}",
+  ".isl .top{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 8px 8px 13px;cursor:pointer}",
   ".isl .lines{display:grid;gap:1px;min-width:0}",
+  // Pause and the card's chevron: one click opens the card from the pill
+  ".isl .acts{display:flex;gap:4px}",
+  ".isl .exp{background:transparent;color:rgb(245 245 247/.55)}",
+  ".isl .exp svg{fill:none;stroke:currentColor;stroke-width:1.75;transition:transform .3s var(--ease)}",
+  ".isl.open .exp svg{transform:rotate(180deg)}",
   // A slot holds one line; on a change the old and new words share its cell while they cross.
   ".isl .slot{display:grid;min-width:0}",
   ".isl .slot>*{grid-area:1/1;min-width:0;overflow-wrap:anywhere}",
@@ -450,12 +455,9 @@ const ISLAND_CSS = [
   ".isl .go{flex:none;padding:3px 12px;border-radius:999px;cursor:pointer;font-weight:600;background:rgb(255 255 255/.12)}",
   ".isl .go.yes,.isl .held .go{background:#f5f5f7;color:#000}",
   ".isl .steer{display:grid;gap:4px}",
-  ".isl .reply{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:6px;padding:0 8px 8px}",
+  ".isl .reply{display:grid;grid-template-columns:minmax(0,1fr);padding:0 8px 8px}",
   ".isl .reply .notes{display:none}",
   ".isl .reply .say{border-radius:14px;padding:6px 11px}",
-  ".isl .reply .btn{background:transparent;color:rgb(245 245 247/.55)}",
-  ".isl .reply .btn:hover{background:rgb(255 255 255/.1);color:#f5f5f7}",
-  ".isl .reply .btn svg{fill:none;stroke:currentColor;stroke-width:1.75}",
   ".isl .l2 .q{color:var(--accent);margin-right:6px}",
   ".isl .say{font:inherit;color:#f5f5f7;background:rgb(255 255 255/.08);border:0;border-radius:12px;padding:7px 11px;box-shadow:inset 0 0 0 1px rgb(255 255 255/.06)}",
   ".isl .say::placeholder{color:rgb(245 245 247/.4)}",
@@ -564,14 +566,14 @@ export const panelHtml = (
   const glyph = el('div', 'glyph'), lines = el('div', 'lines'), l1 = el('div', 'slot l1'), l2 = el('div', 'slot l2'), ihold = el('span', 'btn');
   ihold.setAttribute('data-a', 'hold');
   lines.append(l1, l2);
-  itop.append(glyph, lines, ihold);
+  const iacts = el('span', 'acts'), iexp = el('span', 'btn exp');
+  iexp.setAttribute('data-a', 'card');
+  iacts.append(ihold, iexp);
+  itop.append(glyph, lines, iacts);
   const mGoal = el('div', 'slot goal'), mThought = el('div', 'slot thought'), mList = el('div', 'list'), mBox = el('div'), mFoot = el('div', 'foot');
   more.append(mGoal, mThought, mList, mBox, mFoot);
-  // the reply row: one line to the agent without opening the card; its chevron opens the card
-  const ireply = el('div', 'reply'), iexp = el('span', 'btn');
-  iexp.setAttribute('data-a', 'card');
-  iexp.title = 'Open the panel';
-  ireply.appendChild(iexp);
+  // the reply row: one line to the agent without opening the card
+  const ireply = el('div', 'reply');
   ireply.style.display = 'none';
   iin.append(itop, ireply, more);
   isl.appendChild(iin);
@@ -699,7 +701,7 @@ export const panelHtml = (
       if (ui.say) { post({ key: true }); setTimeout(() => say.focus(), 30); } else say.blur();
     }
     else if (act === 'open') { ui.open = !ui.open; if (!ui.open) say.blur(); }
-    else if (act === 'card') { ui.say = false; ui.open = true; }
+    else if (act === 'card') { ui.say = false; ui.open = !ui.open; if (!ui.open) say.blur(); }
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
     else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
@@ -783,6 +785,8 @@ export const panelHtml = (
     ihold.appendChild(icon(s.held ? ICONS.play : ICONS.pause));
     ihold.className = 'btn' + (s.held ? ' on' : '');
     ihold.title = s.held ? 'Resume the agent' : 'Pause the agent';
+    if (!iexp.firstChild) iexp.appendChild(icon(ICONS.chevron));
+    iexp.title = ui.open ? 'Close the panel' : 'Open the panel';
     // Open: the card's parts blur in as the pill grows. Close: they blur out, then the pill shrinks.
     const was = ui.wasOpen;
     ui.wasOpen = !!ui.open;
@@ -809,8 +813,7 @@ export const panelHtml = (
     if (reply) {
       ui.replyOut?.cancel();
       ui.replyOut = null;
-      if (!iexp.firstChild) iexp.appendChild(icon(ICONS.chevron));
-      if (steer.parentNode !== ireply) ireply.insertBefore(steer, iexp);
+      if (steer.parentNode !== ireply) ireply.appendChild(steer);
       say.placeholder = s.held && !s.held.arming ? 'Tell the agent · Enter resumes' : 'Tell the agent…';
       ireply.style.display = '';
       if (!wasReply && !still() && !isl.classList.contains('still'))
@@ -1342,6 +1345,8 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
   let askN = 0;
   let steered: (s: Steer) => void = () => undefined;
   let noteN = 0;
+  /** `waitNote` callers: woken by the next note. */
+  let noteWaiters: Array<() => void> = [];
   /** Hand events not yet sent: every move, with its time; the panel replays the path. */
   let handQ: HandEvent[] = [];
   let handT: NodeJS.Timeout | null = null;
@@ -1380,6 +1385,9 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
       const text = e.note.trim().slice(0, 500);
       state.notes = [...state.notes, { id: ++noteN, text, read: false }].slice(-20);
       steered({ note: text });
+      const woken = noteWaiters;
+      noteWaiters = [];
+      for (const w of woken) w();
     }
     if (e.t === "js" && e.prefs && typeof e.prefs === "object") prefs = e.prefs as Prefs;
     // Chrome's window changed size (full screen, an infobar) or went: measure again.
@@ -1685,6 +1693,22 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
       tray();
       if (!enabled || drawn) await draw(page);
     },
+    /** Up to `ms` for an unread note: true once one is there (at once if one waits). */
+    async nextNote(ms: number): Promise<boolean> {
+      if (state.notes.some((n) => !n.read)) return true;
+      return new Promise<boolean>((done) => {
+        const wake = () => {
+          clearTimeout(t);
+          done(true);
+        };
+        const t = setTimeout(() => {
+          noteWaiters = noteWaiters.filter((w) => w !== wake);
+          done(false);
+        }, ms);
+        t.unref?.();
+        noteWaiters.push(wake);
+      });
+    },
     /** The notes no answer carried yet; now marked Read (drawn with the next change). */
     takeNotes(): string[] {
       const fresh = state.notes.filter((n) => !n.read);
@@ -1695,6 +1719,9 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     /** The session ends: the window goes and its process exits. */
     async remove(_page: S): Promise<void> {
       for (const id of [...asking.keys()]) answered(id, null);
+      const woken = noteWaiters;
+      noteWaiters = [];
+      for (const w of woken) w();
       drawn = false;
       state = { ...EMPTY, who: state.who };
       running = 0;

@@ -862,7 +862,7 @@ async function serve(
     session?: string,
   ) => {
     // The overlay is for a person who watches; a run's rows never count it.
-    if (c.cmd === "overlay" || c.cmd === "window") return;
+    if (c.cmd === "overlay" || c.cmd === "window" || c.cmd === "waitNote") return;
     // A session control answers mid-command: the pictures wait for the command they belong to.
     const own = !IMMEDIATE.has(c.cmd);
     const pics = own ? stepPics : [];
@@ -1626,6 +1626,8 @@ async function serve(
     // Drawing is no page work: it never waits behind an act or opens a run.
     "overlay",
     "window",
+    // waits on the person, not the page: a queued act never blocks it
+    "waitNote",
   ]);
   let chain: Promise<unknown> = Promise.resolve();
   let lastTouch = now();
@@ -2880,6 +2882,10 @@ async function serve(
         });
         return { as: c.as, file, bytes: got.buffer.length, type: got.mimeType };
       }
+      case "waitNote": {
+        const got = await overlay.nextNote((c.timeoutS ?? 60) * 1000);
+        return { notes: got ? overlay.takeNotes() : [] };
+      }
       case "goal":
         logged((h) => h.goal(c.text));
         return { ok: true, run: history?.id ?? null };
@@ -3073,6 +3079,8 @@ async function serve(
             ? await run({ cmd: "marks" }).catch(() => null)
             : null;
         const e = errorOf(err);
+        // a failed command still carries the person's notes: else they wait for a success
+        const notes = overlay.takeNotes();
         // The browser went mid-act: the click or submit may have landed.
         const outcome = e.outcome ?? (LOOKS.has(parsed.cmd) && browserGone(err) ? "unknown" : null);
         const body = JSON.stringify(
@@ -3081,6 +3089,7 @@ async function serve(
             code: e.code,
             retryable: e.retryable,
             ...(outcome ? { outcome } : {}),
+            ...(notes.length ? { notes } : {}),
             url: shortUrl(page.url()),
             ...(err instanceof PaymentGate ? { gate: err.gate, reason: err.reason } : {}),
             ...(shot

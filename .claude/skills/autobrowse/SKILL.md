@@ -1,6 +1,6 @@
 ---
 name: autobrowse
-description: Web research (read a page, search, Google's own results page, Perplexity), lead lists (Google Maps, LinkedIn people and companies), site API calls (post, read, OAuth setup), accounts, credentials and keys, and driving a signed-in browser or this Mac's desktop (map a page, sign up, do a chore, fix a flow). Use for any web, browser or OS task in this repo instead of Playwright or manual steps.
+description: Web research (read a page, search, Google's own results page, Perplexity), lead lists (Google Maps, LinkedIn people and companies), site API calls (post, read, OAuth setup), accounts, credentials and keys, and driving a signed-in browser or this Mac's desktop (map a page, sign up, do a chore, fix a flow). Use it for any task that touches a website, a browser, a signed-in account or a desktop app, even when autobrowse is not named: open a site, draft or post on X or LinkedIn, fill a form, click through a page, a headed session, a note on the panel. Use it instead of Playwright or manual steps.
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/state.sh)
 ---
 

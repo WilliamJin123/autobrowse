@@ -452,6 +452,7 @@ describe("headed overlay, out of the page", () => {
       await h.idle();
       expect(await h.view.evaluate("!!ui.tuiEl.querySelector('.held')")).toBe(false);
       // the note box: asks for the keyboard, sends on Enter, shows Queued
+      const waiting = o.nextNote(5000);
       await h.view.click(".say");
       await expect.poll(() => h.posts.some((m) => m.key === true)).toBe(true);
       await h.view.keyboard.type("use the second account");
@@ -465,8 +466,12 @@ describe("headed overlay, out of the page", () => {
           "[...document.querySelectorAll('.notes .st')].map((n) => n.textContent)",
         );
       expect(await st()).toEqual(["Queued"]);
+      // waitNote: woken by the note; an unread one answers at once; none waits out the timeout
+      expect(await waiting).toBe(true);
+      expect(await o.nextNote(10)).toBe(true);
       expect(o.takeNotes()).toEqual(["use the second account"]);
       expect(o.takeNotes()).toEqual([]);
+      expect(await o.nextNote(10)).toBe(false);
       await o.end(page, row);
       await h.idle();
       expect(await st()).toEqual(["Read"]);
@@ -549,10 +554,8 @@ describe("headed overlay, out of the page", () => {
       expect(h.posts.some((m) => m.note === "make it shorter")).toBe(true);
       expect((await reply()).shown).toBe("none");
       expect((await at()).l2).toBe("Queuedmake it shorter");
-      // the pill again, then its chevron: the card with goal, thought, rows and the note box
-      await h.view.mouse.click(500, a.r[1] + a.r[3] / 2 - 4);
-      await settled(h.view);
-      await h.view.evaluate("document.querySelector('.isl .reply [data-a=card]').click()");
+      // the pill's chevron: one click opens the card with goal, thought, rows and the note box
+      await h.view.evaluate("document.querySelector('.isl .top [data-a=card]').click()");
       await settled(h.view);
       const b = await at();
       expect(b.more).not.toBe("none");
@@ -639,8 +642,7 @@ describe("headed overlay, out of the page", () => {
       expect(await cls()).toBe("wrap term");
       await h.view.evaluate("document.querySelector('.tui [data-a=look]').click()");
       expect(await cls()).toBe("wrap island dark");
-      await h.view.evaluate("document.querySelector('.isl .top').click()");
-      await h.view.evaluate("document.querySelector('.isl .reply [data-a=card]').click()");
+      await h.view.evaluate("document.querySelector('.isl .top [data-a=card]').click()");
       await h.view.evaluate("document.querySelector('.isl .foot [data-a=look]').click()");
       expect(await cls()).toMatch(/^wrap panel (light|dark)$/);
       // the note box is back in the panel
