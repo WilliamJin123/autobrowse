@@ -136,7 +136,8 @@ describe("agent-desktop adapter", () => {
     const calls: string[] = [];
     const run: AdRun = async (args) => {
       calls.push(args[0] ?? "");
-      const out = args[0] === "list-windows" ? fixture("list-windows").replace(/\n\s*/g, "") : timeout;
+      const out =
+        args[0] === "list-windows" ? fixture("list-windows").replace(/\n\s*/g, "") : timeout;
       return { code: 0, stdout: `${out}\n`, stderr: "" };
     };
     const base = {
