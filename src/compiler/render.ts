@@ -6,7 +6,7 @@
  * journal; shell output is reduced to an exit code for the same reason.
  * The test that comes with it runs a dry run over the plan example.
  */
-import { planLocator, renderLocator } from "../browser/locate.js";
+import { type Hints, planLocator, renderLocator } from "../browser/locate.js";
 import { INTERACTIVE_COMMANDS } from "../deps/shell.js";
 import {
   type DesktopOutlineOp,
@@ -120,13 +120,10 @@ export function renderOp(op: OutlineOp): string {
     const plan = op.plan.map((f) => `${f}: input.${f}`).join(", ");
     return `    out.${op.as} = (await runCode(fp, { plan: { ${plan} }, code: ${renderCode(op.code)} })).rows;`;
   }
+  if (op.kind === "scroll")
+    return `    await fp.scroll(${op.dy}${op.hints ? `, ${hintsSource(op.hints)}` : ""});`;
   const plan = planLocator(op.hints);
-  const hints = `{ ${Object.entries(op.hints)
-    .filter(([, v]) => v)
-    .map(
-      ([k, v]) => `${k}: ${typeof v === "number" ? v : template(String(v), (f) => `input.${f}`)}`,
-    )
-    .join(", ")} }`;
+  const hints = hintsSource(op.hints);
   const locatorNote = plan ? ` // ${renderLocator(plan)}` : " // TODO: no usable hints";
   if (op.kind === "read" && op.match) {
     const m = `(await fp.read(${hints})).match(new RegExp(${q(op.match)}, "i"))`;
@@ -151,6 +148,15 @@ export function renderOp(op: OutlineOp): string {
               : `{ kind: "press", key: ${q(op.key)} }`;
   return `    await fp.act(${opSrc}, ${hints}, ${opts});${locatorNote}`;
 }
+
+/** Hints as an object literal; a `{field}` in a text is the plan's value. */
+const hintsSource = (h: Hints): string =>
+  `{ ${Object.entries(h)
+    .filter(([, v]) => v)
+    .map(
+      ([k, v]) => `${k}: ${typeof v === "number" ? v : template(String(v), (f) => `input.${f}`)}`,
+    )
+    .join(", ")} }`;
 
 /** `{project}` in a step URL or a hint is the plan field `project`. */
 export const URL_FIELD = PLACEHOLDER;
@@ -183,8 +189,10 @@ export function flowInputs(step: Extract<OutlineStep, { kind: "browser" }>) {
   named(step.url ?? "");
   for (const op of step.ops) {
     if (op.kind === "code") for (const f of op.plan) if (!fields.includes(f)) fields.push(f);
-    if ("hints" in op)
-      for (const k of HINT_TEXTS) if (typeof op.hints[k] === "string") named(op.hints[k]);
+    if ("hints" in op && op.hints) {
+      const h = op.hints;
+      for (const k of HINT_TEXTS) if (typeof h[k] === "string") named(h[k]);
+    }
     const value = op.kind === "fill" ? op.value : op.kind === "upload" ? op.file : null;
     if (!value) continue;
     if (value.from === "plan" && !fields.includes(value.field)) fields.push(value.field);

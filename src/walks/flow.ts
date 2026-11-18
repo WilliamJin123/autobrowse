@@ -73,7 +73,16 @@ export interface WalkDeps {
 }
 
 /** Ops that only look: every other op is an act (walks/calls.ts). */
-const LOOKS = new Set<WalkOp["kind"]>(["see", "read", "records", "ai", "captcha", "walk", "each"]);
+const LOOKS = new Set<WalkOp["kind"]>([
+  "see",
+  "read",
+  "records",
+  "ai",
+  "captcha",
+  "walk",
+  "each",
+  "scroll",
+]);
 
 /** A run given `submit=false` stops here, before its first irreversible op: a dry run up to the send. */
 class Held extends Error {}
@@ -311,6 +320,8 @@ async function walkSpec(
         return fp.act({ kind: "press", key: op.key }, op.hints as Hints, { goal: op.goal });
       case "hover":
         return fp.act({ kind: "hover" }, op.hints as Hints, { goal: op.goal });
+      case "scroll":
+        return fp.scroll(op.dy, op.hints as Hints | undefined);
       case "upload":
         return fp.act(
           { kind: "upload", files: [await textFor(op.file, op.goal)] },

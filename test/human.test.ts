@@ -17,10 +17,10 @@ import {
   instantHands,
   mousePath,
   restAt,
+  scrollPlan,
   tremor,
   typingPlan,
   wanderPath,
-  wheelPlan,
 } from "../src/browser/human/index.js";
 
 /** A fixed, repeatable random source. */
@@ -225,15 +225,56 @@ describe("idle hand", () => {
   });
 });
 
-describe("wheel plan", () => {
-  it("scrolls in notches that add up, with looks between flicks", () => {
-    const plan = wheelPlan(1500, HUMAN_PACE.scroll, seeded());
-    const sum = plan.reduce((n, s) => n + s.dy, 0);
-    expect(sum).toBeGreaterThanOrEqual(1500);
-    expect(sum).toBeLessThan(1500 + HUMAN_PACE.scroll.notch[1]);
-    expect(Math.max(...plan.map((s) => s.dy))).toBeLessThanOrEqual(HUMAN_PACE.scroll.notch[1]);
-    expect(plan.some((s) => s.after >= HUMAN_PACE.scroll.look[0])).toBe(true);
-    expect(wheelPlan(-300, HUMAN_PACE.scroll, seeded()).every((s) => s.dy < 0)).toBe(true);
+describe("scroll plan", () => {
+  const S = HUMAN_PACE.scroll;
+  const net = (plan: { dy: number }[]) => plan.reduce((n, s) => n + s.dy, 0);
+  const wheel = { device: "wheel", reading: false } as const;
+
+  it("wheel: notches that land within a notch of the ask, with looks between flicks", () => {
+    const plan = scrollPlan(1500, { ...S, overOdds: 0 }, seeded(), wheel);
+    expect(Math.abs(net(plan) - 1500)).toBeLessThan(S.notch[1]);
+    expect(Math.max(...plan.map((s) => Math.abs(s.dy)))).toBeLessThanOrEqual(S.notch[1]);
+    expect(plan.some((s) => s.after >= S.look[0])).toBe(true);
+    expect(scrollPlan(-300, S, seeded(), wheel).every((s) => s.dy < 0)).toBe(true);
+  });
+
+  it("reading looks back up now and then, and still lands within a notch", () => {
+    // backs break `every dy > 0` on purpose: a reader rereads a line
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const plan = scrollPlan(3000, { ...S, backOdds: 1, overOdds: 0 }, seeded(seed), {
+        device: "wheel",
+        reading: true,
+      });
+      expect(plan.some((s) => s.dy < 0)).toBe(true);
+      expect(Math.abs(net(plan) - 3000)).toBeLessThan(S.notch[1]);
+    }
+  });
+
+  it("a long move may carry past and come back", () => {
+    const plan = scrollPlan(2400, { ...S, overOdds: 1 }, seeded(), wheel);
+    let at = 0;
+    let most = 0;
+    for (const s of plan) {
+      at += s.dy;
+      most = Math.max(most, at);
+    }
+    expect(most).toBeGreaterThan(2400);
+    expect(Math.abs(net(plan) - 2400)).toBeLessThan(S.notch[1]);
+  });
+
+  it("trackpad: a swipe rises for a few frames, then fades, with a little drift", () => {
+    const plan = scrollPlan(600, { ...S, overOdds: 0 }, seeded(), {
+      device: "trackpad",
+      reading: false,
+    });
+    expect(plan.length).toBeGreaterThan(8);
+    const dys = plan.map((s) => s.dy);
+    const peak = dys.indexOf(Math.max(...dys));
+    expect(peak).toBeGreaterThan(0);
+    expect(dys.at(-1)).toBeLessThan(dys[peak] as number);
+    expect(plan.every((s) => s.after <= S.frame[1] || s.after >= S.look[0])).toBe(true);
+    expect(plan.some((s) => (s.dx ?? 0) !== 0)).toBe(true);
+    expect(Math.abs(net(plan) - 600)).toBeLessThan(S.notch[1]);
   });
 });
 

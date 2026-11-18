@@ -70,13 +70,19 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   /** Keyboard into whatever is focused; not journaled as a locator act. */
   z.object({ cmd: z.literal("type"), text: z.string() }),
   z.object({ cmd: z.literal("key"), key: z.string() }),
-  /** Wheel the page by `dy` px (minus = up), human-paced; acts on a control scroll it into view themselves. */
+  /**
+   * Wheel the page by `dy` px (minus = up), human-paced; `hints`: the pane to scroll instead (a
+   * dialog's list, a sidebar). Acts on a control scroll it into view themselves.
+   */
   z.object({
     cmd: z.literal("scroll"),
     dy: z
       .number()
       .int()
+      .min(-20_000)
+      .max(20_000)
       .refine((n) => n !== 0, "dy is 0"),
+    hints: hintsSchema.optional(),
   }),
   /** Play/pause for an agent driving this session: a person takes over, then hands back. */
   z.object({ cmd: z.literal("pause") }),

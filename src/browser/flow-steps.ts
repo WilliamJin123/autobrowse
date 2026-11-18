@@ -15,6 +15,7 @@ import { type Hands, instantHands, pickOption } from "./human/index.js";
 import { inPage } from "./in-page.js";
 import { type Hints, locate, textOf } from "./locate.js";
 import { backgroundTab } from "./own-tabs.js";
+import { scrollAndSettle } from "./page-scroll.js";
 import { looksLikeWall } from "./session.js";
 
 export const ACT_TIMEOUT_MS = 15_000;
@@ -215,7 +216,10 @@ export async function openReadTab(
       return l.isVisible().catch(() => false);
     },
     wait: (ms) => page.waitForTimeout(ms),
-    scroll: (dy) => hands.scroll(page, dy),
+    async scroll(dy, over) {
+      const l = over ? locate(page, over) : undefined;
+      await scrollAndSettle(page, () => hands.scroll(page, dy, { over: l }), { over: l });
+    },
     act: async (op, hints) => {
       if (!TAB_ACTS.has(op.kind)) throw new Error(`read tab: no ${op.kind}; do it on fp`);
       await doOp(page, hints, op, ACT_TIMEOUT_MS, hands);

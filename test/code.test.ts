@@ -27,6 +27,9 @@ const fake = () => {
       calls.push("has");
       return true;
     },
+    scroll: async (dy: number) => {
+      calls.push(`scroll ${dy}`);
+    },
     act: async (op: { kind: string }, h: { css?: string }) => {
       calls.push(`act ${op.kind} ${h.css}`);
       if (h.css === "boom" && !state.fixed) throw new Error("no boom");
@@ -154,6 +157,22 @@ if (!plan.fixed) throw new Error("fix me");`;
       "act hover row",
       "read toast",
     ]);
+  });
+
+  it("a scroll is page only: queued, and played again when a rerun rebuilds the page", async () => {
+    const { fp, calls } = fake();
+    const store = memoryStore();
+    const code = `await fp.open("https://x.test/feed");
+await fp.scroll(1200);
+await fp.read({css: plan.fixed ? "row9" : "x"});
+if (!plan.fixed) throw new Error("fix me");`;
+    await runCode(fp, { code }, { store }).catch(() => undefined);
+    expect(calls).toEqual(["open https://x.test/feed", "scroll 1200", "read x"]);
+    calls.length = 0;
+    await runCode(fp, { code, plan: { fixed: "1" } }, { store });
+    expect(calls).toEqual(["open https://x.test/feed", "scroll 1200", "read row9"]);
+    const err = await runCode(fp, { code: "await fp.scroll(0);" }).catch((e) => e);
+    expect((err as CodeFailed).result.failed?.error).toMatch(/not 0/);
   });
 
   it("an act left started stops the run; ran skips it, redo does it again", async () => {

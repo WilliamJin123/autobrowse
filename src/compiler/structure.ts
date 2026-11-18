@@ -21,6 +21,7 @@ import {
   type OutlineStep,
   PLACEHOLDER,
 } from "./outline.js";
+import { keepScrolls } from "./scrolls.js";
 
 export const IRREVERSIBLE_CLICK =
   /\b(buy|purchase|pay|checkout|complete (order|purchase)|place order|confirm|create|generate|register|delete|remove|revoke|deploy|send|publish|submit)\b/i;
@@ -260,7 +261,14 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
     d.ops.push(op);
   };
 
-  for (const a of rec.actions as Action[]) {
+  // a note starts a new step (a new tab): a scroll before it shows that step nothing
+  const actions = keepScrolls(
+    rec.actions as Action[],
+    (a) => a,
+    (_, s) => s,
+    { breaks: ["note"] },
+  );
+  for (const a of actions) {
     if (a.kind !== "desktop" && a.kind !== "note") closeDesktop();
     switch (a.kind) {
       case "desktop": {
@@ -514,9 +522,16 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
         // No outline op replays a script or a fetch: a walk does (`walks cut`).
         add({ kind: "human", reason: `a ${a.kind} acted here: build this run as a walk` });
         break;
-      case "cut":
       case "scroll":
-        // scroll: each act on a control scrolls to it
+        // only the scrolls a read or a loaded list needs are left (keepScrolls)
+        add({
+          kind: "scroll",
+          goal: `scroll ${a.dy > 0 ? "down" : "up"} ${Math.abs(a.dy)} px${a.target ? ` in ${describe(a.target)}` : ""}`,
+          dy: a.dy,
+          ...(a.target ? { hints: stripHints(a.target) } : {}),
+        });
+        break;
+      case "cut":
         break;
     }
   }
@@ -549,8 +564,10 @@ export function structure(rec: Recording, o: StructureOptions = {}): Outline {
     if (s.kind === "terminal") continue;
     if (s.kind === "browser" && s.url) named(s.url);
     for (const op of s.ops) {
-      if (s.kind === "browser" && "hints" in op)
-        for (const k of HINT_TEXTS) if (typeof op.hints[k] === "string") named(op.hints[k]);
+      if (s.kind === "browser" && "hints" in op && op.hints) {
+        const h = op.hints;
+        for (const k of HINT_TEXTS) if (typeof h[k] === "string") named(h[k]);
+      }
       if (op.kind === "upload" && op.file.from === "plan") used.add(op.file.field);
       if (op.kind === "code") for (const f of op.plan) used.add(f);
       const v = "value" in op ? op.value : null;
@@ -635,7 +652,7 @@ function placeholders(
     step.description = swap(step.description);
     for (const op of step.ops) {
       if ("goal" in op) op.goal = swap(op.goal);
-      if (!("hints" in op)) continue;
+      if (!("hints" in op) || !op.hints) continue;
       for (const k of HINT_TEXTS) {
         const v = op.hints[k];
         if (typeof v === "string") op.hints[k] = swap(v);

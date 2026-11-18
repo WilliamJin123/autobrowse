@@ -65,8 +65,17 @@ export type Action =
   | (Base & { kind: "select"; target: LocatorHints; value: string; options?: string[] })
   | (Base & { kind: "press"; target: LocatorHints; key: string })
   | (Base & { kind: "hover"; target: LocatorHints })
-  /** The page wheeled by `dy` px. Compile drops it: an act on a control scrolls to it. */
-  | (Base & { kind: "scroll"; dy: number })
+  /**
+   * The page (or the pane at `target`) wheeled by `dy` px; `moved`: what it did move, `loaded`:
+   * rows came in on the way. Compile keeps it where a replay needs it (`src/compiler/scrolls.ts`).
+   */
+  | (Base & {
+      kind: "scroll";
+      dy: number;
+      moved?: number;
+      loaded?: boolean;
+      target?: LocatorHints;
+    })
   | (Base & { kind: "upload"; target: LocatorHints; files: string[] })
   | (Base & { kind: "submit"; target: LocatorHints })
   /** Text read off an element and kept under a name: the scraping half of a workflow. */

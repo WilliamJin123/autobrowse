@@ -36,6 +36,7 @@ import { freshSeed, HUMAN_PACE, handsFor, seeded } from "./human/index.js";
 import { asQuestion, settleKeeps } from "./keeps.js";
 import { type Hints, locate, textOf } from "./locate.js";
 import { htmlForFile, NetLog, networkOn } from "./network.js";
+import { scrollAndSettle } from "./page-scroll.js";
 import { describePage } from "./page-state.js";
 import type { SessionPark } from "./park.js";
 import { type PoolMode, ProfilePool, poolTabs } from "./profile-pool.js";
@@ -462,7 +463,12 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
                 .waitForEvent("page", { timeout, predicate: (p) => !poolTabs.has(p) })
                 .catch(() => null),
             // Hands between steps: the panel lets them through.
-            scroll: (dy) => hands.scroll(active, dy),
+            async scroll(dy, over) {
+              const l = over ? locate(active, over) : undefined;
+              await scrollAndSettle(active, () => hands.scroll(active, dy, { over: l }), {
+                over: l,
+              });
+            },
             pages: () => session.context.pages(),
             switchTo(page) {
               active = page;

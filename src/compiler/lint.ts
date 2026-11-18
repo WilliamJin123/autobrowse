@@ -88,7 +88,7 @@ export function lintOutline(outline: Outline, known: readonly Known[] = []): str
       for (const [j, op] of (s.ops as readonly (OutlineOp | DesktopOutlineOp)[]).entries()) {
         const where = `steps[${i}].ops[${j}]`;
         if ("goal" in op) at(`${where}.goal`, op.goal);
-        if ("hints" in op)
+        if ("hints" in op && op.hints)
           for (const [k, v] of Object.entries(op.hints))
             if (typeof v === "string") at(`${where}.hints.${k}`, v);
         if ("value" in op && typeof op.value === "object" && op.value.from === "literal")

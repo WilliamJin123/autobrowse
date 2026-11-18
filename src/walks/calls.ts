@@ -123,6 +123,7 @@ const READ_OPS = new Set([
   "select",
   "press",
   "hover",
+  "scroll",
   "see",
   "read",
   "records",

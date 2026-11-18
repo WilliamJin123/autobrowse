@@ -37,7 +37,7 @@ export const memoryStore = (): CodeStore => {
 export interface CodeCall {
   /** Its place in this run's calls, from 0. */
   i: number;
-  call: "open" | "act" | "read" | "has" | "records" | "json" | "wait" | "each";
+  call: "open" | "act" | "read" | "has" | "records" | "json" | "wait" | "scroll" | "each";
   /** Short: a URL, hints, an op kind. */
   args: unknown;
   /** Earlier calls with the same key in this run. */
@@ -162,7 +162,7 @@ const tabSurface = (t: ReadTab, pace: () => Promise<void>): Surface => ({
   read: (h) => t.read(h),
   has: (h, ms) => t.has(h, ms),
   wait: (ms) => t.wait(ms),
-  scroll: (dy) => t.scroll(dy),
+  scroll: (dy, over) => t.scroll(dy, over),
   act: (op, h) => t.act(op, h),
 });
 
@@ -231,8 +231,10 @@ export async function runCode(
     let wanted = c.start;
     /** The live page is the one the code sees: `wanted`, then `queue`. False after an `open` or a skip. */
     let synced = !c.each;
-    /** Waits and view acts since `wanted` loaded: played after it to rebuild the page. */
-    let queue: Array<{ wait: number } | { act: [Op, Hints, CodeActOptions] }> = [];
+    /** Waits, scrolls and view acts since `wanted` loaded: played after it to rebuild the page. */
+    let queue: Array<
+      { wait: number } | { scroll: [number, Hints?] } | { act: [Op, Hints, CodeActOptions] }
+    > = [];
     let last: CodeCall | null = null;
 
     const begin = (call: CodeCall["call"], args: unknown, key?: string): CodeCall => {
@@ -262,6 +264,7 @@ export async function runCode(
       await page.open(wanted);
       for (const q of queue) {
         if ("wait" in q) await page.wait(q.wait);
+        else if ("scroll" in q) await page.scroll(...q.scroll);
         else await page.act(...q.act);
       }
       synced = true;
@@ -409,6 +412,17 @@ export async function runCode(
         const row = begin("wait", ms);
         finish(row, Date.now());
       },
+      // Page only, like a view act: queued, and played again when a rerun rebuilds the page.
+      scroll: async (dy: number, over?: Hints) => {
+        if (!Number.isInteger(dy) || dy === 0)
+          throw new Error("fp.scroll: dy is a whole px, not 0");
+        queue.push({ scroll: over ? [dy, over] : [dy] });
+        const args = over ? { dy, over } : dy;
+        if (synced) return live("scroll", args, (p) => p.scroll(dy, over));
+        const row = begin("scroll", args);
+        row.result = "queued";
+        finish(row, Date.now());
+      },
       // The site's own JSON from inside the page (session cookies), classed as a flow's
       // `cookie` rung: 429, sign-in and block answers stop the run. Saved like a read.
       json: (url: string, opts?: Pick<PageFetch, "method" | "headers" | "body">) => {
@@ -523,6 +537,7 @@ export async function runCode(
     has: main.api.has,
     json: main.api.json,
     wait: main.api.wait,
+    scroll: main.api.scroll,
     each,
     human: (reason: string) => fp.human(reason),
   });

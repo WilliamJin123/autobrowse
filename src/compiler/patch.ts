@@ -34,7 +34,7 @@ export function brokenOp(
 ): number | null {
   if (!hints) return null;
   const found = step.ops.flatMap((op, i) =>
-    "hints" in op && sameHints(op.hints, hints) ? [i] : [],
+    "hints" in op && op.hints && sameHints(op.hints, hints) ? [i] : [],
   );
   const byGoal = found.filter((i) => {
     const op = step.ops[i];

@@ -11,6 +11,7 @@
  */
 import type { Hints } from "../browser/locate.js";
 import { type PageLook, reshape, urlShape } from "../browser/screens.js";
+import { keepScrolls } from "../compiler/scrolls.js";
 import { camel, describe, IRREVERSIBLE_CLICK, kebab, stripHints } from "../compiler/structure.js";
 import { paymentGate } from "../gates/payment.js";
 import { type Profile, profileField } from "../money/profile.js";
@@ -155,9 +156,13 @@ export function visitsOf(
   rows: readonly RunRow[],
   around?: (a: Action) => Around | undefined,
 ): Cut {
-  const acts = rows
-    .filter((r): r is Extract<RunRow, { kind: "act" }> => r.kind === "act")
-    .map((r) => (r.look ? { ...r, look: reshape(r.look) } : r));
+  const acts = keepScrolls(
+    rows
+      .filter((r): r is Extract<RunRow, { kind: "act" }> => r.kind === "act")
+      .map((r) => (r.look ? { ...r, look: reshape(r.look) } : r)),
+    (r) => r.act,
+    (r, act) => ({ ...r, act }),
+  );
   const ends = rows.filter((r): r is Extract<RunRow, { kind: "end" }> => r.kind === "end");
   const ended = ends.at(-1)?.look;
   const end = ended ? reshape(ended) : null;
@@ -212,6 +217,11 @@ export function visitsOf(
       } else if (!HELPED_NOTE.test(a.text)) named = a.text.trim();
       continue;
     }
+    // a kept scroll (keepScrolls) acts on the screen it is on: no look of its own
+    if (a.kind === "scroll") {
+      if (cur) into({ kind: "op", act: a });
+      continue;
+    }
     const at = Date.parse(r.at);
     const since = at - prevAt;
     const was = prevKind;
@@ -240,8 +250,7 @@ export function visitsOf(
       continue;
     }
     // A cut mark splits the run before this builder sees it (`walks cut`); here it is no op.
-    // scroll: an act on a control scrolls to it; a feed read scrolls itself (`records` max)
-    if (a.kind === "submit" || a.kind === "cut" || a.kind === "scroll") continue;
+    if (a.kind === "submit" || a.kind === "cut") continue;
     const again = !!cur && !!around?.(a)?.again;
     if (r.look && (!cur || !last || !samePage(last, r.look) || again)) visit(r.look, again);
     if (r.look) last = r.look;
@@ -495,6 +504,15 @@ export function walkFromRuns(inputs: readonly RunInput[], o: BuildOptions): Buil
       case "hover":
         return [
           { kind: "hover", goal: `hover over ${describe(a.target)}`, hints: hintsOf(a.target) },
+        ];
+      case "scroll":
+        return [
+          {
+            kind: "scroll",
+            goal: `scroll ${a.dy > 0 ? "down" : "up"}${a.target ? ` in ${describe(a.target)}` : ""}`,
+            dy: a.dy,
+            ...(a.target ? { hints: hintsOf(a.target) } : {}),
+          },
         ];
       case "upload": {
         const key = said?.key ?? fieldKey(`${camel(describe(a.target)) || "upload"}File`);

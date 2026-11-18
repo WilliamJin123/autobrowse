@@ -48,14 +48,14 @@ import {
   restAt,
   wanderPath,
 } from "./mouse.js";
-import { type ScrollStyle, wheelPlan } from "./scroll.js";
+import { type ScrollDevice, type ScrollStyle, scrollPlan } from "./scroll.js";
 import { BACKSPACE, type TypingStyle, typingPlan } from "./typing.js";
 
 export { drawMs, freshSeed, seeded } from "./draw.js";
 export type { MouseStyle, PathStep } from "./mouse.js";
 export { aimPoint, mousePath, restAt, tremor, wanderPath } from "./mouse.js";
-export type { ScrollStyle, WheelStep } from "./scroll.js";
-export { wheelPlan } from "./scroll.js";
+export type { ScrollDevice, ScrollPlanOptions, ScrollStyle, WheelStep } from "./scroll.js";
+export { scrollPlan } from "./scroll.js";
 export type { Keystroke, TypingStyle } from "./typing.js";
 export { BACKSPACE, typingPlan } from "./typing.js";
 
@@ -111,6 +111,13 @@ export const CALM_PACE: Pace = {
     gap: [18, 70],
     look: [250, 1_100],
     most: 6_000,
+    trackpad: 0.7,
+    swipe: [220, 760],
+    frame: [8, 18],
+    backOdds: 0.12,
+    back: [60, 220],
+    overOdds: 0.2,
+    over: [80, 260],
   },
 };
 
@@ -189,7 +196,7 @@ export const FILM_PACE: Pace = {
 export type HandEvent =
   | { kind: "move" | "down" | "up"; t: number; x: number; y: number }
   | { kind: "key"; t: number; key: string }
-  | { kind: "scroll"; t: number; dy: number }
+  | { kind: "scroll"; t: number; dy: number; dx?: number }
   /** The control a click or a type acts on. */
   | { kind: "focus"; t: number; box: { x: number; y: number; w: number; h: number } };
 
@@ -233,8 +240,11 @@ export interface Hands {
   paste(target: Locator, text: string, o: ActTimeout): Promise<void>;
   /** Press at `from`, carry to `to`, let go: points inside the control from its top-left (a slider, a captcha piece). */
   drag(target: Locator, from: Point, to: Point, o: ActTimeout): Promise<void>;
-  /** Move the page down by about `dy` px (up when negative): a feed read, flick by flick. */
-  scroll(page: Page, dy: number): Promise<void>;
+  /**
+   * Move the page down by about `dy` px (up when negative): a feed read, flick by flick or
+   * swipe by swipe. `over`: the pane to scroll (a dialog's list), the pointer onto it first.
+   */
+  scroll(page: Page, dy: number, o?: { over?: Locator | undefined }): Promise<void>;
 }
 
 /** A control's box on the page, or a clear error: a drag needs real coordinates. */
@@ -267,7 +277,10 @@ export const instantHands: Hands = {
     await mouse.move(box.x + to.x, box.y + to.y, { steps: 12 });
     await mouse.up();
   },
-  scroll: (page, dy) => page.mouse.wheel(0, dy),
+  async scroll(page, dy, o) {
+    if (o?.over) await o.over.hover();
+    await page.mouse.wheel(0, dy);
+  },
 };
 
 /** Where each page's pointer is: Playwright's mouse has no getter. Dies with the page. */
@@ -353,15 +366,64 @@ async function glide(
   pointers.set(page, to);
 }
 
-/** The wheel, flick by flick, from where the pointer rests. */
-async function wheel(page: Page, dy: number, pace: Pace, random: Random, log: HandsLog) {
+interface WheelOptions {
+  device: ScrollDevice;
+  reading: boolean;
+  over?: Locator | undefined;
+}
+
+/**
+ * The wheel or the trackpad, burst by burst. The pointer first goes where the move should
+ * land: onto `over`, else over the page itself when it rests on a pane that scrolls on its own
+ * (a sidebar, a dialog, an iframe), which would take the wheel instead.
+ */
+async function wheel(
+  page: Page,
+  dy: number,
+  pace: Pace,
+  random: Random,
+  log: HandsLog,
+  o: WheelOptions,
+) {
   if (pace.showPointer) await showOn(page);
+  const box = o.over ? await o.over.boundingBox().catch(() => null) : null;
   const at = await pointerOf(page, random);
-  await page.mouse.move(at.x, at.y);
-  for (const step of wheelPlan(dy, pace.scroll, random)) {
-    await page.mouse.wheel(0, step.dy);
-    log(page, { kind: "scroll", t: Date.now(), dy: step.dy });
+  if (box)
+    await glide(page, aimPoint(box, random), Math.min(box.width, box.height), pace, random, log);
+  else if (await scrollsPage(page, at)) await page.mouse.move(at.x, at.y);
+  else {
+    const view = (await viewOf(page)) ?? { width: 1280, height: 800 };
+    const spot = {
+      x: view.width * (0.3 + random() * 0.4),
+      y: view.height * (0.35 + random() * 0.3),
+    };
+    await glide(page, spot, 160, pace, random, log);
+  }
+  for (const step of scrollPlan(dy, pace.scroll, random, o)) {
+    await page.mouse.wheel(step.dx ?? 0, step.dy);
+    log(page, { kind: "scroll", t: Date.now(), dy: step.dy, ...(step.dx ? { dx: step.dx } : {}) });
     await page.waitForTimeout(step.after);
+  }
+}
+
+/** True when a wheel at `at` scrolls the page: no pane or frame under it that scrolls itself. */
+async function scrollsPage(page: Page, at: Point): Promise<boolean> {
+  try {
+    return await page.evaluate<boolean>(
+      `(({ x, y }) => {
+        let el = document.elementFromPoint(x, y);
+        if (!el) return false;
+        const root = document.scrollingElement;
+        for (; el && el !== root && el !== document.body; el = el.parentElement) {
+          if (el.tagName === "IFRAME") return false;
+          const s = getComputedStyle(el);
+          if (/auto|scroll|overlay/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 1) return false;
+        }
+        return true;
+      })(${JSON.stringify(at)})`,
+    );
+  } catch {
+    return true;
   }
 }
 
@@ -371,7 +433,14 @@ async function wheel(page: Page, dy: number, pace: Pace, random: Random, log: Ha
  * middle band. Too far, or a box that will not settle: the caller's plain
  * scroll finishes it.
  */
-async function wheelTo(target: Locator, o: ActTimeout, pace: Pace, random: Random, log: HandsLog) {
+async function wheelTo(
+  target: Locator,
+  o: ActTimeout,
+  pace: Pace,
+  random: Random,
+  log: HandsLog,
+  device: ScrollDevice,
+) {
   const page = target.page();
   const view = await viewOf(page);
   const box = await target.boundingBox(o).catch(() => null);
@@ -381,7 +450,7 @@ async function wheelTo(target: Locator, o: ActTimeout, pace: Pace, random: Rando
   // Aim it somewhere between a third and a half of the way down.
   const dy = box.y - view.height * (0.33 + random() * 0.17);
   if (Math.abs(dy) > pace.scroll.most) return;
-  await wheel(page, dy, pace, random, log);
+  await wheel(page, dy, pace, random, log, { device, reading: false });
 }
 
 export function handsFor(
@@ -392,6 +461,8 @@ export function handsFor(
 ): Hands {
   if (!pace) return instantHands;
   const key = (page: Page, k: string) => log(page, { kind: "key", t: Date.now(), key: k });
+  // one device a session: a person does not switch between a mouse and a trackpad mid-read
+  const device: ScrollDevice = chance(pace.scroll.trackpad, random) ? "trackpad" : "wheel";
 
   /**
    * A point a person could press: one the control itself shows, not a badge over it (the
@@ -408,7 +479,7 @@ export function handsFor(
   /** Wheel to the control, glide onto it, rest: null when it has no box (no pointer path). */
   const pointAt = async (target: Locator, o: ActTimeout, at?: Point) => {
     const page = target.page();
-    await wheelTo(target, o, pace, random, log).catch(() => undefined);
+    await wheelTo(target, o, pace, random, log, device).catch(() => undefined);
     const box = await target
       .scrollIntoViewIfNeeded(o)
       .then(() => target.boundingBox(o))
@@ -488,7 +559,8 @@ export function handsFor(
       await page.mouse.up();
       log(page, { kind: "up", t: Date.now(), ...end });
     },
-    scroll: (page, dy) => wheel(page, dy, pace, random, log),
+    scroll: (page, dy, so) =>
+      wheel(page, dy, pace, random, log, { device, reading: true, over: so?.over }),
     async type(target, text, o) {
       const page = isPage(target) ? target : target.page();
       // a secret lands in the field found or nowhere (WA-1349)

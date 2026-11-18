@@ -32,6 +32,13 @@ const actionSchema = z.discriminatedUnion("cmd", [
   z.object({ cmd: z.literal("select"), ref, value: z.string(), goal: z.string() }),
   z.object({ cmd: z.literal("press"), ref, key: z.string(), goal: z.string() }),
   z.object({ cmd: z.literal("hover"), ref, goal: z.string() }),
+  /** `ref`: the pane to scroll (a dialog's list), else the page. */
+  z.object({
+    cmd: z.literal("scroll"),
+    dy: z.number().int().min(-20_000).max(20_000),
+    ref: ref.optional(),
+    goal: z.string(),
+  }),
   z.object({
     cmd: z.literal("upload"),
     ref,
@@ -181,6 +188,7 @@ Actions, with "cmd" set to exactly one of these words:
   {"cmd":"select","ref":n,"value":"...","goal":"why"}
   {"cmd":"press","ref":n,"key":"Enter","goal":"why"}
   {"cmd":"hover","ref":n,"goal":"why"}   (the pointer onto it and it stays: a menu that opens on hover, a control that shows on hover, a tooltip)
+  {"cmd":"scroll","dy":800,"goal":"why"}   (wheel the page down by px, minus = up; "ref":n scrolls that pane instead. Acts on a control scroll to it themselves: scroll to read more, or to load more rows)
   {"cmd":"upload","ref":n,"files":["path"],"goal":"why"}   ("file:<name>" for a stored file by its name)
   {"cmd":"open","url":"https://..."}
   {"cmd":"key","key":"Escape"}
@@ -571,6 +579,12 @@ function toCommand(a: Act, page: Digest): ExploreCommand {
   if (a.cmd === "key") return { cmd: "key", key: a.key };
   if (a.cmd === "captcha") return { cmd: "captcha" };
   if (a.cmd === "os") return { cmd: "os", act: a.act };
+  if (a.cmd === "scroll") {
+    if (a.ref === undefined) return { cmd: "scroll", dy: a.dy };
+    const pane = page.refs.find((r) => r.n === a.ref);
+    if (!pane) throw new Error(`ref ${a.ref} is not on the page; refs go 1..${page.refs.length}`);
+    return { cmd: "scroll", dy: a.dy, hints: hintsFor(pane) };
+  }
   if (a.cmd === "records")
     return {
       cmd: "records",

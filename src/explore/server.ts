@@ -108,6 +108,7 @@ import { commandId, SENT_KEEP, withRepeat } from "./wire.js";
 export { type PageChange, pageChange } from "./steer.js";
 export { commandId, withRepeat } from "./wire.js";
 
+import { scrollAndSettle } from "../browser/page-scroll.js";
 import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
 import { desktopAnswer } from "../desktop/answer.js";
 import { desktopHands } from "../desktop/hands.js";
@@ -2443,26 +2444,17 @@ async function serve(
         return { url: page.url() };
       }
       case "scroll": {
-        // the wheel at the view's middle, as a person scrolls a feed
-        const v = page.viewportSize();
-        if (v) await page.mouse.move(v.width / 2, v.height / 2);
-        const y = () =>
-          page.evaluate<number>(
-            "(document.scrollingElement ?? document.documentElement).scrollTop",
-          );
-        const start = await y().catch(() => 0);
-        await hands.scroll(page, c.dy);
-        // smooth wheel scroll lands after the event: wait for it to start, then hold still
-        for (let i = 0, last = start, still = 0; i < 30 && still < 2; i++) {
-          await new Promise((r) => setTimeout(r, 50));
-          const now_ = await y().catch(() => last);
-          // unmoved past 350 ms: at an edge, nothing to wait for
-          still = now_ === last && (now_ !== start || i > 6) ? still + 1 : 0;
-          last = now_;
-        }
-        await settle(page);
-        journal({ kind: "scroll", dy: c.dy });
-        return { url: page.url(), scroll: (await scrollOf(page)) ?? null };
+        // the hands aim the pointer (the pane, else the page's content), then wheel or swipe
+        const over = c.hints ? find({ hints: c.hints }) : undefined;
+        const s = await scrollAndSettle(page, () => hands.scroll(page, c.dy, { over }), {
+          over,
+          settle: () => settle(page),
+        });
+        const row = { dy: c.dy, moved: s.moved, ...(s.loaded ? { loaded: true } : {}) };
+        if (c.hints)
+          journalAct({ hints: c.hints }, (target) => ({ kind: "scroll", ...row, target }));
+        else journal({ kind: "scroll", ...row });
+        return { url: page.url(), ...row, scroll: (await scrollOf(page)) ?? null };
       }
       case "aria": {
         // refs: `[ref=e12]` per line, iframes inline (`f1e3`), for `hints:{ref}`

@@ -802,19 +802,26 @@ describe("explore mode", () => {
     expect((await send({ cmd: "scroll", dy: 0 })).status).toBe(400);
     const got = (await send({ cmd: "scroll", dy: 600 })).body as {
       scroll: { above: number; below: number };
+      moved: number;
       changed: unknown;
     };
+    expect(got.moved).toBeGreaterThan(300);
     expect(got.scroll.above).toBeGreaterThan(300);
     expect(got.scroll.below).toBeGreaterThan(0);
     expect(got).toHaveProperty("changed");
-    const back = (await send({ cmd: "scroll", dy: -2000 })).body as { scroll: { above: number } };
+    const back = (await send({ cmd: "scroll", dy: -2000 })).body as {
+      scroll: { above: number };
+      moved: number;
+    };
     expect(back.scroll.above).toBe(0);
+    // the top came first: it moved back only as far as it had gone
+    expect(back.moved).toBe(-got.moved);
     const { actions } = (await send({ cmd: "journal", last: 2 })).body as {
       actions: Array<Record<string, unknown>>;
     };
     expect(actions).toMatchObject([
-      { kind: "scroll", dy: 600 },
-      { kind: "scroll", dy: -2000 },
+      { kind: "scroll", dy: 600, moved: got.moved },
+      { kind: "scroll", dy: -2000, moved: back.moved },
     ]);
   }, 30_000);
 

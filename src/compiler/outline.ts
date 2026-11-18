@@ -49,6 +49,13 @@ export const opSchema = z.discriminatedUnion("kind", [
   /** One file, a path from the plan or a literal. */
   z.object({ kind: z.literal("upload"), goal: z.string(), hints: hintsSchema, file: valueSchema }),
   z.object({ kind: z.literal("hover"), goal: z.string(), hints: hintsSchema }),
+  /** A wheel by `dy` px that a read after it needs (`src/compiler/scrolls.ts`); `hints`: the pane. */
+  z.object({
+    kind: z.literal("scroll"),
+    goal: z.string(),
+    dy: z.number().int(),
+    hints: hintsSchema.optional(),
+  }),
   /** Text read off an element, kept under `as` in the step's result. */
   z.object({
     kind: z.literal("read"),
@@ -252,7 +259,7 @@ export const outlineSchema = z
       step.ops.forEach((op, j) => {
         if (op.kind === "code")
           for (const f of op.plan) check(`{${f}}`, ["steps", i, "ops", j, "plan"], "code");
-        if (!("hints" in op)) return;
+        if (!("hints" in op) || !op.hints) return;
         for (const k of HINT_TEXTS) {
           const v = op.hints[k];
           if (typeof v === "string") check(v, ["steps", i, "ops", j, "hints", k], `hint ${k}`);

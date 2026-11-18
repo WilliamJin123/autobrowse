@@ -100,8 +100,11 @@ export interface FlowPage {
   waitForUrl(pattern: RegExp | ((url: string) => boolean), timeoutMs: number): Promise<boolean>;
   /** The next page the site opens (an OAuth popup), or null when none comes in time. */
   nextPage(timeoutMs: number): Promise<Page | null>;
-  /** Move the page down about `dy` px with the runner's hands (a feed read). */
-  scroll(dy: number): Promise<void>;
+  /**
+   * Move the page down about `dy` px with the runner's hands (a feed read), then wait until it
+   * holds still. `over`: the pane to scroll (a dialog's list), not the page.
+   */
+  scroll(dy: number, over?: Hints): Promise<void>;
   /** Every page open right now: a card that opened itself is already here, so no event comes. */
   pages(): Page[];
   /** Act on this page from now on (a popup); pass the main page to return. */
@@ -161,7 +164,7 @@ export interface ReadTab {
   read(hints: Hints): Promise<string>;
   has(hints: Hints, withinMs?: number): Promise<boolean>;
   wait(ms: number): Promise<void>;
-  scroll(dy: number): Promise<void>;
+  scroll(dy: number, over?: Hints): Promise<void>;
   /** hover, click or press only; the caller decides it changes the page, not the site. */
   act(op: Op, hints: Hints): Promise<void>;
   close(): Promise<void>;
