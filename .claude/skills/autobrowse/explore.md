@@ -102,7 +102,7 @@ Look:
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
 
 Act (journaled):
-- `{"cmd":"open","url":"https://…"}` — answers `wall` (`kind`, `by`: `url` or `text`) when one is there.
+- `{"cmd":"open","url":"https://…"}` — answers `wall` (`kind`, `by`: `url` or `text`) when one is there. A captcha wall is solved once first; the answer then has `captcha` (`solved`), and `wall` only if it stayed.
 - `{"cmd":"click","hints":{"role":"button","name":"Create"},"goal":"…"}`
 - `{"cmd":"fill","hints":{…},"value":"…"}`, `select`, `press` (`"key":"Enter"`), `hover` (a menu or a control that shows on hover, a tooltip to read), `upload` (`"files":["path"]` or a stored file, below).
 - `{"cmd":"type","text":"…"}`, `{"cmd":"key","key":"Escape"}` — into whatever is focused.
@@ -232,6 +232,7 @@ handed to William. Failure files: `~/.config/autobrowse/artifacts/`.
 Repair rules (a heal runs them too):
 - Classify first. Only a control or extractor that no longer fits the page gets a patch.
 - Empty is not broken. A read that ran and found nothing: check the page by hand, change no code.
-- A sign-in, ban, captcha or 429: a person or a wait. Never patch around it.
+- A sign-in, ban or 429: a person or a wait. Never patch around it.
+- A captcha: `await fp.captcha()` in the flow (as `open` does). Still unsolved: a person.
 - Never loosen a fixture (`expect.json`). Fix the flow until its output holds to it.
 - 3 rounds at most on one flow. Then report what you found.

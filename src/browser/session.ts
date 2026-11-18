@@ -577,7 +577,7 @@ export async function pageHtml(page: Page, limit: number): Promise<string> {
 }
 
 export interface Wall {
-  /** `login` and `challenge` can be solved with credentials and codes; `captcha` still needs a person (or Browserbase). */
+  /** `login` and `challenge`: credentials and codes; `captcha`: the solver (`fp.captcha`), then a person. */
   kind: "login" | "challenge" | "captcha";
   detail: string;
   /** `url`: the URL alone says it (the login page). `text`: the page's words do, a guess. */

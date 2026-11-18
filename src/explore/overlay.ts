@@ -450,6 +450,13 @@ const ISLAND_CSS = [
   ".isl .go{flex:none;padding:3px 12px;border-radius:999px;cursor:pointer;font-weight:600;background:rgb(255 255 255/.12)}",
   ".isl .go.yes,.isl .held .go{background:#f5f5f7;color:#000}",
   ".isl .steer{display:grid;gap:4px}",
+  ".isl .reply{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:6px;padding:0 8px 8px}",
+  ".isl .reply .notes{display:none}",
+  ".isl .reply .say{border-radius:14px;padding:6px 11px}",
+  ".isl .reply .btn{background:transparent;color:rgb(245 245 247/.55)}",
+  ".isl .reply .btn:hover{background:rgb(255 255 255/.1);color:#f5f5f7}",
+  ".isl .reply .btn svg{fill:none;stroke:currentColor;stroke-width:1.75}",
+  ".isl .l2 .q{color:var(--accent);margin-right:6px}",
   ".isl .say{font:inherit;color:#f5f5f7;background:rgb(255 255 255/.08);border:0;border-radius:12px;padding:7px 11px;box-shadow:inset 0 0 0 1px rgb(255 255 255/.06)}",
   ".isl .say::placeholder{color:rgb(245 245 247/.4)}",
   ".isl .say:focus{box-shadow:inset 0 0 0 1.5px var(--accent)}",
@@ -560,7 +567,13 @@ export const panelHtml = (
   itop.append(glyph, lines, ihold);
   const mGoal = el('div', 'slot goal'), mThought = el('div', 'slot thought'), mList = el('div', 'list'), mBox = el('div'), mFoot = el('div', 'foot');
   more.append(mGoal, mThought, mList, mBox, mFoot);
-  iin.append(itop, more);
+  // the reply row: one line to the agent without opening the card; its chevron opens the card
+  const ireply = el('div', 'reply'), iexp = el('span', 'btn');
+  iexp.setAttribute('data-a', 'card');
+  iexp.title = 'Open the panel';
+  ireply.appendChild(iexp);
+  ireply.style.display = 'none';
+  iin.append(itop, ireply, more);
   isl.appendChild(iin);
   const wrap = el('div', 'wrap');
   wrap.append(marks, hands, tab, tui, isl);
@@ -622,13 +635,14 @@ export const panelHtml = (
   say.addEventListener('focus', () => { if (!ui.typing) { ui.typing = true; post({ key: true }); } });
   say.addEventListener('blur', () => { ui.typing = false; post({ key: false }); });
   say.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') say.blur();
+    if (e.key === 'Escape') { say.blur(); if (ui.say) { ui.say = false; ui.paint(); } }
     if (e.key !== 'Enter' || e.isComposing) return;
     const text = say.value.trim();
     if (!text || !ui.s) return;
     say.value = '';
     ui.s.notes = (ui.s.notes || []).concat([{ id: -Date.now(), text, read: false }]);
     post({ note: text });
+    if (ui.say && !ui.open) { ui.say = false; say.blur(); }
     ui.paint();
   });
   // The grip sizes, the bar moves; capture keeps every move on us until the button lifts.
@@ -678,8 +692,14 @@ export const panelHtml = (
     if (act === 'min') { ui.min = !ui.min; ui.enter = ui.min ? 'tab' : 'tui'; if (ui.min) say.blur(); }
     // Pause shows at once; the session's next draw says whether it holds now or after the act.
     else if (act === 'hold') { const on = !ui.s.held; ui.s.held = on ? { since: Date.now(), arming: ui.s.busy } : null; post({ pause: on }); }
-    else if (act === 'look') ui.look = ui.look === 'panel' ? 'term' : ui.look === 'term' ? 'island' : 'panel';
+    else if (act === 'look') ui.say = false, ui.look = ui.look === 'panel' ? 'term' : ui.look === 'term' ? 'island' : 'panel';
+    else if (act === 'open' && island() && !ui.open) {
+      ui.say = !ui.say;
+      // the window takes key first: a window that is not key never focuses a field
+      if (ui.say) { post({ key: true }); setTimeout(() => say.focus(), 30); } else say.blur();
+    }
     else if (act === 'open') { ui.open = !ui.open; if (!ui.open) say.blur(); }
+    else if (act === 'card') { ui.say = false; ui.open = true; }
     else if (act === 'marks') ui.marks = !ui.marks;
     else if (act === 'trace') ui.trace = !ui.trace;
     else if (act === 'theme') ui.theme = dark() ? 'light' : 'dark';
@@ -751,7 +771,9 @@ export const panelHtml = (
     });
     // line 2: the step before, dim
     const last = (ui.rows || []).at(-1);
-    swap(l2, last ? 'r' + last.n : 'none', () => {
+    const pend = (s.notes || []).filter((n) => !n.read).at(-1);
+    swap(l2, pend ? 'n:' + pend.text : last ? 'r' + last.n : 'none', () => {
+      if (pend) { const d = el('span'); d.append(el('span', 'q', 'Queued'), el('span', '', pend.text)); return d; }
       if (!last) return el('span', '', s.goal || 'autobrowse');
       const d = el('span', last.ok ? '' : 'no');
       d.textContent = (last.ok ? '' : 'Failed: ') + last.cmd.charAt(0).toUpperCase() + last.cmd.slice(1) + ' ' + last.what;
@@ -781,6 +803,28 @@ export const panelHtml = (
         { opacity: 0, transform: 'translateY(-6px) scale(.98)' },
         { opacity: 1, transform: 'none' },
       ], { duration: 340, delay: 70, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+    const reply = !!ui.say && !ui.open;
+    const wasReply = ui.wasReply;
+    ui.wasReply = reply;
+    if (reply) {
+      ui.replyOut?.cancel();
+      ui.replyOut = null;
+      if (!iexp.firstChild) iexp.appendChild(icon(ICONS.chevron));
+      if (steer.parentNode !== ireply) ireply.insertBefore(steer, iexp);
+      say.placeholder = s.held && !s.held.arming ? 'Tell the agent · Enter resumes' : 'Tell the agent…';
+      ireply.style.display = '';
+      if (!wasReply && !still() && !isl.classList.contains('still'))
+        ireply.animate([
+          { opacity: 0, transform: 'translateY(-6px) scale(.98)' },
+          { opacity: 1, transform: 'none' },
+        ], { duration: 300, delay: 60, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+    } else if (wasReply && !still() && ireply.style.display !== 'none') {
+      ui.replyOut = ireply.animate([
+        { opacity: 1, transform: 'none' },
+        { opacity: 0, transform: 'scale(.97)' },
+      ], { duration: 140, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+      ui.replyOut.onfinish = () => { const a = ui.replyOut; ui.replyOut = null; if (!ui.wasReply) { ireply.style.display = 'none'; fit(); } a?.cancel(); };
+    } else if (!ui.replyOut) ireply.style.display = reply ? '' : 'none';
     if (ui.open) {
       swap(mGoal, 'g:' + (s.goal || ''), () => s.goal ? el('span', '', s.goal) : null);
       swap(mThought, 't:' + (s.thought || ''), () => s.thought ? el('span', '', s.thought) : null);

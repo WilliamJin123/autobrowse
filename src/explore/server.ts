@@ -2288,7 +2288,7 @@ async function serve(
       case "open": {
         // Through the runner: a wall its URL shows (the login page) is signed through. One only
         // the text suggests comes back as the wall, with the site's sign-in tool: the agent judges.
-        // A captcha comes back too: a checkbox one is clicked like any control, a puzzle goes to a person.
+        // A captcha wall: solved here once (a checkbox by a human click, a picture by the eyes); unsolved, it comes back.
         if (opts.allowHosts && !urlAllowed(c.url, opts.allowHosts)) throw outsideSession(c.url);
         try {
           // An agent at the console picks the account: open never signs in; the wall lists them.
@@ -2301,10 +2301,23 @@ async function serve(
         // `open` goes to the main page: the tabs earlier steps opened are behind it now.
         page = fp.page;
         const closedTabs = await closeStepTabs();
+        let wall = await looksLikeWall(page);
+        let captcha: Awaited<ReturnType<typeof fp.captcha>> | undefined;
+        if (wall?.kind === "captcha") {
+          captcha = await fp.captcha();
+          page = fp.page;
+          if (captcha.solved) {
+            journal({ kind: "note", text: "solved a captcha here: `await fp.captcha()`" });
+            // Cloudflare reloads the page once the box is ticked
+            await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+          }
+          wall = await looksLikeWall(page);
+        }
         return {
           url: page.url(),
           ...(closedTabs ? { closedTabs } : {}),
-          wall: await withAccounts(wallAnswer(await looksLikeWall(page), page.url())),
+          ...(captcha ? { captcha } : {}),
+          wall: await withAccounts(wallAnswer(wall, page.url())),
         };
       }
       case "click": {
