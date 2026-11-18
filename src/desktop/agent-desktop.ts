@@ -308,8 +308,9 @@ export function agentDesktop(
     async click(ref, mode) {
       await call(["click", ref, ...headedFlag(mode)]);
     },
-    async type(ref, text, mode) {
-      const spacing = mode === "headed" ? ["--interval-ms", String(opts.typeIntervalMs ?? 40)] : [];
+    async type(ref, text, mode, intervalMs) {
+      const every = intervalMs ?? opts.typeIntervalMs ?? 40;
+      const spacing = mode === "headed" ? ["--interval-ms", String(every)] : [];
       await call(["type", ref, "--stdin", ...spacing, ...headedFlag(mode)], text);
     },
     async press(combo, where, mode) {

@@ -189,7 +189,8 @@ export interface Desktop {
   /** A ref's screen rect, points; null when the control is gone. Optional: the overlay aims with it. */
   bounds?(ref: string): Promise<Bounds | null>;
   click(ref: string, mode?: InputMode): Promise<void>;
-  type(ref: string, text: string, mode?: InputMode): Promise<void>;
+  /** `intervalMs`: headed, one key per interval (agent-desktop `--interval-ms`). */
+  type(ref: string, text: string, mode?: InputMode, intervalMs?: number): Promise<void>;
   press(
     combo: string,
     where?: { windowId?: string; app?: string },
@@ -262,7 +263,14 @@ export interface FakeWindow extends DesktopWindow {
 /** One engine call the fake saw; typed text kept so tests can check secrets went by stdin. */
 export type FakeCall =
   | { call: "click"; windowId: string; node: string; mode: InputMode }
-  | { call: "type"; windowId: string; node: string; text: string; mode: InputMode }
+  | {
+      call: "type";
+      windowId: string;
+      node: string;
+      text: string;
+      mode: InputMode;
+      intervalMs?: number;
+    }
   | { call: "press"; combo: string; windowId?: string; app?: string; mode: InputMode }
   | { call: "launch"; app: string; fresh: boolean }
   | { call: "focusWindow"; windowId: string }
@@ -374,10 +382,17 @@ export function fakeDesktop(windows: FakeWindow[] = [], o: FakeDesktopOptions = 
       refuseHeadless(w, mode);
       calls.push({ call: "click", windowId: w, node: win(w).nodes[i]?.name ?? "", mode });
     },
-    async type(ref, text, mode = "headless") {
+    async type(ref, text, mode = "headless", intervalMs) {
       const [w, i] = deref(ref);
       refuseHeadless(w, mode);
-      calls.push({ call: "type", windowId: w, node: win(w).nodes[i]?.name ?? "", text, mode });
+      calls.push({
+        call: "type",
+        windowId: w,
+        node: win(w).nodes[i]?.name ?? "",
+        text,
+        mode,
+        ...(intervalMs ? { intervalMs } : {}),
+      });
     },
     async press(combo, where, mode = "headless") {
       calls.push({

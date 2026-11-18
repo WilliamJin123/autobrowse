@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seeded } from "../src/browser/human/draw.js";
-import { desktopHands, IDLE_MS, keyOf } from "../src/desktop/hands.js";
+import { desktopHands, IDLE_MS, keyOf, RUN_INTERVAL_MS } from "../src/desktop/hands.js";
 import { type FakeCall, fakeDesktop, fakeWindow } from "../src/desktop/types.js";
 
 const claude = () => fakeWindow("w-1", "Claude", "Claude", [["textfield", "Prompt"]]);
@@ -15,11 +15,12 @@ const clock = () => {
   };
 };
 
-/** What the presses leave in the box: chars by their combos, Backspace erases. */
+/** What the runs and presses leave in the box: chars by their combos, Backspace erases. */
 function typed(calls: FakeCall[], text: string): string {
   const back = new Map([...text].map((ch) => [keyOf(ch), ch]));
   let out = "";
   for (const c of calls) {
+    if (c.call === "type") for (const ch of c.text) out = ch === "\b" ? out.slice(0, -1) : out + ch;
     if (c.call !== "press") continue;
     out = c.combo === "backspace" ? out.slice(0, -1) : out + (back.get(c.combo) ?? "?");
   }
@@ -44,51 +45,41 @@ describe("keyOf", () => {
 });
 
 describe("focus lease", () => {
-  it("types human key by key, headed, to the window; the journal keeps human", async () => {
+  it("types human in runs at the film pace, headed, to the field; the journal keeps human", async () => {
     const d = fakeDesktop([claude()], { focusedId: undefined });
     const h = desktopHands(d, { ...clock(), random: seeded(7) });
     await h.act({ op: "snapshot", window: "w-1" });
     const text = "Use autobrowse to post on X, ~/Movies/post.txt word for word.";
     const r = await h.act({ op: "type", ref: "@s1:e1", text, human: true });
     expect(r.op).toMatchObject({ op: "type", human: true, headed: true, text });
-    const presses = d.calls.filter((c) => c.call === "press");
-    expect(presses.every((c) => c.mode === "headed" && c.windowId === "w-1")).toBe(true);
-    expect(d.calls.some((c) => c.call === "type")).toBe(false);
+    const input = d.calls.filter((c) => c.call === "press" || c.call === "type");
+    expect(input.every((c) => c.mode === "headed" && c.windowId === "w-1")).toBe(true);
+    const runs = input.filter((c) => c.call === "type");
+    expect(runs.length).toBeGreaterThan(1);
+    expect(runs.length).toBeLessThan(text.length / 2); // words, not keys
+    expect(runs.every((c) => c.intervalMs === RUN_INTERVAL_MS)).toBe(true);
     expect(typed(d.calls, text)).toBe(text);
   });
 
-  it("stops when the person takes focus, waits for them, goes on from the same key", async () => {
+  it("stops when the person takes focus, waits for them, goes on from the same run", async () => {
     const d = fakeDesktop([claude(), term()]);
-    const press = d.press.bind(d);
-    const seenFront: string[] = [];
+    const type = d.type.bind(d);
     let n = 0;
-    d.press = async (combo, where, mode) => {
-      seenFront.push(d.windowsList.find((w) => w.pid === claude().pid) ? "ok" : "?");
-      await press(combo, where, mode);
-      if (++n === 5) d.focus("w-2"); // the person clicks their terminal
-    };
-    const front: string[] = [];
-    const frontPid = d.frontPid?.bind(d);
-    d.frontPid = async () => {
-      const pid = (await frontPid?.()) ?? null;
-      front.push(pid === claude().pid ? "claude" : "other");
-      return pid;
+    d.type = async (ref, text, mode, every) => {
+      await type(ref, text, mode, every);
+      if (++n === 2) d.focus("w-2"); // the person clicks their terminal
     };
     const h = desktopHands(d, { ...clock(), random: seeded(3) });
     await h.act({ op: "snapshot", window: "w-1" });
-    const text = "make it shorter";
+    const text = "make it way shorter and to the point";
     await h.act({ op: "type", ref: "@s1:e1", text, human: true });
     expect(typed(d.calls, text)).toBe(text);
-    // the key after the switch waited: focus was taken again before any press
-    const i = d.calls.findIndex(
-      (c, j) =>
-        j > 0 &&
-        c.call === "focusWindow" &&
-        c.windowId === "w-1" &&
-        d.calls.slice(0, j).filter((x) => x.call === "press").length === 5,
+    const runsBefore = (j: number) => d.calls.slice(0, j).filter((x) => x.call === "type").length;
+    const back = d.calls.findIndex(
+      (c, j) => c.call === "focusWindow" && c.windowId === "w-1" && runsBefore(j) === 2,
     );
-    expect(i).toBeGreaterThan(0);
-    expect(front).toContain("other");
+    expect(back).toBeGreaterThan(0);
+    expect(d.calls.slice(back).some((c) => c.call === "type")).toBe(true);
   });
 
   it("waits until the person is idle before taking focus", async () => {
@@ -107,7 +98,7 @@ describe("focus lease", () => {
     await expect(h.act({ op: "type", ref: "@s1:e1", text: "hi", human: true })).rejects.toThrow(
       /nothing was sent/,
     );
-    expect(d.calls.filter((c) => c.call === "press")).toEqual([]);
+    expect(d.calls.filter((c) => c.call === "press" || c.call === "type")).toEqual([]);
   });
 
   it("gives focus back to the app that had it", async () => {
@@ -122,7 +113,7 @@ describe("focus lease", () => {
     const h2 = desktopHands(kept, { ...clock(), random: seeded(1), giveFocusBack: false });
     await h2.act({ op: "snapshot", window: "w-1" });
     await h2.act({ op: "type", ref: "@s1:e1", text: "ok", human: true });
-    expect(kept.calls.at(-1)?.call).toBe("press");
+    expect(kept.calls.at(-1)?.call).toBe("type");
   });
 
   it("refuses keys sent from a shell, and human with a secret", async () => {

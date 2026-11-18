@@ -71,6 +71,10 @@ const FOCUS_SETTLE_MS = 150;
 const IDLE_WAIT_MS = 120_000;
 /** Most times the person may take focus back during one act. */
 const MAX_TAKEBACKS = 20;
+/** Human typing on film: a key every 35 ms inside a run, a run ends at a plan pause past 250 ms. */
+export const RUN_INTERVAL_MS = 35;
+const RUN_BREAK_MS = 250;
+const MAX_PAUSE_MS = 300;
 
 /** Headless input the target refused, nothing sent: a terminal, or a key to a window not in front. */
 const refused = (e: unknown): boolean => {
@@ -239,13 +243,32 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
   }
 
   /**
-   * Key by key from `typingPlan`, each key checked in front first. The person takes focus:
-   * stop, wait until they are idle, take it again, go on from the same key.
+   * `typingPlan` played in runs: keys between the plan's pauses go in one headed `type` at
+   * RUN_INTERVAL_MS a key, typo fixes inside the run (one call per key cost ~250 ms, and a
+   * press after a run was lost once live). Return is a single press. Front app checked before each run; the person takes focus:
+   * wait until they are idle, take it again, go on from the same run.
    */
   async function typeHuman(w: DesktopWindow, ref: string | null, text: string): Promise<void> {
     for (const ch of text) keyOf(ch); // every key known before focus moves
     const plan = typingPlan(text, HUMAN_PACE.typing, o.random ?? seeded(freshSeed()));
-    const keys = plan.map((k) => ({ ...k, combo: k.ch === BACKSPACE ? "backspace" : keyOf(k.ch) }));
+    const runs: { text?: string; combo?: string; after: number }[] = [];
+    let open: { text: string; after: number } | null = null;
+    for (const k of plan) {
+      const pause = Math.min(k.after, MAX_PAUSE_MS);
+      if (k.ch === "\n") {
+        // Return in a run would send a chat prompt: shift+return, alone
+        open = null;
+        runs.push({ combo: keyOf(k.ch), after: pause });
+        continue;
+      }
+      if (!open) {
+        open = { text: "", after: 0 };
+        runs.push(open);
+      }
+      open.text += k.ch === BACKSPACE ? "\b" : k.ch; // agent-desktop types \b as Backspace (live)
+      open.after = pause;
+      if (k.after >= RUN_BREAK_MS) open = null;
+    }
     let takebacks = 0;
     const takenBack = async () => {
       if (++takebacks > MAX_TAKEBACKS)
@@ -255,23 +278,27 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
     };
     await lease(w, async () => {
       if (ref) await d.click(ref, "headed");
-      for (let i = 0; i < keys.length; ) {
+      const target = ref ?? (await d.focused(w.id));
+      for (let i = 0; i < runs.length; ) {
         if ((await frontPid()) !== w.pid) {
           await takenBack();
           continue;
         }
-        const k = keys[i] as (typeof keys)[number];
-        const t0 = now();
+        const r = runs[i] as (typeof runs)[number];
         try {
-          await d.press(k.combo, { windowId: w.id }, "headed");
+          if (r.text !== undefined && target)
+            await d.type(target, r.text, "headed", RUN_INTERVAL_MS);
+          else if (r.text !== undefined)
+            for (const ch of r.text) await d.press(keyOf(ch), { windowId: w.id }, "headed");
+          else await d.press(r.combo as string, { windowId: w.id }, "headed");
         } catch (e) {
-          // agent-desktop checks focus per key; a refusal sent nothing, so the same key goes again
+          // a refusal before the first key sent nothing: the same run goes again
           if (!refused(e)) throw e;
           await takenBack();
           continue;
         }
         i++;
-        await sleep(Math.max(0, k.hold + k.after - (now() - t0)));
+        await sleep(r.after);
       }
     });
   }
