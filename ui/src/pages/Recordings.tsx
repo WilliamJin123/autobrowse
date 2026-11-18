@@ -151,6 +151,8 @@ function Actions({ rec }: { rec: Recording }) {
         return `press ${a.key}`;
       case "hover":
         return `hover over ${a.target.name ?? a.target.text ?? a.target.tag}`;
+      case "scroll":
+        return `scroll ${a.dy > 0 ? "down" : "up"} ${Math.abs(a.dy)} px`;
       case "upload":
         return `upload ${a.files.map((f) => f.split("/").pop()).join(", ")} to ${a.target.name ?? a.target.tag}`;
       case "submit":
