@@ -197,6 +197,7 @@ export async function startDesktopSession(opts: DesktopSessionOptions): Promise<
   const overlay = overlayFor<WindowHandle>(opts.overlay ?? true, {
     surface,
     prefs: SCREEN_PREFS,
+    tray: true,
     ...opts.overlayDeps,
   });
   overlay.who(opts.name);

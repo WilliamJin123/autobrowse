@@ -637,7 +637,10 @@ async function serve(
   // A film stays clean: its rows go to the pane json.
   const overlay = overlayFor(
     opts.overlay ?? (opts.browser.headless === false && !opts.browser.film),
-    opts.overlayDeps,
+    {
+      tray: opts.browser.headless === false,
+      ...opts.overlayDeps,
+    },
   );
   // A new document wipes the layer: the panel comes back on it.
   page.on("load", (p) => void overlay.loaded(p));

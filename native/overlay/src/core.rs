@@ -1,7 +1,9 @@
 //! The OS-free half: protocol, panel state, follow and pointer logic. Ported from host.swift.
 //! in:  {t:"html",html} {t:"js",js} {t:"target",pid,x,y,w,h,screen?} {t:"view",outerW,outerH,innerW,innerH,dpr} {t:"hide"} {t:"show"}
+//!      {t:"tray",held,shown}: the menu bar item's state (macOS; a no-op elsewhere)
 //! ipc: the panel's postMessage; `rect` sets the hit box, `key` takes or gives back key
 //! out: {t:"ready"} {t:"found"} {t:"lost"} {t:"moved"} {t:"js",...} (the panel's postMessage, less `rect`)
+//!      the menu bar item and ⌃⌥P: {t:"js",pause} (as the panel's Pause), {t:"overlay",on}
 use serde_json::{Map, Value, json};
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};
@@ -49,6 +51,8 @@ pub trait Os {
     fn ignore(&mut self, on: bool);
     /// Take key (the note box types) or give it back to `pid`'s window.
     fn key(&mut self, _on: bool, _pid: u32) {}
+    /// The menu bar item and its global key: Pause/Resume works with the panel hidden.
+    fn tray(&mut self, _held: bool, _shown: bool) {}
 }
 
 pub fn emit(v: &Value) {
@@ -224,6 +228,10 @@ impl<O: Os> Host<O> {
             Some("show") => {
                 self.shown = true;
                 self.place();
+            }
+            Some("tray") => {
+                let on = |k: &str| o.get(k).and_then(Value::as_bool).unwrap_or(false);
+                self.os.tray(on("held"), on("shown"));
             }
             _ => {}
         }

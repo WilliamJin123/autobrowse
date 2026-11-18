@@ -831,6 +831,43 @@ describe("headed overlay, out of the page", () => {
     }
   });
 
+  it("off with the tray: a hidden host; its menu bar item pauses and shows the overlay", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(false, {
+        prefs: { look: "panel" },
+        host: h.factory,
+        geometry: geo(),
+        tray: true,
+      });
+      const got: Steer[] = [];
+      o.onSteer((s) => got.push(s));
+      expect(await o.set(page, { goal: "save the form" })).toEqual({ drawn: false });
+      await expect.poll(() => h.made).toBe(1);
+      await expect
+        .poll(() => h.sent.find((m) => m.t === "tray"))
+        .toEqual({ t: "tray", held: false, shown: false });
+      // hidden: no place, no draw
+      expect(h.sent.some((m) => m.t === "hide")).toBe(true);
+      expect(h.sent.some((m) => m.t === "target" || m.t === "js")).toBe(false);
+      h.emit({ t: "js", pause: true });
+      expect(got).toEqual([{ pause: true }]);
+      await o.held(page, { since: Date.now(), arming: false });
+      expect(h.sent.at(-1)).toEqual({ t: "tray", held: true, shown: false });
+      // Show overlay from the menu
+      h.emit({ t: "overlay", on: true });
+      await expect.poll(() => o.enabled).toBe(true);
+      expect(h.sent).toContainEqual({ t: "tray", held: true, shown: true });
+      expect(h.sent).toContainEqual({ t: "show" });
+      await expect.poll(() => h.sent.some((m) => m.t === "js")).toBe(true);
+      expect(h.made).toBe(1);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("off, no window is made; no host for the platform, set says why", async () => {
     const browser = await chromium.launch();
     try {

@@ -2,14 +2,17 @@
 //! for Chrome's window. No tao: its launch calls activateIgnoringOtherApps, which blurs the page.
 //! Memory: every AppKit/CF object is a Retained/CFRetained (released on drop); each event runs
 //! in an autorelease pool.
+//! The menu bar item (Pause/Resume, Show/Hide overlay) and ⌃⌥P: pause with the panel hidden.
 use crate::core::{Ev, Host, Os, Rect, builder, emit, read_stdin};
 use dispatch2::DispatchQueue;
 use objc2::rc::{Retained, autoreleasepool};
-use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::runtime::{AnyObject, NSObject, Sel};
+use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy,
-    NSBackingStoreType, NSColor, NSEvent, NSPanel, NSRunningApplication, NSScreen,
-    NSWindowCollectionBehavior, NSWindowOrderingMode, NSWindowStyleMask,
+    NSBackingStoreType, NSColor, NSEvent, NSEventModifierFlags, NSImage, NSMenu, NSMenuItem,
+    NSPanel, NSRunningApplication, NSScreen, NSStatusBar, NSStatusItem, NSWindowCollectionBehavior,
+    NSWindowOrderingMode, NSWindowStyleMask,
 };
 use objc2_core_foundation::{CFBoolean, CFDictionary, CFNumber, CFRetained, CFString, CFType};
 use objc2_core_graphics::{
@@ -17,12 +20,13 @@ use objc2_core_graphics::{
     kCGWindowBounds, kCGWindowIsOnscreen, kCGWindowLayer, kCGWindowNumber, kCGWindowOwnerName,
     kCGWindowOwnerPID,
 };
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{
     AppKitWindowHandle, HandleError, HasWindowHandle, RawWindowHandle, WindowHandle,
 };
 use serde_json::json;
 use std::cell::RefCell;
+use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -79,6 +83,226 @@ impl HasWindowHandle for ViewHandle {
         let raw = RawWindowHandle::AppKit(AppKitWindowHandle::new(self.0));
         // the view outlives the handle: both live through `run`'s build call
         Ok(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+}
+
+define_class!(
+    // the menu items' target; both post as the panel's own buttons would
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AutobrowseTrayTarget"]
+    struct TrayTarget;
+
+    impl TrayTarget {
+        #[unsafe(method(pause:))]
+        fn pause(&self, _sender: Option<&AnyObject>) {
+            tray_pause();
+        }
+
+        #[unsafe(method(overlay:))]
+        fn overlay(&self, _sender: Option<&AnyObject>) {
+            let on = !SHOWN.fetch_xor(true, Ordering::AcqRel);
+            emit(&json!({"t": "overlay", "on": on}));
+            repaint();
+        }
+    }
+);
+
+/// the session's last word: paused (or arming), and the panel shown
+static HELD: AtomicBool = AtomicBool::new(false);
+static SHOWN: AtomicBool = AtomicBool::new(true);
+
+/// Flipped at once: a second press before the session answers flips it back (the panel does the same).
+fn tray_pause() {
+    let on = !HELD.fetch_xor(true, Ordering::AcqRel);
+    emit(&json!({"t": "js", "pause": on}));
+    repaint();
+}
+
+thread_local! {
+    // apart from HOST: menu and hot key handlers run while HOST may be borrowed
+    static TRAY: RefCell<Option<Tray>> = const { RefCell::new(None) };
+}
+
+/// labels follow the flip at once, not the session's answer
+fn repaint() {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    TRAY.with(|t| {
+        if let Ok(t) = t.try_borrow()
+            && let Some(t) = &*t
+        {
+            t.set(
+                mtm,
+                HELD.load(Ordering::Acquire),
+                SHOWN.load(Ordering::Acquire),
+            );
+        }
+    });
+}
+
+fn item(
+    mtm: MainThreadMarker,
+    title: &str,
+    action: Option<Sel>,
+    key: &str,
+) -> Retained<NSMenuItem> {
+    unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &NSString::from_str(title),
+            action,
+            &NSString::from_str(key),
+        )
+    }
+}
+
+/// SF Symbol as a template: the menu bar tints it for light, dark and the active state.
+fn symbol(name: &str) -> Option<Retained<NSImage>> {
+    let img = NSImage::imageWithSystemSymbolName_accessibilityDescription(
+        &NSString::from_str(name),
+        Some(&NSString::from_str("autobrowse")),
+    )?;
+    img.setTemplate(true);
+    Some(img)
+}
+
+struct Tray {
+    item: Retained<NSStatusItem>,
+    pause: Retained<NSMenuItem>,
+    show: Retained<NSMenuItem>,
+    /// menu items hold their target weakly
+    _target: Retained<TrayTarget>,
+}
+
+impl Tray {
+    fn new(mtm: MainThreadMarker) -> Self {
+        let target: Retained<TrayTarget> = unsafe { msg_send![TrayTarget::alloc(mtm), init] };
+        // NSVariableStatusItemLength
+        let it = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
+        let menu = NSMenu::new(mtm);
+        menu.setAutoenablesItems(false);
+        let head = item(mtm, "autobrowse", None, "");
+        head.setEnabled(false);
+        // shown beside the item; the key itself is Carbon's (hotkey), so it works from any app
+        let pause = item(mtm, "Pause the agent", Some(sel!(pause:)), "p");
+        pause.setKeyEquivalentModifierMask(
+            NSEventModifierFlags::Control | NSEventModifierFlags::Option,
+        );
+        let show = item(mtm, "Hide overlay", Some(sel!(overlay:)), "");
+        unsafe {
+            pause.setTarget(Some(&target));
+            show.setTarget(Some(&target));
+        }
+        menu.addItem(&head);
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        menu.addItem(&pause);
+        menu.addItem(&show);
+        it.setMenu(Some(&menu));
+        hotkey();
+        Tray {
+            item: it,
+            pause,
+            show,
+            _target: target,
+        }
+    }
+
+    fn set(&self, mtm: MainThreadMarker, held: bool, shown: bool) {
+        if let Some(b) = self.item.button(mtm) {
+            b.setImage(
+                symbol(if held {
+                    "play.circle.fill"
+                } else {
+                    "pause.circle"
+                })
+                .as_deref(),
+            );
+            b.setToolTip(Some(&NSString::from_str(if held {
+                "autobrowse is paused (⌃⌥P resumes)"
+            } else {
+                "autobrowse (⌃⌥P pauses)"
+            })));
+        }
+        self.pause.setTitle(&NSString::from_str(if held {
+            "Resume the agent"
+        } else {
+            "Pause the agent"
+        }));
+        self.show.setTitle(&NSString::from_str(if shown {
+            "Hide overlay"
+        } else {
+            "Show overlay"
+        }));
+    }
+}
+
+#[repr(C)]
+struct EventTypeSpec {
+    class: u32,
+    kind: u32,
+}
+
+#[repr(C)]
+struct EventHotKeyID {
+    signature: u32,
+    id: u32,
+}
+
+type CarbonHandler = extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> i32;
+
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn GetApplicationEventTarget() -> *mut c_void;
+    fn InstallEventHandler(
+        target: *mut c_void,
+        handler: CarbonHandler,
+        n: u32,
+        list: *const EventTypeSpec,
+        user: *mut c_void,
+        out: *mut *mut c_void,
+    ) -> i32;
+    fn RegisterEventHotKey(
+        code: u32,
+        mods: u32,
+        id: EventHotKeyID,
+        target: *mut c_void,
+        options: u32,
+        out: *mut *mut c_void,
+    ) -> i32;
+}
+
+extern "C" fn on_hotkey(_: *mut c_void, _: *mut c_void, _: *mut c_void) -> i32 {
+    tray_pause();
+    0
+}
+
+/// ⌃⌥P from any app. Carbon's hot key, not an NSEvent global monitor: that one needs the Accessibility grant.
+fn hotkey() {
+    const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb"); // kEventClassKeyboard
+    const PRESSED: u32 = 5; // kEventHotKeyPressed
+    const KEY_P: u32 = 35; // kVK_ANSI_P
+    const MODS: u32 = 0x1000 | 0x0800; // controlKey | optionKey
+    unsafe {
+        let target = GetApplicationEventTarget();
+        let spec = EventTypeSpec {
+            class: KEYBOARD,
+            kind: PRESSED,
+        };
+        let (mut h, mut k) = (std::ptr::null_mut(), std::ptr::null_mut());
+        if InstallEventHandler(target, on_hotkey, 1, &spec, std::ptr::null_mut(), &mut h) != 0 {
+            eprintln!("the overlay host has no ⌃⌥P: InstallEventHandler failed");
+            return;
+        }
+        let id = EventHotKeyID {
+            signature: u32::from_be_bytes(*b"abrw"),
+            id: 1,
+        };
+        // a second session's host gets an error here: the first one's key stands
+        if RegisterEventHotKey(KEY_P, MODS, id, target, 0, &mut k) != 0 {
+            eprintln!("the overlay host has no ⌃⌥P: another session holds it");
+        }
     }
 }
 
@@ -277,6 +501,17 @@ impl Os for Mac {
             #[allow(deprecated)]
             app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
         }
+    }
+
+    fn tray(&mut self, held: bool, shown: bool) {
+        HELD.store(held, Ordering::Release);
+        SHOWN.store(shown, Ordering::Release);
+        let mtm = self.mtm;
+        TRAY.with(|t| {
+            t.borrow_mut()
+                .get_or_insert_with(|| Tray::new(mtm))
+                .set(mtm, held, shown);
+        });
     }
 }
 

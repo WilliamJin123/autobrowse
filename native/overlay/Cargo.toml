@@ -13,10 +13,11 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 dispatch2 = "0.3"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std", "libc", "objc2-core-foundation", "NSApplication", "NSRunningApplication", "NSColor", "NSEvent",
   "NSGraphics", "NSPanel", "NSResponder", "NSScreen", "NSView", "NSWindow",
+  "NSButton", "NSControl", "NSImage", "NSMenu", "NSMenuItem", "NSStatusBar", "NSStatusBarButton", "NSStatusItem",
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
   "std", "CFArray", "CFDictionary", "CFNumber", "CFString", "CFCGTypes",

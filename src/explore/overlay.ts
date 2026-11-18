@@ -1252,6 +1252,8 @@ export interface OverlayDeps<S = Page> {
   geometry?: (s: S) => Promise<Geometry | null>;
   /** The panel's first prefs, over the defaults (a screen overlay: `corner: "right"`). */
   prefs?: Partial<Prefs>;
+  /** Open the host with the overlay off too: its menu bar item pauses (headed sessions only). */
+  tray?: boolean;
 }
 
 /** One session's overlay; `enabled` false makes every call a no-op. */
@@ -1322,7 +1324,11 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     done(yes);
   };
 
+  /** The menu bar item (macOS): Pause/Resume and Show/Hide; it outlives overlay off. */
+  const tray = () => host?.send({ t: "tray", held: state.held !== null, shown: enabled });
   const onEvent = (e: HostEvent) => {
+    // the menu bar item's Show/Hide overlay
+    if (e.t === "overlay" && typeof e.on === "boolean" && followed) void toggle(followed, e.on);
     const a = e.t === "js" ? (e.answer as { id?: unknown; yes?: unknown } | undefined) : undefined;
     if (a && typeof a.id === "number") answered(a.id, a.yes === true);
     if (e.t === "js" && typeof e.pause === "boolean") steered({ pause: e.pause });
@@ -1356,6 +1362,7 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
         // toggled off while it started: that `hide` found no host
         if (!enabled) h.send({ t: "hide" });
         h.send({ t: "html", html: panelHtml(prefs) });
+        tray();
       }
       return h;
     });
@@ -1390,9 +1397,8 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     host.send({ t: "view", ...g.view });
     dpr = g.view.dpr;
   };
-  /** Each draw sends the state and the rows the window lacks. */
-  const paint = async (page: S): Promise<boolean> => {
-    // before the host starts: a context closed meanwhile still ends it
+  /** Watch this page's window; before the host starts, so a context closed meanwhile still ends it. */
+  const follow = (page: S) => {
     if (followed !== page) {
       if (followed) surface.watch(followed, null);
       followed = page;
@@ -1406,6 +1412,10 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
         close,
       );
     }
+  };
+  /** Each draw sends the state and the rows the window lacks. */
+  const paint = async (page: S): Promise<boolean> => {
+    follow(page);
     const h = await open();
     if (!h) return false;
     await place(page);
@@ -1426,12 +1436,34 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     sentN = last;
     return true;
   };
+  /** Off: a hidden host all the same, so the menu bar item still pauses. */
+  const arm = (page: S) => {
+    if (!deps.tray) return;
+    follow(page);
+    void open();
+  };
   const draw = async (page: S): Promise<boolean> => {
-    if (!enabled) return false;
+    if (!enabled) {
+      arm(page);
+      return false;
+    }
     drawn = await paint(page);
     return drawn;
   };
   const boxOf = (page: S, hints: Hints): Promise<Box | null> => surface.box(page, hints);
+  /** On or off at any time; off hides the window and keeps the trace for when it comes back. */
+  const toggle = async (page: S, on: boolean): Promise<{ drawn: boolean; why?: string }> => {
+    enabled = on;
+    tray();
+    if (!on) {
+      host?.send({ t: "hide" });
+      drawn = false;
+      return { drawn: false };
+    }
+    host?.send({ t: "show" });
+    const ok = await draw(page);
+    return ok ? { drawn: true } : { drawn: false, ...(why ? { why } : {}) };
+  };
   return {
     get enabled() {
       return enabled;
@@ -1444,18 +1476,7 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     get why() {
       return why;
     },
-    /** On or off at any time; off hides the window and keeps the trace for when it comes back. */
-    async toggle(page: S, on: boolean): Promise<{ drawn: boolean; why?: string }> {
-      enabled = on;
-      if (!on) {
-        host?.send({ t: "hide" });
-        drawn = false;
-        return { drawn: false };
-      }
-      host?.send({ t: "show" });
-      const ok = await draw(page);
-      return ok ? { drawn: true } : { drawn: false, ...(why ? { why } : {}) };
-    },
+    toggle,
     /** Panel fields from a caller (the agent's goal, step, thought); `refs` boxes the outline's controls. */
     async set(
       page: S,
@@ -1468,7 +1489,10 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
         open?: boolean | undefined;
       },
     ): Promise<{ drawn: boolean; boxes?: number; why?: string }> {
-      if (!enabled) return { drawn: false };
+      if (!enabled) {
+        arm(page);
+        return { drawn: false };
+      }
       const { refs, clear, open: expand, ...fields } = patch;
       if (clear)
         state = {
@@ -1510,7 +1534,7 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     },
     /** A command starts: the busy line runs its phase words. */
     async begin(page: S, cmd?: string): Promise<void> {
-      if (!enabled) return;
+      if (!enabled) return arm(page);
       running++;
       state.busy = true;
       state.cmd = cmd ?? null;
@@ -1614,7 +1638,8 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     /** Paused by the person, arming (stops after the running command), or null: running. */
     async held(page: S, h: OverlayState["held"]): Promise<void> {
       state.held = h;
-      if (enabled && drawn) await draw(page);
+      tray();
+      if (!enabled || drawn) await draw(page);
     },
     /** The notes no answer carried yet; now marked Read (drawn with the next change). */
     takeNotes(): string[] {
