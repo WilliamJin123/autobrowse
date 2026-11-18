@@ -2450,7 +2450,11 @@ async function serve(
           over,
           settle: () => settle(page),
         });
-        const row = { dy: c.dy, moved: s.moved, ...(s.loaded ? { loaded: true } : {}) };
+        const row = {
+          dy: c.dy,
+          ...(s.moved !== null ? { moved: s.moved } : {}),
+          ...(s.loaded ? { loaded: true } : {}),
+        };
         if (c.hints)
           journalAct({ hints: c.hints }, (target) => ({ kind: "scroll", ...row, target }));
         else journal({ kind: "scroll", ...row });

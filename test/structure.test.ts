@@ -71,6 +71,47 @@ describe("structure names", () => {
   });
 });
 
+describe("structure scrolls", () => {
+  it("a scroll a read needs is a scroll op; looking around before a click is dropped", () => {
+    const target = {
+      tag: "p",
+      role: "paragraph",
+      name: "Total",
+      text: null,
+      placeholder: null,
+      id: null,
+      testId: null,
+      href: null,
+      inputType: null,
+    };
+    const url = "https://example.com/";
+    const rec = {
+      site: "s",
+      startedAt: "2026-11-17T00:00:00Z",
+      finishedAt: "",
+      trace: null,
+      terminal: null,
+      commands: [],
+      name: "r",
+      actions: [
+        { t: 0, kind: "navigate", url },
+        { t: 1, kind: "scroll", url, dy: 900, moved: 900, loaded: true },
+        { t: 2, kind: "scroll", url, dy: 900, moved: 400 },
+        { t: 3, kind: "read", url, target, as: "total", value: "9" },
+        { t: 4, kind: "scroll", url, dy: 500, moved: 500 },
+        { t: 5, kind: "click", url, target: { ...target, role: "button", name: "Go" } },
+      ],
+    } as never;
+    const step = structure(rec).steps[0];
+    const ops = step?.kind === "browser" ? step.ops : [];
+    expect(ops.map((o) => (o.kind === "scroll" ? `scroll ${o.dy}` : o.kind))).toEqual([
+      "scroll 1300",
+      "read",
+      "click",
+    ]);
+  });
+});
+
 describe("structure fields", () => {
   const base = {
     site: "s",

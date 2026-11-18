@@ -6,8 +6,8 @@
 import type { Locator, Page } from "playwright";
 
 export interface Scrolled {
-  /** px the pane moved: down plus, up minus; short of the ask at an edge. */
-  moved: number;
+  /** px the pane moved: down plus, up minus; short of the ask at an edge. null: not measured. */
+  moved: number | null;
   /** The pane grew or gained elements: rows loaded on the way (a feed, a lazy list). */
   loaded: boolean;
 }
@@ -60,7 +60,7 @@ export async function scrollAndSettle(
   }
   await o.settle?.();
   const after = await measure();
-  if (!before || !after) return { moved: 0, loaded: false };
+  if (!before || !after) return { moved: null, loaded: false };
   return {
     moved: Math.round(after.top - before.top),
     loaded: after.height > before.height || after.nodes - before.nodes > LOADED_NODES,

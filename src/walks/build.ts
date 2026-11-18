@@ -217,9 +217,9 @@ export function visitsOf(
       } else if (!HELPED_NOTE.test(a.text)) named = a.text.trim();
       continue;
     }
-    // a kept scroll (keepScrolls) acts on the screen it is on: no look of its own
+    // a kept scroll (keepScrolls) acts on the screen it is on, or the first one: no look of its own
     if (a.kind === "scroll") {
-      if (cur) into({ kind: "op", act: a });
+      into({ kind: "op", act: a });
       continue;
     }
     const at = Date.parse(r.at);

@@ -262,6 +262,17 @@ describe("scroll plan", () => {
     expect(Math.abs(net(plan) - 2400)).toBeLessThan(S.notch[1]);
   });
 
+  it("ends and lands within a notch for any seed, device and read, at default odds", () => {
+    for (let seed = 1; seed <= 200; seed++)
+      for (const device of ["wheel", "trackpad"] as const)
+        for (const reading of [false, true])
+          for (const dy of [137, -900, 4200]) {
+            const plan = scrollPlan(dy, S, seeded(seed), { device, reading });
+            expect(plan.length).toBeLessThan(2000);
+            expect(Math.abs(net(plan) - dy)).toBeLessThan(S.notch[1]);
+          }
+  });
+
   it("trackpad: a swipe rises for a few frames, then fades, with a little drift", () => {
     const plan = scrollPlan(600, { ...S, overOdds: 0 }, seeded(), {
       device: "trackpad",

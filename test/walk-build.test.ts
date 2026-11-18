@@ -197,6 +197,31 @@ describe("visitsOf", () => {
     ]);
   });
 
+  it("keeps a scroll a read needs, on the first screen too; drops one before a click", () => {
+    const scroll = (dy: number, loaded = false): Action =>
+      ({
+        kind: "scroll",
+        t: 0,
+        url: SIGNUP_URL,
+        dy,
+        moved: dy,
+        ...(loaded ? { loaded } : {}),
+      }) as Action;
+    const cut = visitsOf(R1, [
+      act(A.navigate(), null),
+      act(scroll(1200, true), SIGNUP),
+      act(A.read("Total", "total"), SIGNUP),
+      act(scroll(600), SIGNUP),
+      act(A.click("Continue"), SIGNUP),
+      end(DONE),
+    ]);
+    expect(cut.visits[0]?.ops.map((o) => (o.kind === "op" ? o.act.kind : o.kind))).toEqual([
+      "scroll",
+      "read",
+      "click",
+    ]);
+  });
+
   it("makes a pause..resume one human op, named by the last note made while paused", () => {
     const cut = visitsOf(R1, [
       act(A.click("Continue"), SIGNUP),
