@@ -109,6 +109,7 @@ export { type PageChange, pageChange } from "./steer.js";
 export { commandId, withRepeat } from "./wire.js";
 
 import { scrollAndSettle } from "../browser/page-scroll.js";
+import { windowBounds } from "../browser/window-bounds.js";
 import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
 import { desktopAnswer } from "../desktop/answer.js";
 import { desktopHands } from "../desktop/hands.js";
@@ -861,7 +862,7 @@ async function serve(
     session?: string,
   ) => {
     // The overlay is for a person who watches; a run's rows never count it.
-    if (c.cmd === "overlay") return;
+    if (c.cmd === "overlay" || c.cmd === "window") return;
     // A session control answers mid-command: the pictures wait for the command they belong to.
     const own = !IMMEDIATE.has(c.cmd);
     const pics = own ? stepPics : [];
@@ -1624,6 +1625,7 @@ async function serve(
     "goal",
     // Drawing is no page work: it never waits behind an act or opens a run.
     "overlay",
+    "window",
   ]);
   let chain: Promise<unknown> = Promise.resolve();
   let lastTouch = now();
@@ -2264,6 +2266,10 @@ async function serve(
         "goal" in c && c.goal ? String(c.goal) : undefined,
       );
     switch (c.cmd) {
+      case "window": {
+        const { cmd: _, ...want } = c;
+        return { window: await windowBounds(page, want) };
+      }
       case "overlay": {
         const { cmd: _, refs, on, name, color, ...fields } = c;
         if (name !== undefined || color !== undefined) overlay.who(name, color);

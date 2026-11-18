@@ -150,6 +150,15 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   }),
   /** A screenshot with a numbered box on each control in view, and the list; act with `hints:{mark:n}`. */
   z.object({ cmd: z.literal("marks") }),
+  /** Chrome's own window: no field reads it; x, y, w, h (screen points) move and size it; `state` maximizes. */
+  z.object({
+    cmd: z.literal("window"),
+    x: z.number().int().min(-20_000).max(20_000).optional(),
+    y: z.number().int().min(-20_000).max(20_000).optional(),
+    w: z.number().int().min(200).max(20_000).optional(),
+    h: z.number().int().min(150).max(20_000).optional(),
+    state: z.enum(["normal", "minimized", "maximized", "fullscreen"]).optional(),
+  }),
   /**
    * The headed overlay: panel fields (goal, step, thought, doing) and boxes on `refs` with their
    * numbers; `clear` empties it first; `on` turns it on or off for the session. Headless it
@@ -416,6 +425,7 @@ export const LOOK_ONLY = new Set<Command["cmd"]>([
   "done",
   "close",
   "overlay",
+  "window",
   "batch",
 ]);
 /** Session controls and nesting stay out of a batch. */
