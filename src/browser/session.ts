@@ -35,6 +35,7 @@ import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { listProcs, reapOrphans, reapTempDirs } from "./reap.js";
 import { assertNotReserved, isDesk } from "./reserve.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
+import type { WindowPlace } from "./window-bounds.js";
 
 const run = promisify(execFile);
 
@@ -179,6 +180,8 @@ export interface BrowserOptions {
   timezone?: string;
   /** Film every page into a take (`AUTOBROWSE_FILM`, `browser/film`); never the person's own browser. */
   film?: FilmOptions | null;
+  /** Headed: where the window opens (`explore --window`). */
+  window?: WindowPlace;
   /** Record the run's calls to a HAR (`AUTOBROWSE_HAR`, local only), or answer them from one (tests). */
   har?: HarOptions;
   /** Tests: a status, a delay or a dropped call on matching URLs (`browser/har`). */
@@ -457,7 +460,9 @@ async function launchLocal(
 ): Promise<BrowserContext> {
   const proxy = exit?.proxy ?? null;
   const headless = opts.headless ?? true;
-  const { args: sizeArgs, ...size } = opts.film ? filmGeometry(opts.film.size) : geometry(headless);
+  const { args: sizeArgs, ...size } = opts.film
+    ? filmGeometry(opts.film.size)
+    : geometry(headless, process.platform, opts.window);
   // Headless says the headed fingerprint (fingerprint.ts). Not through Playwright's
   // `userAgent`: that rebuilds the client hints from the UA string and sends
   // `Sec-CH-UA-Arch: "x86"` and platform version "10_15_7" from an arm Mac on 26.x.

@@ -7,6 +7,7 @@ import type { StepRecord } from "../agent/explorer.js";
 import { runJson } from "../agent/run-json.js";
 import { urlWithoutQuery } from "../auth/guard.js";
 import { type SecretValues, sessionHosts } from "../auth/signup.js";
+import { windowPlace } from "../browser/window-bounds.js";
 import type { Command as ExploreCommand } from "../explore/commands.js";
 import { DEFAULT_IDLE_MINUTES, pidAlive } from "../explore/lease.js";
 import type { Explorer } from "../explore/server.js";
@@ -60,8 +61,16 @@ export function registerRecordCommands(
   local: LocalBackend,
 ): void {
   /** Headless as the env says unless the person asks to watch. */
-  const opener = (o: { headed?: boolean }) =>
-    explorerOpener(settings, undefined, o.headed ? headed : undefined);
+  const opener = async (o: { headed?: boolean; window?: string }) =>
+    explorerOpener(
+      settings,
+      undefined,
+      o.window
+        ? { headless: false, window: await windowPlace(o.window) }
+        : o.headed
+          ? headed
+          : undefined,
+    );
   program
     .command("explore <site>")
     .description(
@@ -70,6 +79,10 @@ export function registerRecordCommands(
     .option("--url <url>", "start here")
     .option("--port <port>", "loopback port", "9090")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
+    .option(
+      "--window <place>",
+      "headed, and the window opens there: left or right (half the screen) or x,y,w,h",
+    )
     .option(
       "--idle <minutes>",
       "close after this long with no command (journal kept); 0 = never",
@@ -119,6 +132,7 @@ export function registerRecordCommands(
           url?: string;
           port: string;
           headed?: boolean;
+          window?: string;
           idle: string;
           hold?: boolean;
           codes?: string;
@@ -149,7 +163,7 @@ export function registerRecordCommands(
           `port-${o.port}`,
         );
         if (o.fresh) rmSync(journalFile, { force: true });
-        const ex = await opener(o)(site, Number(o.port), {
+        const ex = await (await opener(o))(site, Number(o.port), {
           tokenFile,
           journalFile,
           idleMinutes: o.hold ? 0 : Number(o.idle),

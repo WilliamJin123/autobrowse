@@ -133,8 +133,19 @@ const OTHER_SCREEN = { width: 1920, height: 1080, dpr: 1 };
  *   reCAPTCHA Enterprise refuses the checkbox for it.
  * - headless: a page inside a larger screen, at the OS's usual DPR.
  */
-export function geometry(headless: boolean, os: NodeJS.Platform = process.platform) {
-  if (!headless) return { viewport: null, args: ["--window-size=1280,900"] };
+export function geometry(
+  headless: boolean,
+  os: NodeJS.Platform = process.platform,
+  place?: { x: number; y: number; w: number; h: number },
+) {
+  // a place opens the window there: no move after launch
+  if (!headless)
+    return {
+      viewport: null,
+      args: place
+        ? [`--window-position=${place.x},${place.y}`, `--window-size=${place.w},${place.h}`]
+        : ["--window-size=1280,900"],
+    };
   const screen = SCREENS[os] ?? OTHER_SCREEN;
   return {
     viewport: { width: 1280, height: 800 },

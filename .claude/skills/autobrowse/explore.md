@@ -61,6 +61,8 @@ The desk's watchers and reads on a profile (x@wren) can take it before you start
 
 `--headed` (`start.sh <site> "" <port> --headed`): a window a person watches (the panel, a film, a hand-off). Sessions are headless without it; ask for a visible or placed window, start with it.
 
+`--window right` (or `left`, or `x,y,w,h`): headed, and Chrome opens in that spot (`start.sh <site> "" <port> --window right`). `left` and `right` are halves of the screen less the menu bar and Dock. No jump after the launch: use it whenever you know where the window goes.
+
 `--look-only` (a page you do not trust): only reads, `open`, `wait`, `done`, `close`; a click, a script, a `place` or a `flow` is refused.
 
 Stop a session the moment its goal is done or failed: `autobrowse stop`. Never
@@ -98,7 +100,7 @@ Look:
   - `{"cmd":"network","scripts":true}`: API paths and GraphQL operations the page's scripts name, before any fires.
   - `{"cmd":"memory","find":"followers"}`: this site's calls and fields from all earlier sessions. Look here first: the call you need may be known.
   - A flow reads that JSON with `pageJson`/`pagedJson` (cookie rung) or `captureJson` (intercept rung), in `ladder` rungs (`src/browser/ladder.ts`).
-- `{"cmd":"window"}` — Chrome's own window in screen points (`x`, `y`, `w`, `h`, `state`). `{"cmd":"window","x":756,"y":33,"w":756,"h":884}` moves and sizes it; `"state":"maximized"` fills the screen. Place a `--headed` session with this, not `os place`: it needs no window list. Headless, it is refused. Never journaled.
+- `{"cmd":"window"}` — Chrome's own window in screen points (`x`, `y`, `w`, `h`, `state`). `{"cmd":"window","x":756,"y":33,"w":756,"h":884}` moves and sizes it; `"state":"maximized"` fills the screen. Move a `--headed` session with this, not `os place`: it needs no window list. To open it in place, start with `--window`. Headless, it is refused. Never journaled.
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
 
 Act (journaled):

@@ -109,6 +109,7 @@ export function browserOptions(
     get headless() {
       return display.headless;
     },
+    ...(display.window ? { window: display.window } : {}),
     // The site's account's passkeys ride along in its session.
     passkeys: async (site) => {
       return (await store.get(credentialFor(SITE_LOGINS, site)))?.passkeys ?? [];
