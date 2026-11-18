@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { obsLogin } from "../src/film/obs.js";
+import { deadCapture, obsLogin } from "../src/film/obs.js";
 
 describe("obsLogin", () => {
   const cfg = (o: object) => JSON.stringify({ server_enabled: true, server_port: 4455, ...o });
@@ -29,5 +29,19 @@ describe("obsLogin", () => {
   });
   it("defaults with no config", () => {
     expect(obsLogin(null, {})).toEqual({ url: "ws://127.0.0.1:4455" });
+  });
+});
+
+describe("deadCapture", () => {
+  it("finds a screen stream macOS ended", () => {
+    const log = [
+      "17:10:55.655:     - source: 'film display' (screen_capture)",
+      '16:45:12.418: [ mac-screencapture ]: Stream stopped with error -3805 ("Failed during stream due to application connection being interrupted")',
+    ].join("\n");
+    expect(deadCapture(log)).toMatch(/-3805/);
+  });
+
+  it("passes a live log", () => {
+    expect(deadCapture("17:34:19.977: ==== Recording Start ====")).toBeNull();
   });
 });

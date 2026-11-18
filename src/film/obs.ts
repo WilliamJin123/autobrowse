@@ -4,7 +4,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { promisify } from "node:util";
@@ -89,7 +89,44 @@ async function using<T>(fn: (obs: Obs) => Promise<T>): Promise<T> {
   }
 }
 
+const OBS_LOGS = join(homedir(), "Library/Application Support/obs-studio/logs");
+
+/** macOS ends a screen stream on lock or sleep (-3805); OBS keeps the last frame and records it. */
+export function deadCapture(log: string): string | null {
+  return log.match(/\[ mac-screencapture \]: Stream stopped with error[^\n]*/)?.[0] ?? null;
+}
+
+/** OBS's newest log: one per launch. */
+async function newestLog(): Promise<string | null> {
+  const names = await readdir(OBS_LOGS).catch(() => [] as string[]);
+  const last = names
+    .filter((n) => n.endsWith(".txt"))
+    .sort()
+    .at(-1);
+  return last ? readFile(join(OBS_LOGS, last), "utf8") : null;
+}
+
+/** A dead stream comes back only with a new OBS: quit it cleanly (no crash prompt), `connect` opens it. */
+async function reviveCapture(): Promise<void> {
+  if (process.platform !== "darwin") return;
+  const log = await newestLog();
+  if (!log || !deadCapture(log)) return;
+  await run("osascript", ["-e", 'quit app "OBS"']);
+  const until = Date.now() + 15_000;
+  while (
+    await run("pgrep", ["-x", "OBS"]).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    if (Date.now() > until)
+      throw new Error("obs: the capture stream died and OBS did not quit; quit it by hand");
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 export async function obsStart(o: { scene?: string } = {}): Promise<{ scene: string }> {
+  await reviveCapture();
   return using(async (obs) => {
     if (o.scene) await obs.call("SetCurrentProgramScene", { sceneName: o.scene });
     const { currentProgramSceneName } = await obs.call("GetCurrentProgramScene");
