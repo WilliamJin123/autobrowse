@@ -201,6 +201,7 @@ import { codeVersion, skewWatch } from "./code-version.js";
 import {
   type Command,
   commandSchema,
+  KEEPS_LOAD,
   LOOK_ONLY,
   LOOKED_AT,
   LOOKS,
@@ -1603,6 +1604,9 @@ async function serve(
   };
   /** The control last clicked: a `type` after it is journaled as its input. */
   let lastClick: Target | null = null;
+  /** The start page (the session's first `open`) with nothing done since: an `open` to it again is a no-op. */
+  let asLoaded = false;
+  let openedOnce = false;
   /** Whether the last looked-at command changed the page's controls. */
   let lastChanged = false;
   /** What leaves the socket: masked like a transcript, unless the caller asks for raw. */
@@ -2267,6 +2271,7 @@ async function serve(
         c.cmd,
         "goal" in c && c.goal ? String(c.goal) : undefined,
       );
+    if (c.cmd !== "open" && !KEEPS_LOAD.has(c.cmd)) asLoaded = false;
     switch (c.cmd) {
       case "window": {
         // headless Chrome still answers bounds: a placed window nobody sees
@@ -2292,6 +2297,13 @@ async function serve(
         // the text suggests comes back as the wall, with the site's sign-in tool: the agent judges.
         // A captcha wall: solved here once (a checkbox by a human click, a picture by the eyes); unsolved, it comes back.
         if (opts.allowHosts && !urlAllowed(c.url, opts.allowHosts)) throw outsideSession(c.url);
+        // start.sh <site> <url> loaded it; a second load is a flash on a film. Later opens always load (a reopen re-reads a page).
+        if (!c.reload && asLoaded && samePage(page.url(), c.url))
+          return {
+            url: page.url(),
+            stayed: true,
+            wall: await withAccounts(wallAnswer(await looksLikeWall(page), page.url())),
+          };
         try {
           // An agent at the console picks the account: open never signs in; the wall lists them.
           await fp.open(c.url, { allowWall: opts.signInOn !== "any" || !opts.login });
@@ -2300,6 +2312,8 @@ async function serve(
             throw err;
         }
         journal({ kind: "navigate" });
+        asLoaded = !openedOnce;
+        openedOnce = true;
         // `open` goes to the main page: the tabs earlier steps opened are behind it now.
         page = fp.page;
         const closedTabs = await closeStepTabs();
@@ -2446,7 +2460,10 @@ async function serve(
               )
               .catch(() => false)
           : false;
-        stepTyped = await hands.type(page, c.text, { timeout: actMs });
+        stepTyped = await hands.type(page, c.text, {
+          timeout: actMs,
+          ...(c.speed ? { speed: c.speed } : {}),
+        });
         if (!into || !held)
           return {
             ok: true,
@@ -3225,4 +3242,17 @@ async function serve(
     },
     files: sessionFiles.map(fileLine),
   };
+}
+
+/** One page: same origin, path (a trailing slash aside) and query; the hash is ignored. */
+export function samePage(a: string, b: string): boolean {
+  const key = (u: string) => {
+    try {
+      const x = new URL(u);
+      return `${x.origin}${x.pathname.replace(/\/+$/, "")}${x.search}`;
+    } catch {
+      return u;
+    }
+  };
+  return key(a) === key(b);
 }

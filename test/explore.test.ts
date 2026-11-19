@@ -15,6 +15,7 @@ import {
   journalFileFor,
   pageChange,
   readJournal,
+  samePage,
   shortUrl,
   startExplore,
 } from "../src/explore/server.js";
@@ -53,6 +54,14 @@ describe("shortUrl", () => {
     const oauth = `https://accounts.google.com/signin/oauth/v2/consentsummary?part=${"x".repeat(2000)}`;
     expect(shortUrl(oauth)).toBe("https://accounts.google.com/signin/oauth/v2/consentsummary?…");
     expect(shortUrl(`https://a.test/${"p".repeat(300)}`)).toHaveLength(151);
+  });
+});
+
+describe("samePage", () => {
+  it("ignores the hash and a trailing slash, not the query", () => {
+    expect(samePage("https://x.com/compose/post", "https://x.com/compose/post/#a")).toBe(true);
+    expect(samePage("https://x.com/a?p=1", "https://x.com/a?p=2")).toBe(false);
+    expect(samePage("about:blank", "https://x.com/")).toBe(false);
   });
 });
 
@@ -1424,6 +1433,46 @@ describe("network and html", () => {
     if (was === undefined) delete process.env.AUTOBROWSE_NETWORK;
     else process.env.AUTOBROWSE_NETWORK = was;
   });
+
+  it("open: the start page again before any look is not loaded twice; after a look it is", async () => {
+    const { createServer } = await import("node:http");
+    let loads = 0;
+    const server = createServer((_req, res) => {
+      loads++;
+      res.setHeader("content-type", "text/html");
+      res.end("<p>compose</p>");
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/compose`;
+    const dir = await mkdtemp(join(tmpdir(), "explore-open-"));
+    try {
+      const ex = await startExplore({
+        actTimeoutMs: 2_000,
+        site: "scratch",
+        port: 0,
+        recordingsDir: join(dir, "recordings"),
+        browser: {
+          tier: "local",
+          channel: "chromium",
+          profilesDir: join(dir, "profiles"),
+          artifactsDir: join(dir, "artifacts"),
+          headless: true,
+        },
+      });
+      await ex.exec({ cmd: "open", url }); // start.sh <site> <url>
+      await ex.exec({ cmd: "goal", text: "draft a post" });
+      expect(await ex.exec({ cmd: "open", url: `${url}#top` })).toMatchObject({ stayed: true });
+      expect(loads).toBe(1);
+      await ex.exec({ cmd: "text" });
+      expect(await ex.exec({ cmd: "open", url })).not.toHaveProperty("stayed");
+      expect(loads).toBe(2);
+      await ex.exec({ cmd: "close" });
+      await ex.done;
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true, maxRetries: 5 });
+    }
+  }, 60_000);
 
   it("lists the page's calls redacted, shows one, saves and diffs pages, and diffs against the last session", async () => {
     const { createServer } = await import("node:http");

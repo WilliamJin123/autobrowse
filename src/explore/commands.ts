@@ -30,7 +30,8 @@ const hintsSchema = z.object({
 export const targetSchema = z.object({ hints: hintsSchema });
 
 export const commandSchema = z.discriminatedUnion("cmd", [
-  z.object({ cmd: z.literal("open"), url: z.string().url() }),
+  /** The start page again, nothing done since it loaded: no second load. `reload` loads it anyway. */
+  z.object({ cmd: z.literal("open"), url: z.string().url(), reload: z.boolean().optional() }),
   targetSchema.extend({
     cmd: z.literal("click"),
     goal: z.string().optional(),
@@ -67,8 +68,12 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     name: z.string().min(1),
     limit: z.number().int().positive().optional(),
   }),
-  /** Keyboard into whatever is focused; not journaled as a locator act. */
-  z.object({ cmd: z.literal("type"), text: z.string() }),
+  /** Keyboard into whatever is focused; not journaled as a locator act. `speed`: keys this many times faster (a film). */
+  z.object({
+    cmd: z.literal("type"),
+    text: z.string(),
+    speed: z.number().min(0.5).max(3).optional(),
+  }),
   z.object({ cmd: z.literal("key"), key: z.string() }),
   /**
    * Wheel the page by `dy` px (minus = up), human-paced; `hints`: the pane to scroll instead (a
@@ -433,6 +438,15 @@ export const LOOK_ONLY = new Set<Command["cmd"]>([
   "window",
   "waitNote",
   "batch",
+]);
+/** Commands that neither change nor read the page: after only these, `open` to the start URL loads nothing (a look then a reopen is a re-read). */
+export const KEEPS_LOAD = new Set<Command["cmd"]>([
+  "goal",
+  "note",
+  "url",
+  "tools",
+  "memory",
+  "journal",
 ]);
 /** Session controls and nesting stay out of a batch. */
 export const UNBATCHABLE = new Set<Command["cmd"]>([

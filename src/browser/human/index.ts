@@ -232,7 +232,7 @@ export interface Hands {
   click(target: Locator, o: ActTimeout & { at?: Point }): Promise<void>;
   /** A control: replace what it holds with `text`. A page: type at the caret. */
   /** Null: no keys were paced (instant hands, or a long text pasted). */
-  type(target: KeyTarget, text: string, o: ActTimeout): Promise<Typed | null>;
+  type(target: KeyTarget, text: string, o: ActTimeout & { speed?: number }): Promise<Typed | null>;
   press(target: KeyTarget, key: string, o: ActTimeout): Promise<void>;
   /** The pointer onto the control, and it stays there. */
   hover(target: Locator, o: ActTimeout): Promise<void>;
@@ -587,7 +587,8 @@ export function handsFor(
       // The click focused the control: keys go to the page's keyboard from here, not
       // through the locator, which re-checks and re-focuses the control on every key.
       const hide = hidden(text);
-      const plan = typingPlan(text, pace.typing, random);
+      const style = o.speed && o.speed !== 1 ? brisk(pace, o.speed).typing : pace.typing;
+      const plan = typingPlan(text, style, random);
       const began = Date.now();
       for (const k of plan) {
         key(page, hide && k.ch !== BACKSPACE ? HIDDEN_KEY : k.ch);

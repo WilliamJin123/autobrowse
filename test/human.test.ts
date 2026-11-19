@@ -493,6 +493,25 @@ describe("brisk", () => {
   });
 });
 
+describe("type speed", () => {
+  it("a faster speed plans the same keys in less time", async () => {
+    const text = "Introducing autobrowse, a browser automation framework.";
+    const plannedMs = async (speed?: number) => {
+      const page = {
+        keyboard: { type: async () => {}, press: async () => {} },
+        waitForTimeout: async () => {},
+      } as unknown as Page;
+      const hands = handsFor(HUMAN_PACE, seeded(), undefined);
+      const typed = await hands.type(page, text, { timeout: 1_000, ...(speed ? { speed } : {}) });
+      return typed?.plannedMs ?? 0;
+    };
+    const base = await plannedMs();
+    const fast = await plannedMs(1.5);
+    expect(fast).toBeGreaterThan(base / 1.5 - base * 0.05);
+    expect(fast).toBeLessThan(base / 1.5 + base * 0.05);
+  });
+});
+
 describe("motion seed", () => {
   it("one seed, one stream; a fresh seed per call", () => {
     const a = mulberry(42);

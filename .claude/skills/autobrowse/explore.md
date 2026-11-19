@@ -104,10 +104,10 @@ Look:
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; the session returns to main when the popup closes. A tab your command opened closes when you send `open` or `page main` (`closedTabs`): read it before you move on.
 
 Act (journaled):
-- `{"cmd":"open","url":"https://…"}` — answers `wall` (`kind`, `by`: `url` or `text`) when one is there. A captcha wall is solved once first; the answer then has `captcha` (`solved`), and `wall` only if it stayed.
+- `{"cmd":"open","url":"https://…"}` — answers `wall` (`kind`, `by`: `url` or `text`) when one is there. A captcha wall is solved once first; the answer then has `captcha` (`solved`), and `wall` only if it stayed. The start page again with only `goal`, `note` or `url` since (`start.sh <site> <url>`, then `open` to that URL): no second load, the answer has `stayed: true`. `"reload":true` loads it anyway. Later opens always load.
 - `{"cmd":"click","hints":{"role":"button","name":"Create"},"goal":"…"}`
 - `{"cmd":"fill","hints":{…},"value":"…"}`, `select`, `press` (`"key":"Enter"`), `hover` (a menu or a control that shows on hover, a tooltip to read), `upload` (`"files":["path"]` or a stored file, below).
-- `{"cmd":"type","text":"…"}`, `{"cmd":"key","key":"Escape"}` — into whatever is focused.
+- `{"cmd":"type","text":"…"}`, `{"cmd":"key","key":"Escape"}` — into whatever is focused. `"speed":1.5` types that many times faster (0.5 to 3).
 - `{"cmd":"scroll","dy":800}` — wheel the page, human-paced (minus = up); `"hints"` scrolls that pane instead (a dialog's list, a sidebar). The answer gives `moved` (px it did move: less at an edge), `loaded` (rows came in), `changed` and the px above and below the view. Acts on a control scroll to it themselves: scroll to read, or to load rows. Compile keeps a scroll only before a read, or when it loaded rows the next act needs; back-to-back scrolls merge. Code: `await fp.scroll(dy, hints?)`.
 - `{"cmd":"place","hints":{…},"secret":"code"}` — types a secret the session holds (signup.md); the value never reaches you. `"secret":"profile.taxId"` fills a field of the Mac's wallet profile (signup.md).
 - `{"cmd":"read","hints":{…},"as":"fieldName"}` — text off the page into the flow's output.
@@ -189,7 +189,7 @@ Session:
 
 Every look costs tokens. Look once, then let the acts tell you what changed.
 
-1. `start.sh <site> <url>`, then `goal`. The `open` answer already lists the page's controls (`changed.added`).
+1. `start.sh <site> <url>` loads the page; then `goal`. Do not `open` the same URL again. An `open` answer lists the page's controls (`changed.added`).
 2. `snapshot`. `aria` with `hints` or a `limit` only when the snapshot is not enough.
 3. A long answer (`eval`, `aria`, `text`, `read`, `read_file`, `network` body, `shell`) is compacted to its `limit`, never cut at one point: a list of same-shape objects comes as TOON (`format:"toon"`, a header then rows, lossless); still too long, lists keep their first, last and evenly spaced items (`_i` = the item's place) and long strings their head and tail; a tree loses its deepest levels first. Each gap says what it left out. `whole: {chars, file}` holds the full answer: read the file, or raise `limit`.
 4. Every act answers `changed`: `added` (new controls, up to 40), `gone` (a count), `more` (past 40). Read that; don't look again after each act.
