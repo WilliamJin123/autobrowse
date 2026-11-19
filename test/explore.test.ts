@@ -111,7 +111,7 @@ describe("explore mode", () => {
       },
       files,
       charges: async (c, r, tell) => {
-        charges.push([c, r, tell]);
+        charges.push(tell ? [c, r, tell] : [c, r]);
         return ["email", "text"];
       },
       approve: async (ask) => {
@@ -409,12 +409,12 @@ describe("explore mode", () => {
     ]);
     const typed = rec.actions[13];
     expect(
-      typed.kind === "desktop" && typed.redacted && typed.op.op === "type" && typed.op.secret,
+      typed?.kind === "desktop" && typed.redacted && typed.op.op === "type" && typed.op.secret,
     ).toBe("minted");
     const pw = rec.actions[3];
-    expect(pw.kind === "input" && pw.value).toBe("<redacted>");
+    expect(pw?.kind === "input" && pw.value).toBe("<redacted>");
     const placedAct = rec.actions[4];
-    expect(placedAct.kind === "input" && placedAct.redacted && placedAct.value).toBe("<redacted>");
+    expect(placedAct?.kind === "input" && placedAct.redacted && placedAct.value).toBe("<redacted>");
     expect(JSON.stringify(rec.actions)).not.toContain("Placed-Value");
     const compiled = await compile(rec);
     expect(compiled.outline.steps.length).toBeGreaterThan(0);
@@ -762,9 +762,7 @@ describe("explore mode", () => {
     });
     // No code and no model: refused, nothing journaled.
     expect((await send(records)).body.error).toMatch(/send `code`/);
-    expect((await send({ cmd: "records", ...records, code: "return [];" })).body.error).toMatch(
-      /no rows/,
-    );
+    expect((await send({ ...records, code: "return [];" })).body.error).toMatch(/no rows/);
   }, 60_000);
 
   it("journals a cut mark, a script that acts and a download; a script that only looks is not an act", async () => {
