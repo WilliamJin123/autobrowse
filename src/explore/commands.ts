@@ -188,6 +188,13 @@ export const commandSchema = z.discriminatedUnion("cmd", [
     clear: z.boolean().optional(),
     /** The island opens to its full card (true) or closes. */
     open: z.boolean().optional(),
+    /** A scripted person on the panel (films): an arrow presses Pause or Resume, or types a note and sends it. No OS input. */
+    person: z
+      .union([
+        z.object({ pause: z.boolean() }).strict(),
+        z.object({ note: z.string().min(1).max(500) }).strict(),
+      ])
+      .optional(),
   }),
   /**
    * The page's JSON calls, redacted, grouped by URL shape and GraphQL query name: the newest

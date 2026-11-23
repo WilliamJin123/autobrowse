@@ -1149,6 +1149,71 @@ export const panelHtml = (
     clearTimeout(ui.idleT);
     ui.idleT = setTimeout(() => hand.classList.add('idle'), 6000);
   };
+  // A scripted person (films, demos): an arrow glides to Pause or the note pill and presses it; a note
+  // types itself and sends on Enter. No OS input: the window never takes key, the person's own focus stays.
+  const me = el('div', '', null, 'position:fixed;left:0;top:0;width:24px;height:24px;z-index:2147483647;pointer-events:none;display:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))');
+  {
+    const NS = 'http://www.w3.org/2000/svg';
+    const s = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '24'); s.setAttribute('height', '24');
+    p.setAttribute('d', 'M4 3l0 16.5 4.6-4.3 3 6.8 2.8-1.2-2.9-6.7 6.4-.3z');
+    p.setAttribute('fill', '#000'); p.setAttribute('stroke', '#fff'); p.setAttribute('stroke-width', '1.6'); p.setAttribute('stroke-linejoin', 'round');
+    s.appendChild(p); me.appendChild(s);
+  }
+  document.body.appendChild(me);
+  const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+  // the visible one of a data-a control (panel, terminal and island each draw their own)
+  const shown = (a) => [...document.querySelectorAll('[data-a="' + a + '"]')].find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+  const glide = async (to) => {
+    const r = to.getBoundingClientRect(), x = r.left + r.width / 2 - 4, y = r.top + r.height / 2 - 3;
+    const from = ui.me || [Math.min(innerWidth - 40, x + 160), Math.min(innerHeight - 40, y + 260)];
+    me.style.display = '';
+    me.getAnimations().forEach((a) => a.cancel());
+    const d = Math.hypot(x - from[0], y - from[1]), lift = Math.min(0.18 * d, 70), cx = (from[0] + x) / 2 + lift, cy = (from[1] + y) / 2;
+    const frames = [];
+    for (let i = 0; i <= 24; i++) {
+      const t = i / 24, u = 1 - t;
+      frames.push({ transform: 'translate(' + (u * u * from[0] + 2 * u * t * cx + t * t * x) + 'px,' + (u * u * from[1] + 2 * u * t * cy + t * t * y) + 'px)' });
+    }
+    const ms = Math.min(1100, 450 + d * 0.9);
+    await me.animate(frames, { duration: ms, easing: 'cubic-bezier(.45,0,.2,1)', fill: 'forwards' }).finished;
+    me.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    ui.me = [x, y];
+    await nap(180);
+    // press: the arrow dips, a ripple where it lands
+    me.animate([{ transform: me.style.transform + ' scale(1)' }, { transform: me.style.transform + ' scale(.82)' }, { transform: me.style.transform + ' scale(1)' }], { duration: 220 });
+    const rp = el('div', 'ripple', null, 'left:' + (x + 4) + 'px;top:' + (y + 3) + 'px;position:fixed');
+    rp.addEventListener('animationend', () => rp.remove());
+    document.body.appendChild(rp);
+    await nap(110);
+  };
+  ui.person = async (act) => {
+    if (!ui.s) return { done: false, why: 'nothing drawn yet' };
+    if (act.pause !== undefined) {
+      const b = shown('hold');
+      if (!b) return { done: false, why: 'no Pause button on screen' };
+      await glide(b);
+      if (!!ui.s.held !== act.pause) b.click();
+    } else if (act.note) {
+      const pill = island() ? shown('open') : null;
+      if (pill) { await glide(pill); ui.say = true; ui.paint(); }
+      else { ui.open = true; ui.paint(); }
+      await nap(260);
+      if (!island()) await glide(say);
+      say.value = '';
+      for (const ch of act.note) {
+        say.value += ch;
+        say.dispatchEvent(new Event('input'));
+        await nap(ch === ' ' ? 120 : 55 + Math.random() * 70);
+      }
+      await nap(380);
+      say.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    }
+    // the arrow rests, then fades
+    clearTimeout(ui.meT);
+    ui.meT = setTimeout(() => { me.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400 }).finished.then(() => { me.style.display = 'none'; ui.me = null; }); }, 1600);
+    return { done: true };
+  };
   /** \`reset\`: the rows are all of them, not the new ones. */
   ui.draw = (s, list, reset) => {
     if (s.ask && s.ask.id !== ui.askId) { ui.askId = s.ask.id; ui.open = true; if (ui.min) { ui.min = false; ui.enter = 'tui'; } }
@@ -1573,6 +1638,13 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
       if (!(await draw(page))) return { drawn: false, ...(why ? { why } : {}) };
       // Boxes off: no count, so a 0 never reads as controls missing.
       return { drawn: true, ...(prefs.marks ? { boxes: state.boxes.length } : {}) };
+    },
+    /** A scripted person on the panel (films): Pause or Resume, or a note typed and sent. No OS input. */
+    person(act: { pause: boolean } | { note: string }): { done: boolean; why?: string } {
+      if (!enabled || !drawn || !host)
+        return { done: false, why: why ?? "the overlay is not drawn" };
+      host.send({ t: "js", js: `ui.person(${JSON.stringify(act)})` });
+      return { done: true };
     },
     /** A marks shot's numbered boxes stay drawn; the boxes button shows and hides them. */
     async marked(page: S, boxes: Array<{ n: number; box: Box }>): Promise<void> {

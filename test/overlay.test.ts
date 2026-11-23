@@ -480,6 +480,32 @@ describe("headed overlay, out of the page", () => {
     }
   });
 
+  it("a scripted person presses Pause and sends a note with no OS input; nothing drawn says why", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
+      expect(o.person({ pause: true })).toMatchObject({ done: false });
+      const got: Steer[] = [];
+      o.onSteer((s) => got.push(s));
+      await o.set(page, { goal: "save the form" });
+      await h.idle();
+      await settled(h.view);
+      expect(o.person({ pause: true })).toEqual({ done: true });
+      await expect.poll(() => got, { timeout: 5000 }).toEqual([{ pause: true }]);
+      await o.held(page, { since: Date.now(), arming: false });
+      await h.idle();
+      o.person({ note: "go on" });
+      await expect.poll(() => got.at(-1), { timeout: 8000 }).toEqual({ note: "go on" });
+      expect(o.takeNotes()).toEqual(["go on"]);
+      // never asked for the keyboard: the person's own focus stays where it was
+      expect(h.posts.some((m) => m.key === true)).toBe(false);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("the look button switches panel and terminal; a failed row has no mark in the panel", async () => {
     const browser = await chromium.launch();
     try {
