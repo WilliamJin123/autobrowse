@@ -112,6 +112,8 @@ export const desktopActSchema = z.discriminatedUnion("op", [
     window: windowRefSchema.optional(),
     ...typed,
     ...human,
+    /** One key every N ms, headless (films): no focus taken. Not journaled. */
+    paceMs: z.number().int().min(10).max(2000).optional(),
   }),
   /** "cmd+shift+4", "return", "escape"… to the window's process, or the front app's. */
   z.object({ op: z.literal("key"), combo: z.string(), window: windowRefSchema.optional() }),

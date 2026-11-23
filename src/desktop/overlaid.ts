@@ -119,11 +119,13 @@ export function overlaidDesktop(
     },
     click: (ref, mode) => shown("click", label(), () => base.click(ref, mode), { ref, mode }),
     // never the text: a row says how much was typed
-    type: (ref, text, mode) =>
-      shown("type", `${text.length} chars in ${label()}`, () => base.type(ref, text, mode), {
-        ref,
-        mode,
-      }),
+    type: (ref, text, mode, intervalMs) =>
+      shown(
+        "type",
+        `${text.length} chars in ${label()}`,
+        () => base.type(ref, text, mode, intervalMs),
+        { ref, mode },
+      ),
     async press(combo, where, mode) {
       await follow(where?.windowId);
       const send = () => base.press(combo, where, mode);

@@ -214,6 +214,14 @@ export interface AgentDesktopOptions {
 /** Codes a read tries once more. */
 const READ_RETRY = new Set(["APP_UNRESPONSIVE"]);
 const READ_RETRY_MS = 300;
+/** Chars per step when a refused type falls back to set-value at human pace. */
+const TYPE_CHUNK = 3;
+
+/** agent-desktop typed, then its own value check failed: the field takes set-value only. */
+export const typeMissedCheck = (e: unknown): boolean =>
+  e instanceof DesktopError &&
+  e.code === "ACTION_FAILED" &&
+  /post-action state does not match/i.test(e.message);
 
 export function agentDesktop(
   base: Pick<
@@ -322,8 +330,22 @@ export function agentDesktop(
     },
     async type(ref, text, mode, intervalMs) {
       const every = intervalMs ?? opts.typeIntervalMs ?? 40;
-      const spacing = mode === "headed" ? ["--interval-ms", String(every)] : [];
-      await call(["type", ref, "--stdin", ...spacing, ...headedFlag(mode)], text);
+      // headed always paced (terminals drop a burst); headless only when asked
+      const paced = mode === "headed" || intervalMs !== undefined;
+      const spacing = paced ? ["--interval-ms", String(every)] : [];
+      try {
+        await call(["type", ref, "--stdin", ...spacing, ...headedFlag(mode)], text);
+      } catch (e) {
+        if (!typeMissedCheck(e)) throw e;
+        // field refuses keystrokes (Claude app prompt): write the value; set-value replaces, so a partial type is harmless
+        if (!paced) return void (await call(["set-value", ref, "--stdin"], text));
+        for (let n = TYPE_CHUNK; ; n += TYPE_CHUNK) {
+          const part = text.slice(0, Math.min(n, text.length));
+          await call(["set-value", ref, "--stdin"], part);
+          if (part.length === text.length) break;
+          await pause(every * TYPE_CHUNK);
+        }
+      }
     },
     async press(combo, where, mode) {
       await call([

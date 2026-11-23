@@ -556,7 +556,7 @@ export function desktopHands(d: Desktop, o: HandsOptions = {}) {
           const around = o.headed ?? (<T>(fn: () => Promise<T>) => fn());
           await around(() => typeHuman(window, a.ref ? ref : null, value));
           headed = true;
-        } else headed = await deliver(window, false, (m) => d.type(ref, value, m));
+        } else headed = await deliver(window, false, (m) => d.type(ref, value, m, a.paceMs));
         use(window);
         return {
           answer: { ok: true, ...(headed ? { headed } : {}) },

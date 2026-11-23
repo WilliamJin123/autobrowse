@@ -84,6 +84,56 @@ describe("agent-desktop adapter", () => {
     ]);
   });
 
+  it("a type the field refuses falls back to set-value, in growing chunks when headed", async () => {
+    const missed = JSON.stringify({
+      version: "2.6",
+      ok: false,
+      command: "type",
+      error: { code: "ACTION_FAILED", message: "Post-action state does not match expected value" },
+    });
+    const calls: { args: string[]; stdin: string | undefined }[] = [];
+    const run: AdRun = async (args, stdin) => {
+      calls.push({ args, stdin });
+      const out = args[0] === "type" ? missed : fixture("click").replace(/\n\s*/g, "");
+      return { code: 0, stdout: `${out}\n`, stderr: "" };
+    };
+    const waits: number[] = [];
+    const base = {
+      shell: async () => ({ code: 0, stdout: "", stderr: "" }),
+      screenshot: async () => undefined,
+      exists: async () => false,
+      rootReady: async () => false,
+    };
+    const d = agentDesktop(base, { run, sleep: async (ms) => void waits.push(ms) });
+    await d.type("@s1:e1", "hello");
+    expect(calls.map((c) => [c.args[0], c.stdin])).toEqual([
+      ["type", "hello"],
+      ["set-value", "hello"],
+    ]);
+    calls.length = 0;
+    await d.type("@s1:e1", "hello", "headed", 50);
+    expect(calls.map((c) => [c.args[0], c.stdin])).toEqual([
+      ["type", "hello"],
+      ["set-value", "hel"],
+      ["set-value", "hello"],
+    ]);
+    expect(calls[1]?.args).toEqual(["set-value", "@s1:e1", "--stdin"]);
+    expect(waits).toEqual([150]);
+    calls.length = 0;
+    await d.type("@s1:e1", "hey", "headless", 20);
+    expect(calls.map((c) => [c.args[0], c.stdin])).toEqual([
+      ["type", "hey"],
+      ["set-value", "hey"],
+    ]);
+    expect(calls[0]?.args).toEqual(["type", "@s1:e1", "--stdin", "--interval-ms", "20"]);
+  });
+
+  it("a type that fails another way is not retried", async () => {
+    const { d, calls } = scripted({ type: "policy-denied" });
+    await expect(d.type("@s1:e1", "x")).rejects.toThrow(/POLICY_DENIED/);
+    expect(calls.map((c) => c.args[0])).toEqual(["type"]);
+  });
+
   it("turns an error envelope into a DesktopError that says whether input was sent", async () => {
     const { d } = scripted({ click: "policy-denied", snapshot: "window-not-found" });
     const e = await d.click("@s1:e1").catch((x: unknown) => x);

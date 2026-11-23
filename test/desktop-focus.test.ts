@@ -52,6 +52,18 @@ describe("keyOf", () => {
 });
 
 describe("focus lease", () => {
+  it("paceMs types headless at that pace, takes no focus, and stays out of the journal", async () => {
+    const d = fakeDesktop([claude()], { focusedId: undefined });
+    const h = desktopHands(d, clock());
+    await h.act({ op: "snapshot", window: "w-1" });
+    const r = await h.act({ op: "type", ref: "@s1:e1", text: "hi", paceMs: 60 });
+    expect(d.calls.filter((c) => c.call === "type")).toEqual([
+      expect.objectContaining({ mode: "headless", intervalMs: 60, text: "hi" }),
+    ]);
+    expect(d.calls.some((c) => c.call === "focus")).toBe(false);
+    expect(r.op).not.toHaveProperty("paceMs");
+  });
+
   it("types human in runs at the film pace, headed, to the field; the journal keeps human", async () => {
     const d = fakeDesktop([claude()], { focusedId: undefined });
     const h = desktopHands(d, { ...clock(), random: seeded(7) });
