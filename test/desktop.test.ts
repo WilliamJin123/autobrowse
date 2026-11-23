@@ -63,6 +63,20 @@ describe("agent-desktop adapter", () => {
     expect(snapText(snap.nodes)).toContain('button "7"');
   });
 
+  it("a multi-line value stays on its node's line, so the ref ends the line", () => {
+    const node = {
+      role: "textfield",
+      name: "Prompt",
+      value: "\n",
+      ref: "@s1:e19",
+      nativeId: null,
+      states: [],
+      bounds: null,
+      depth: 0,
+    };
+    expect(snapText([node])).toBe('- textfield "Prompt": \\n @s1:e19');
+  });
+
   it("finds by role and exact name, types by stdin, and goes headed only when asked", async () => {
     const { d, calls } = scripted({ find: "find-one", type: "click", press: "press" });
     expect(await d.find("w-1", { role: "button", name: "7" })).toEqual(["@s5su4b6s0c747:e1"]);

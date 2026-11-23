@@ -227,10 +227,12 @@ export interface Desktop {
 export function snapText(nodes: SnapNode[], valueChars = 200): string {
   return nodes
     .map((n) => {
+      // one node, one line: a multi-line value (a prompt box holds "\n") would push the ref onto the next
+      const one = n.value?.replace(/\r?\n/g, "\\n") ?? null;
       const v =
-        n.value === null || n.value === n.name
+        one === null || n.value === n.name
           ? ""
-          : `: ${n.value.length > valueChars ? `${n.value.slice(0, valueChars)}…` : n.value}`;
+          : `: ${one.length > valueChars ? `${one.slice(0, valueChars)}…` : one}`;
       const st = n.states.filter((s) => s !== "focused" || n.ref).join(",");
       return `${"  ".repeat(n.depth)}- ${n.role}${n.name ? ` "${n.name}"` : ""}${v}${st ? ` [${st}]` : ""}${n.ref ? ` ${n.ref}` : ""}`;
     })
