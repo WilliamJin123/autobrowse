@@ -1151,7 +1151,7 @@ export const panelHtml = (
   };
   // A scripted person (films, demos): an arrow glides to Pause or the note pill and presses it; a note
   // types itself and sends on Enter. No OS input: the window never takes key, the person's own focus stays.
-  const me = el('div', '', null, 'position:fixed;left:0;top:0;width:24px;height:24px;z-index:2147483647;pointer-events:none;display:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))');
+  const me = el('div', '', null, 'position:fixed;left:0;top:0;width:24px;height:24px;z-index:2147483647;pointer-events:none;display:none;transform-origin:4px 3px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))');
   {
     const NS = 'http://www.w3.org/2000/svg';
     const s = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
@@ -1171,8 +1171,9 @@ export const panelHtml = (
     me.getAnimations().forEach((a) => a.cancel());
     const d = Math.hypot(x - from[0], y - from[1]), lift = Math.min(0.18 * d, 70), cx = (from[0] + x) / 2 + lift, cy = (from[1] + y) / 2;
     const frames = [];
-    for (let i = 0; i <= 24; i++) {
-      const t = i / 24, u = 1 - t;
+    // 60 points: fewer show as corners on a long reach
+    for (let i = 0; i <= 60; i++) {
+      const t = i / 60, u = 1 - t;
       frames.push({ transform: 'translate(' + (u * u * from[0] + 2 * u * t * cx + t * t * x) + 'px,' + (u * u * from[1] + 2 * u * t * cy + t * t * y) + 'px)' });
     }
     const ms = Math.min(1100, 450 + d * 0.9);
@@ -1180,8 +1181,9 @@ export const panelHtml = (
     me.style.transform = 'translate(' + x + 'px,' + y + 'px)';
     ui.me = [x, y];
     await nap(180);
-    // press: the arrow dips, a ripple where it lands
+    // press: the arrow dips at its tip, the control gives, a ripple where it lands
     me.animate([{ transform: me.style.transform + ' scale(1)' }, { transform: me.style.transform + ' scale(.82)' }, { transform: me.style.transform + ' scale(1)' }], { duration: 220 });
+    to.animate([{ scale: '1' }, { scale: '.94' }, { scale: '1' }], { duration: 200, easing: 'ease-out' });
     const rp = el('div', 'ripple', null, 'left:' + (x + 4) + 'px;top:' + (y + 3) + 'px;position:fixed');
     rp.addEventListener('animationend', () => rp.remove());
     document.body.appendChild(rp);

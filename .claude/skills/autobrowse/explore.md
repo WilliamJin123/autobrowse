@@ -148,14 +148,14 @@ start log lists each file, as `files` does. Any stored file works by name, set o
 - `{"cmd":"upload","hints":{…},"files":["file:resume"]}` — from memory, never a temp file. A `doc` goes at once; a `paper` (an ID document) asks William once per file and host.
 - `{"cmd":"read_file","name":"work-history"}` — a doc's text, to fill fields by hand. A paper has none.
 
-Desktop, `{"cmd":"os","act":{…}}` (agent-desktop under the hood):
-- Look: `{"op":"windows","app":"Ghostty"}` (id, app, title, pid, focus), `{"op":"snapshot","window":"w-123"}` (role "name" lines with refs). A window is its id or `{"app":"…","title":"piece"}`. Looking is not journaled.
-- Act by a ref from the window's newest snapshot: `{"op":"click","ref":"@s1:e4"}`, `{"op":"type","ref":"@s1:e2","text":"…"}`. No ref: the window's focused control (a terminal prompt). `"secret":"profile.phone"` types a stored value; text that looks like a secret is refused. `"paceMs":60`: one key every 60 ms, headless, no focus taken (films). A field that refuses keys (Claude's prompt) gets its value written instead; paced, in growing chunks.
+Desktop (agent-desktop), `{"cmd":"os","act":{…}}`:
+- Look: `{"op":"windows","app":"Ghostty"}` (id, app, title, pid, focus), `{"op":"snapshot","window":"w-123"}` (role "name" lines with refs). A window: its id or `{"app":"…","title":"piece"}`. Looks are not journaled.
+- Act by a ref from the newest snapshot: `{"op":"click","ref":"@s1:e4"}`, `{"op":"type","ref":"@s1:e2","text":"…"}`. No ref: the focused control (a terminal prompt). `"secret":"profile.phone"` types a stored value; secret-like text is refused. `"paceMs":60`: a key every 60 ms, headless (films); a field refusing keys gets set-value.
 - `{"op":"key","combo":"return","window":"w-123"}`, `{"op":"launch","app":"Ghostty","fresh":true}` (own pid), `{"op":"place","window":…,"x":0,"y":0,"w":756,"h":982}`, `{"op":"focus","window":…}`.
-- `{"op":"wait","window":…,"text":"Saved","timeoutS":60}` and `{"op":"waitFile","file":"/tmp/x","timeoutS":600}` answer found or not; `{"op":"sleep","ms":500}`; `{"op":"shot"}`; `{"op":"shell","command":"…","root":true}`.
-- Terminals refuse background input: the act reruns headed once, only when the window is its pid's only one and has focus. Launch the app `fresh` for that; Ghostty also needs `"args":["--window-save-state=never"]` (else it restores old windows).
-- The journal keeps app, title, role and name, never a ref. A click that spends waits at the payment gate.
-Needs Accessibility granted to the terminal; root needs `pnpm autobrowse desktop setup` once.
+- `{"op":"wait","window":…,"text":"Saved","timeoutS":60}`, `{"op":"waitFile","file":"/tmp/x","timeoutS":600}` answer found or not; `{"op":"sleep","ms":500}`; `{"op":"shot"}`; `{"op":"shell","command":"…","root":true}`.
+- Terminals refuse background input: the act reruns headed once, only when the window is its pid's only one and has focus. Launch `fresh` for that; Ghostty also needs `"args":["--window-save-state=never"]` (no old windows).
+- The journal keeps app, title, role, name; never a ref. A spending click waits at the payment gate.
+Needs Accessibility for the terminal; root needs `pnpm autobrowse desktop setup` once.
 
 Session:
 - `{"cmd":"goal","text":"…"}` — what this run is for; send it first: a walk is built from runs sharing a goal.
