@@ -78,8 +78,12 @@ const FENCE = "```";
 /** HTML a Reddit feed carries, as the markdown-ish text a post's `selftext` or a comment's `body` holds. */
 export function mdOf(html: string): string {
   const m = /<!-- SC_OFF -->([\s\S]*?)<!-- SC_ON -->/.exec(html);
-  if (!m) return "";
-  const s = (m[1] ?? "")
+  return m ? mdOfHtml(m[1] ?? "") : "";
+}
+
+/** A body's rendered HTML (a `.md` block) as the markdown the API's `selftext`/`body` gives. */
+export function mdOfHtml(html: string): string {
+  const s = html
     .replace(
       /<pre[^>]*>\s*(?:<code[^>]*>)?([\s\S]*?)(?:<\/code>)?\s*<\/pre>/g,
       (_, code: string) => `\n\n${FENCE}\n${code.replace(/\s+$/, "")}\n${FENCE}\n\n`,
@@ -204,43 +208,12 @@ export function thingOf(e: AtomEntry): { kind: string; data: Obj } {
   };
 }
 
-/** What the rendered page says of a post; absent when the page does not say it. */
-export interface PostStat {
-  id: string;
-  score?: number | undefined;
-  comments?: number | undefined;
-  ratio?: number | undefined;
-}
-
-/** What the rendered thread says of a comment. `depth` 0 = a top-level comment. */
-export interface CommentStat {
-  id: string;
-  parent?: string | undefined;
-  depth: number;
-  score?: number | undefined;
-}
-
-export interface ThreadDom {
-  post: PostStat | null;
-  comments: CommentStat[];
-}
-
 /** An attribute's number, or nothing: `"11"` is 11, `""`, `"•"` and a missing attribute are not. */
 export const num = (v: string | null | undefined): number | undefined => {
   if (v === null || v === undefined || v.trim() === "") return undefined;
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 };
-
-const withPostStat = (data: Obj, s: PostStat | undefined): Obj =>
-  s
-    ? defined({
-        ...data,
-        score: s.score,
-        num_comments: s.comments,
-        upvote_ratio: s.ratio,
-      })
-    : data;
 
 export interface Listing {
   kind: "Listing";
@@ -257,56 +230,16 @@ const listing = (children: Array<{ kind: string; data: Obj }>, after: string | n
 });
 
 /**
- * A listing feed (a subreddit's new/hot/top/search, site search, subreddit search, user posts and
- * comments, `/api/info`) as the Data API's listing. `after` is the last thing's name when the feed
- * is full (`limit` things), as the API gives it; a short feed has no next page. `stats` fills a
- * post's score and comment count from the rendered page, only for the posts it names.
+ * A listing feed (subreddit search, user posts and comments, `/api/info`) as the Data API's
+ * listing. `after` is the last thing's name when the feed is full (`limit` things), as the API
+ * gives it; a short feed has no next page.
  */
 export function listingFromAtom(
   xml: string,
-  o: {
-    limit?: number | undefined;
-    paged?: boolean | undefined;
-    stats?: readonly PostStat[] | undefined;
-  } = {},
+  o: { limit?: number | undefined; paged?: boolean | undefined } = {},
 ): Listing {
-  const byId = new Map((o.stats ?? []).map((s) => [s.id, s]));
-  const children = parseAtom(xml).map((e) => {
-    const t = thingOf(e);
-    return t.kind === "t3" ? { ...t, data: withPostStat(t.data, byId.get(e.id)) } : t;
-  });
+  const children = parseAtom(xml).map(thingOf);
   const full = o.paged !== false && children.length > 0 && children.length >= (o.limit ?? 25);
   const last = children.at(-1)?.data.name;
   return listing(children, full && typeof last === "string" ? last : null);
-}
-
-/**
- * A thread feed (`/comments/<id>/.rss`: the post, then its comments flat) as the Data API's pair of
- * listings. The feed has no tree. With the rendered page's markup (`dom`), a reply is left out as
- * the API's listing leaves it (top-level comments only, `replies` never kept) and a top-level
- * comment gets its `parent_id` (the post) and score. A comment the page did not render has
- * neither, and stays in: its depth is not known.
- */
-export function threadFromAtom(xml: string, dom?: ThreadDom | null): [Listing, Listing] {
-  const entries = parseAtom(xml);
-  const postEntry = entries.find((e) => e.id.startsWith("t3_"));
-  const post = postEntry ? thingOf(postEntry) : null;
-  const postName = postEntry?.id;
-  const stat = dom?.post && dom.post.id === postName ? dom.post : undefined;
-  const seen = new Map((dom?.comments ?? []).map((c) => [c.id, c]));
-  const comments = entries
-    .filter((e) => e.id.startsWith("t1_"))
-    .flatMap((e) => {
-      const t = thingOf(e);
-      const c = seen.get(e.id);
-      if (!c) return [t];
-      if (c.depth > 0) return [];
-      return [
-        { ...t, data: defined({ ...t.data, parent_id: postName ?? c.parent, score: c.score }) },
-      ];
-    });
-  return [
-    listing(post ? [{ kind: post.kind, data: withPostStat(post.data, stat) }] : [], null),
-    listing(comments, null),
-  ];
 }

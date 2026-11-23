@@ -2,13 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FlowPage } from "../src/browser/flow.js";
 import { redditRead, WWW } from "../src/browser/flows/reddit.js";
-import {
-  decode,
-  listingFromAtom,
-  mdOf,
-  parseAtom,
-  threadFromAtom,
-} from "../src/browser/flows/reddit-rss.js";
+import { decode, listingFromAtom, mdOf, parseAtom } from "../src/browser/flows/reddit-rss.js";
 
 const fixture = (name: string) =>
   readFileSync(new URL(`./fixtures/reddit/${name}`, import.meta.url), "utf8");
@@ -125,21 +119,6 @@ describe("listingFromAtom", () => {
       expect(a).not.toHaveProperty(k);
   });
 
-  it("fills score and comment count only for the posts the page showed", () => {
-    const l = listingFromAtom(NEW, {
-      stats: [
-        { id: "t3_aaa111", score: 7, comments: 4, ratio: 0.9 },
-        { id: "t3_bbb222", score: undefined, comments: 0 },
-        { id: "t3_zzz999", score: 5 },
-      ],
-    });
-    const [a, b, c] = l.data.children.map((x) => x.data);
-    expect(a).toMatchObject({ score: 7, num_comments: 4, upvote_ratio: 0.9 });
-    expect(b).toMatchObject({ num_comments: 0 });
-    expect(b).not.toHaveProperty("score");
-    expect(c).not.toHaveProperty("num_comments");
-  });
-
   it("`after` is the last name only when the feed is full", () => {
     expect(listingFromAtom(NEW, { limit: 3 }).data.after).toBe("t3_ccc333");
     expect(listingFromAtom(NEW, { limit: 4 }).data.after).toBeNull();
@@ -181,81 +160,8 @@ describe("listingFromAtom", () => {
   });
 });
 
-describe("threadFromAtom", () => {
-  it("the post, then every comment: body, author, link_id, time; no depth or score", () => {
-    const [post, tree] = threadFromAtom(THREAD);
-    expect(post.data.children).toHaveLength(1);
-    expect(post.data.children[0]?.data).toMatchObject({
-      name: "t3_aaa111",
-      title: "Invoices eat our Fridays",
-      selftext: "Invoices take all of Friday.",
-      author: "example_poster_1",
-    });
-    expect(tree.data.children.map((c) => c.data.name)).toEqual([
-      "t1_c1aaaa1",
-      "t1_c2bbbb2",
-      "t1_c3cccc3",
-      "t1_c4dddd4",
-    ]);
-    expect(tree.data.children[1]?.data).toEqual({
-      id: "c2bbbb2",
-      name: "t1_c2bbbb2",
-      body: "What tool do you invoice from?",
-      author: "example_helper_1",
-      permalink: "/r/examplesub/comments/aaa111/invoices_eat_our_fridays/c2bbbb2/",
-      subreddit: "examplesub",
-      link_id: "t3_aaa111",
-      created_utc: Date.parse("2026-01-05T12:40:00+00:00") / 1000,
-    });
-  });
-
-  it("with the rendered page: replies drop out as the API's listing drops them, top-level ones get parent and score", () => {
-    const [post, tree] = threadFromAtom(THREAD, {
-      post: { id: "t3_aaa111", score: 11, comments: 18, ratio: 1 },
-      comments: [
-        { id: "t1_c1aaaa1", depth: 0, score: 1 },
-        { id: "t1_c2bbbb2", depth: 0, score: 3 },
-        { id: "t1_c3cccc3", depth: 1, parent: "t1_c2bbbb2", score: 1 },
-      ],
-    });
-    expect(post.data.children[0]?.data).toMatchObject({
-      score: 11,
-      num_comments: 18,
-      upvote_ratio: 1,
-    });
-    const names = tree.data.children.map((c) => c.data.name);
-    // c3 is a reply; c4 the page did not render, so it stays and its depth stays unknown.
-    expect(names).toEqual(["t1_c1aaaa1", "t1_c2bbbb2", "t1_c4dddd4"]);
-    expect(tree.data.children[1]?.data).toMatchObject({ parent_id: "t3_aaa111", score: 3 });
-    expect(tree.data.children[2]?.data).not.toHaveProperty("parent_id");
-    expect(tree.data.children[2]?.data).not.toHaveProperty("score");
-  });
-
-  it("a page about another post lends it nothing", () => {
-    const [post] = threadFromAtom(THREAD, {
-      post: { id: "t3_other", score: 99 },
-      comments: [],
-    });
-    expect(post.data.children[0]?.data).not.toHaveProperty("score");
-  });
-
-  it("no post in the feed: an empty post listing, never a throw", () => {
-    const [post, tree] = threadFromAtom("");
-    expect(post.data.children).toEqual([]);
-    expect(tree.data.children).toEqual([]);
-  });
-});
-
-/**
- * A fake www page: `page.evaluate` runs the flow's own script against stubbed `fetch` and
- * `document`, so the feed fetch and the rendered-page reads are both exercised.
- */
-function wwwPage(o: {
-  json?: number;
-  feeds?: Record<string, { status: number; text?: string }>;
-  dom?: Record<string, Array<Record<string, string>>>;
-  openFails?: boolean;
-}) {
+/** A fake www page: `page.evaluate` runs the flow's own script against stubbed `fetch`. */
+function wwwPage(o: { json?: number; feeds?: Record<string, { status: number; text?: string }> }) {
   let url = "about:blank";
   const fetched: string[] = [];
   const opens: string[] = [];
@@ -274,15 +180,10 @@ function wwwPage(o: {
       text: async () => a.text ?? "",
     };
   });
-  vi.stubGlobal("document", {
-    querySelectorAll: (sel: string) =>
-      (o.dom?.[sel] ?? []).map((attrs) => ({ getAttribute: (n: string) => attrs[n] ?? null })),
-  });
   const fp = {
     page: { evaluate: async (fn: (a: unknown) => unknown, arg?: unknown) => fn(arg) },
     async open(u: string) {
       opens.push(u);
-      if (o.openFails && u.includes("/comments/")) throw new Error("wall");
       url = u;
     },
     url: () => url,
@@ -294,84 +195,7 @@ beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("reddit/read signed out, `.json` refused", () => {
-  it("answers a subreddit's new from its feed, with score and comments off the page", async () => {
-    const p = wwwPage({
-      feeds: { "/r/examplesub/new/.rss": { status: 200, text: NEW } },
-      dom: {
-        "shreddit-post": [
-          { id: "t3_aaa111", score: "7", "comment-count": "4", "upvote-ratio": "1" },
-        ],
-      },
-    });
-    const out = (await redditRead.run(p.fp, {
-      path: "/r/examplesub/new",
-      query: { limit: 3, raw_json: 1 },
-      signedOut: true,
-    })) as ReturnType<typeof listingFromAtom>;
-    // The refused .json first, then its twin; raw_json is the API's flag and does not ride along.
-    expect(p.fetched[0]).toContain("/r/examplesub/new.json");
-    expect(p.fetched[1]).toBe(`${WWW}/r/examplesub/new/.rss?limit=3`);
-    expect(p.opens).toContain(`${WWW}/r/examplesub/new/`);
-    expect(out.data.children).toHaveLength(3);
-    expect(out.data.after).toBe("t3_ccc333");
-    expect(out.data.children[0]?.data).toMatchObject({
-      name: "t3_aaa111",
-      score: 7,
-      num_comments: 4,
-    });
-    expect(out.data.children[1]?.data).not.toHaveProperty("num_comments");
-  });
-
-  it("top takes its window to the page too", async () => {
-    const p = wwwPage({ feeds: { "/r/examplesub/top/.rss": { status: 200, text: NEW } } });
-    await redditRead.run(p.fp, {
-      path: "/r/examplesub/top",
-      query: { t: "week", limit: 25 },
-      signedOut: true,
-    });
-    expect(p.fetched[1]).toBe(`${WWW}/r/examplesub/top/.rss?t=week&limit=25`);
-    expect(p.opens).toContain(`${WWW}/r/examplesub/top/?t=week`);
-  });
-
-  it("a thread is the post and its top-level comments; replies the page showed drop out", async () => {
-    const p = wwwPage({
-      feeds: { "/comments/aaa111/.rss": { status: 200, text: THREAD } },
-      dom: {
-        "shreddit-post": [{ id: "t3_aaa111", score: "11", "comment-count": "18" }],
-        "shreddit-comment": [
-          { thingid: "t1_c2bbbb2", depth: "0", score: "3" },
-          { thingid: "t1_c3cccc3", depth: "1", parentid: "t1_c2bbbb2", score: "1" },
-        ],
-      },
-    });
-    const [post, tree] = (await redditRead.run(p.fp, {
-      path: "/comments/aaa111",
-      query: { limit: 100 },
-      signedOut: true,
-    })) as ReturnType<typeof threadFromAtom>;
-    expect(p.fetched[1]).toBe(`${WWW}/comments/aaa111/.rss?limit=100`);
-    expect(post.data.children[0]?.data).toMatchObject({ score: 11, num_comments: 18 });
-    expect(tree.data.children.map((c) => c.data.name)).toEqual([
-      "t1_c1aaaa1",
-      "t1_c2bbbb2",
-      "t1_c4dddd4",
-    ]);
-  });
-
-  it("a page that will not load costs the numbers, not the read", async () => {
-    const p = wwwPage({
-      feeds: { "/comments/aaa111/.rss": { status: 200, text: THREAD } },
-      openFails: true,
-    });
-    const [post, tree] = (await redditRead.run(p.fp, {
-      path: "/comments/aaa111",
-      signedOut: true,
-    })) as ReturnType<typeof threadFromAtom>;
-    expect(post.data.children[0]?.data).not.toHaveProperty("score");
-    expect(tree.data.children).toHaveLength(4);
-  });
-
-  it("subreddit search and site search use their feeds, without a page", async () => {
+  it("subreddit search uses its feed, without a page", async () => {
     const p = wwwPage({ feeds: { "/subreddits/search/.rss": { status: 200, text: SUBS } } });
     const out = (await redditRead.run(p.fp, {
       path: "/subreddits/search",
@@ -398,37 +222,23 @@ describe("reddit/read signed out, `.json` refused", () => {
     expect(p.fetched).toHaveLength(2);
   });
 
-  it("a feed 404 is the read's 404", async () => {
-    const p = wwwPage({ feeds: { "/r/nosuchsub/new/.rss": { status: 404 } } });
-    expect(await redditRead.run(p.fp, { path: "/r/nosuchsub/new", signedOut: true })).toMatchObject(
-      { error: 404 },
-    );
+  it("a feed 404 is a block: every feed is gone, not this one thing", async () => {
+    const p = wwwPage({ feeds: { "/user/example_user/submitted/.rss": { status: 404 } } });
+    await expect(
+      redditRead.run(p.fp, { path: "/user/example_user/submitted", signedOut: true }),
+    ).rejects.toMatchObject({ code: "platform_blocked" });
   });
 
   it("any other feed status fails the read", async () => {
-    const p = wwwPage({ feeds: { "/r/examplesub/new/.rss": { status: 429 } } });
+    const p = wwwPage({ feeds: { "/user/example_user/submitted/.rss": { status: 429 } } });
     await expect(
-      redditRead.run(p.fp, { path: "/r/examplesub/new", signedOut: true }),
+      redditRead.run(p.fp, { path: "/user/example_user/submitted", signedOut: true }),
     ).rejects.toThrow(/HTTP 429/);
-  });
-
-  it("a path no feed serves still fails on the 403 (the subreddit card has no feed)", async () => {
-    const p = wwwPage({});
-    await expect(
-      redditRead.run(p.fp, { path: "/r/examplesub/about", signedOut: true }),
-    ).rejects.toThrow(/HTTP 403/);
-    expect(p.fetched).toHaveLength(1);
-  });
-
-  it("signed in, a 403 is still a failure: no feed stands in", async () => {
-    const p = wwwPage({ feeds: { "/r/examplesub/new/.rss": { status: 200, text: NEW } } });
-    await expect(redditRead.run(p.fp, { path: "/r/examplesub/new" })).rejects.toThrow(/HTTP 403/);
-    expect(p.fetched).toHaveLength(1);
   });
 
   it("an answering `.json` is still the way, feeds untouched", async () => {
     const p = wwwPage({ json: 200 });
-    await redditRead.run(p.fp, { path: "/r/examplesub/new", signedOut: true });
+    await redditRead.run(p.fp, { path: "/user/example_user/submitted", signedOut: true });
     expect(p.fetched).toHaveLength(1);
   });
 });

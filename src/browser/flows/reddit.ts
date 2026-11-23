@@ -26,13 +26,17 @@ import { pageFetch, parseJson } from "../page-json.js";
 import { AccessRefused } from "../session.js";
 import { passCaptcha } from "./kit.js";
 import {
-  type CommentStat,
-  listingFromAtom,
-  num,
-  type PostStat,
-  type ThreadDom,
-  threadFromAtom,
-} from "./reddit-rss.js";
+  cursorOf,
+  type HtmlPage,
+  listingOf,
+  mergeSubs,
+  pageRows,
+  type RowKind,
+  type ShredditRow,
+  thingOfShreddit,
+  thingsOf,
+} from "./reddit-html.js";
+import { listingFromAtom, mdOfHtml, num } from "./reddit-rss.js";
 
 /** The little of the DOM these page scripts touch; the project compiles without lib dom. */
 interface El {
@@ -329,79 +333,27 @@ async function fetchText(fp: FlowPage, url: string) {
   return { status: f.status, text: f.status >= 200 && f.status < 300 ? f.text : "" };
 }
 
-/** The signed-out reads a feed can answer, and how: a listing, or a thread (post, then comments). */
+/**
+ * The signed-out reads a feed may answer once `.json` is refused. Listings, searches and threads
+ * read the HTML first (`readHtml`), so they have no row here.
+ */
 const FEEDS: Array<{
   path: RegExp;
-  kind: "listing" | "thread";
-  sort?: boolean;
   paged?: boolean;
   /** The path whose `/.rss` is the feed, when it is not the read's own. */
   feed?: (path: string) => string;
 }> = [
-  { path: new RegExp(`^/r/${SRS}/(new|hot|top)$`), kind: "listing", sort: true },
-  { path: new RegExp(`^/r/${SR}/search$`), kind: "listing" },
-  { path: /^\/search$/, kind: "listing" },
-  { path: /^\/subreddits\/search$/, kind: "listing" },
-  { path: new RegExp(`^/user/${USER}/(submitted|comments)$`), kind: "listing" },
+  { path: /^\/subreddits\/search$/ },
+  { path: new RegExp(`^/user/${USER}/(submitted|comments)$`) },
   // A user's own feed is their overview: posts and comments together.
-  {
-    path: new RegExp(`^/user/${USER}/overview$`),
-    kind: "listing",
-    feed: (p) => p.replace(/\/overview$/, ""),
-  },
-  { path: /^\/api\/info$/, kind: "listing", paged: false },
-  { path: /^\/comments\/[a-z0-9]{1,12}$/, kind: "thread" },
+  { path: new RegExp(`^/user/${USER}/overview$`), feed: (p) => p.replace(/\/overview$/, "") },
+  { path: /^\/api\/info$/, paged: false },
 ];
 
-/** Every post on a rendered listing page, with the score and comment count it shows. */
-const readPostStats = (): Array<Record<string, string | null>> =>
-  [...document.querySelectorAll("shreddit-post")].map((p) => ({
-    id: p.getAttribute("id"),
-    score: p.getAttribute("score"),
-    comments: p.getAttribute("comment-count"),
-    ratio: p.getAttribute("upvote-ratio"),
-  }));
-
-/** The rendered thread: the post's numbers and each comment's place in the tree. */
-const readThread = (): {
-  post: Array<Record<string, string | null>>;
-  comments: Array<Record<string, string | null>>;
-} => ({
-  post: [...document.querySelectorAll("shreddit-post")].slice(0, 1).map((p) => ({
-    id: p.getAttribute("id"),
-    score: p.getAttribute("score"),
-    comments: p.getAttribute("comment-count"),
-    ratio: p.getAttribute("upvote-ratio"),
-  })),
-  comments: [...document.querySelectorAll("shreddit-comment")].map((c) => ({
-    id: c.getAttribute("thingid"),
-    parent: c.getAttribute("parentid"),
-    depth: c.getAttribute("depth"),
-    score: c.getAttribute("score"),
-  })),
-});
-
-const postStat = (r: Record<string, string | null> | undefined): PostStat | null =>
-  r?.id ? { id: r.id, score: num(r.score), comments: num(r.comments), ratio: num(r.ratio) } : null;
-
 /**
- * The page a feed mirrors, read for what the feed lacks. Best effort: a page that will not load
- * or render leaves those numbers out, never fails the read.
- */
-async function pageNumbers<T>(fp: FlowPage, url: string, read: () => T): Promise<T | null> {
-  try {
-    await fp.open(url, { allowWall: true });
-    return await fp.page.evaluate(read);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Signed out, `.json` is refused (403, since about 2026-10-13) but the feed and the page answer.
- * Answers the same shape the `.json` read would, from `<path>/.rss`; the score and comment count
- * a feed lacks come from the rendered page when it shows them. Undefined: no feed serves this
- * path. A feed 404 is the read's 404 too.
+ * Signed out, a read `.json` refused (403) and no HTML page serves, from `<path>/.rss`, in the
+ * shape the `.json` read gives. Undefined: no feed serves this path. Every feed 404s since about
+ * 2026-11; the read then fails as `platform_blocked`.
  */
 async function readFeed(fp: FlowPage, path: string, q: Record<string, string>) {
   const feed = FEEDS.find((f) => f.path.test(path));
@@ -409,34 +361,174 @@ async function readFeed(fp: FlowPage, path: string, q: Record<string, string>) {
   const { raw_json: _drop, ...query } = q;
   const qs = new URLSearchParams(query).toString().replace(/\+/g, "%20");
   const got = await fetchText(fp, `${WWW}${feed.feed?.(path) ?? path}/.rss${qs ? `?${qs}` : ""}`);
-  if (got.status === 404) return { error: 404, message: `no such thing: ${path}` };
+  // Every feed answers 404 since about 2026-11 (rss.reddit.com "Not Found"): a block, not a miss.
+  if (got.status === 404)
+    throw new AccessRefused(
+      "platform_blocked",
+      `reddit read ${path}: .json refused (403) and its feed is gone (404)`,
+    );
   if (got.status !== 200)
     throw new Error(`reddit read ${path}: HTTP ${got.status} (feed after a 403 on .json)`);
-  if (feed.kind === "thread") {
-    const id = path.slice("/comments/".length);
-    const raw = await pageNumbers(fp, `${WWW}/comments/${id}/`, readThread);
-    const dom: ThreadDom | null = raw
+  return listingFromAtom(got.text, { limit: num(query.limit), paged: feed.paged });
+}
+
+/** Pages the HTML fallback reads per subreddit at most: 5 × 24 posts. */
+const HTML_PAGES = 5;
+const HTML_PAUSE_MS = 900;
+const LISTING = new RegExp(`^/r/(${SRS})/(new|hot|top)$`);
+const SR_SEARCH = new RegExp(`^/r/(${SR})/search$`);
+
+/** One page's rows through the page script; a login wall or a refusal is the read's error. */
+async function htmlRows<R>(fp: FlowPage, url: string, kind: RowKind): Promise<HtmlPage<R>> {
+  const got = (await fp.page.evaluate(pageRows, { url, kind })) as HtmlPage<R>;
+  const said = `reddit read ${new URL(url).pathname}: HTTP ${got.status} (HTML after a 403 on .json)`;
+  if (/\/login\b/.test(got.url)) throw new AccessRefused("need_login", `${said}: a login wall`);
+  if (got.status === 429) throw new AccessRefused("rate_limited", said);
+  if (got.status === 403) throw new AccessRefused("platform_blocked", said);
+  if (got.status !== 200) throw new Error(said);
+  return got;
+}
+
+const on = async (fp: FlowPage, origin: string) => {
+  if (!fp.url().startsWith(origin)) await fp.open(`${origin}/`, { allowWall: true });
+};
+
+/**
+ * A read Reddit refused as `.json` (403), from the HTML it still serves (`reddit-html.ts`), in the
+ * same shape. Undefined: no page serves this read on this leg.
+ */
+async function readHtml(
+  fp: FlowPage,
+  path: string,
+  q: Record<string, string>,
+  signedOut: boolean,
+): Promise<unknown> {
+  const limit = Math.min(Math.max(num(q.limit) ?? 25, 1), 100);
+  const listing = LISTING.exec(path);
+  if (listing) {
+    await on(fp, WWW);
+    const subs = (listing[1] ?? "").split("+");
+    const sort = listing[2] as "new" | "hot" | "top";
+    const after = q.after && /^t3_[a-z0-9]+$/.test(q.after) ? q.after : undefined;
+    const perSub = [];
+    for (const sub of subs) {
+      const things = [];
+      // One sub pages from the API's `after`; several merge from the top, `after` cut below.
+      let cursor: string | null = after && subs.length === 1 ? cursorOf(after) : null;
+      for (let i = 0; i < HTML_PAGES && things.length <= limit; i++) {
+        if (i > 0 || perSub.length > 0) await fp.wait(HTML_PAUSE_MS);
+        const u = new URL(`${WWW}/svc/shreddit/community-more-posts/${sort}/`);
+        u.searchParams.set("name", sub);
+        if (q.t) u.searchParams.set("t", q.t.toUpperCase());
+        if (cursor) u.searchParams.set("after", cursor);
+        const page = await htmlRows<ShredditRow>(fp, u.href, "shreddit");
+        things.push(...thingsOf("shreddit", page.rows));
+        cursor = page.next;
+        if (!cursor || page.rows.length === 0) break;
+        if (after && subs.length > 1 && things.some((t) => t.data.name === after)) break;
+      }
+      perSub.push(things);
+    }
+    let merged = mergeSubs(perSub, sort);
+    if (after && subs.length > 1) {
+      const at = merged.findIndex((t) => t.data.name === after);
+      merged = at >= 0 ? merged.slice(at + 1) : [];
+    }
+    return listingOf(merged, limit, false);
+  }
+  const srSearch = SR_SEARCH.exec(path);
+  if (srSearch || path === "/search") {
+    const sr = srSearch?.[1];
+    if (signedOut) {
+      // www search: one page, no text body; its cursor is opaque, so no `after`.
+      await on(fp, WWW);
+      const u = new URL(`${WWW}${sr ? `/r/${sr}` : ""}/search/`);
+      u.searchParams.set("q", q.q ?? "");
+      u.searchParams.set("type", "posts");
+      if (q.sort) u.searchParams.set("sort", q.sort);
+      if (q.t) u.searchParams.set("t", q.t);
+      const page = await htmlRows(fp, u.href, "wwwSearch");
+      return listingOf(thingsOf("wwwSearch", page.rows).slice(0, limit), limit, false);
+    }
+    await on(fp, OLD);
+    const u = new URL(`${OLD}${sr ? `/r/${sr}` : ""}/search/`);
+    for (const [k, v] of Object.entries(q)) if (k !== "raw_json") u.searchParams.set(k, v);
+    if (sr)
+      u.searchParams.set("restrict_sr", /^(1|true|on)$/.test(q.restrict_sr ?? "1") ? "on" : "");
+    u.searchParams.set("limit", String(limit));
+    const page = await htmlRows(fp, u.href, "oldSearch");
+    return listingOf(thingsOf("oldSearch", page.rows), limit, page.next !== null);
+  }
+  if (path === "/api/info" && !signedOut) {
+    const names = (q.id ?? "").split(",").filter((n) => /^t3_[a-z0-9]+$/.test(n));
+    if (names.length === 0) return undefined;
+    await on(fp, OLD);
+    const page = await htmlRows(fp, `${OLD}/by_id/${names.join(",")}`, "old");
+    return listingOf(thingsOf("old", page.rows), 100, false);
+  }
+  if (/^\/comments\/[a-z0-9]{1,12}$/.test(path) && signedOut) return readThreadPage(fp, path);
+  return undefined;
+}
+
+/** What the rendered www thread shows: the post, and each comment with its place and text. */
+const readThreadFull = () => {
+  const attrs = (e: El & { attributes?: ArrayLike<{ name: string; value: string }> }) =>
+    Object.fromEntries(Array.from(e.attributes ?? []).map((x) => [x.name, x.value]));
+  const inner = (e: El | null | undefined) =>
+    (e as unknown as { innerHTML?: string } | null)?.innerHTML ?? null;
+  const post = [...document.querySelectorAll("shreddit-post")][0];
+  return {
+    post: post
       ? {
-          post: postStat(raw.post[0]),
-          comments: raw.comments.flatMap((c): CommentStat[] => {
-            const depth = num(c.depth);
-            return c.id && depth !== undefined
-              ? [{ id: c.id, parent: c.parent ?? undefined, depth, score: num(c.score) }]
-              : [];
-          }),
+          attrs: attrs(post),
+          body: inner(
+            post.querySelector?.('[slot="text-body"] .md') ??
+              post.querySelector?.('[slot="text-body"]'),
+          ),
         }
-      : null;
-    return threadFromAtom(got.text, dom);
-  }
-  const limit = num(query.limit);
-  let stats: PostStat[] | undefined;
-  if (feed.sort) {
-    // /r/x/new/ renders the posts the feed lists; /top/ takes the same `t`.
-    const page = `${WWW}${path}/${query.t ? `?t=${encodeURIComponent(query.t)}` : ""}`;
-    const rows = await pageNumbers(fp, page, readPostStats);
-    stats = rows?.flatMap((r) => postStat(r) ?? []);
-  }
-  return listingFromAtom(got.text, { limit, paged: feed.paged, stats });
+      : null,
+    comments: [...document.querySelectorAll("shreddit-comment")].map((c) => ({
+      attrs: attrs(c),
+      body: inner(c.querySelector?.('[slot="comment"]')),
+    })),
+  };
+};
+
+/** A signed-out thread from its rendered www page: the API's pair, top-level comments only. */
+async function readThreadPage(fp: FlowPage, path: string) {
+  const id = path.slice("/comments/".length);
+  await fp.open(`${WWW}/comments/${id}/`, { allowWall: true });
+  const got = (await fp.page.evaluate(readThreadFull)) as {
+    post: ShredditRow | null;
+    comments: ShredditRow[];
+  };
+  const post = got.post ? thingOfShreddit(got.post) : null;
+  if (!post) return { error: 404, message: `no such thing: ${path}` };
+  const comments = got.comments
+    .filter((c) => c.attrs.depth === "0" && /^t1_/.test(c.attrs.thingid ?? ""))
+    .map((c) => {
+      const a = c.attrs;
+      const name = a.thingid ?? "";
+      return {
+        kind: "t1",
+        data: Object.fromEntries(
+          Object.entries({
+            id: name.slice(3),
+            name,
+            author: a.author,
+            body: c.body ? mdOfHtml(c.body) : undefined,
+            parent_id: post.data.name,
+            link_id: post.data.name,
+            permalink: a.permalink,
+            score: num(a.score),
+            created_utc: a.created
+              ? Math.floor(Date.parse(a.created) / 1000) || undefined
+              : undefined,
+          }).filter(([, v]) => v !== undefined),
+        ),
+      };
+    });
+  return [listingOf([post], 1, false), listingOf(comments, comments.length || 1, false)];
 }
 
 export interface ReadInput {
@@ -457,6 +549,10 @@ export const redditRead = defineFlow<ReadInput, unknown>({
     const q = Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)]));
     const got = await fetchJson(fp, path, q, signedOut ? WWW : OLD, read.bare);
     if (got.status === 404) return { error: 404, message: `no such thing: ${path}` };
+    if (got.status === 403) {
+      const viaHtml = await readHtml(fp, path, q, signedOut);
+      if (viaHtml !== undefined) return read.slim(viaHtml);
+    }
     if (got.status === 403 && signedOut) {
       const viaFeed = await readFeed(fp, path, q);
       if (viaFeed !== undefined) return viaFeed;
@@ -464,8 +560,9 @@ export const redditRead = defineFlow<ReadInput, unknown>({
     if (got.status !== 200) {
       const said = `reddit read ${path}: HTTP ${got.status}`;
       if (got.status === 429) throw new AccessRefused("rate_limited", said);
-      if (got.status === 401 || got.status === 403)
-        throw new AccessRefused(signedOut ? "platform_blocked" : "need_login", said);
+      if (got.status === 401) throw new AccessRefused("need_login", said);
+      // A signed-in 403 is Reddit's path block ("blocked by network security"): /api/me still answers.
+      if (got.status === 403) throw new AccessRefused("platform_blocked", said);
       if (got.status >= 500) throw new AccessRefused("upstream_broken", said);
       throw new Error(said);
     }
