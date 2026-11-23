@@ -2284,7 +2284,7 @@ async function serve(
       }
       case "overlay": {
         const { cmd: _, refs, on, name, color, person, ...fields } = c;
-        if (person) return { person: overlay.person(person) };
+        if (person) return { person: await overlay.person(person) };
         if (name !== undefined || color !== undefined) overlay.who(name, color);
         if (on !== undefined) await overlay.toggle(page, on);
         if (on === false) return { drawn: false };

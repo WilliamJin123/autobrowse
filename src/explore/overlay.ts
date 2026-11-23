@@ -1187,7 +1187,9 @@ export const panelHtml = (
     document.body.appendChild(rp);
     await nap(110);
   };
-  ui.person = async (act) => {
+  // the result goes back to the host: the director gates its next step on it
+  ui.person = (act) => act1(act).then((r) => { post({ person: r }); return r; });
+  const act1 = async (act) => {
     if (!ui.s) return { done: false, why: 'nothing drawn yet' };
     if (act.pause !== undefined) {
       const b = shown('hold');
@@ -1407,6 +1409,7 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
   const geometry = deps.geometry ?? surface.geometry;
   /** Questions out, by id: the panel's button answers one. */
   const asking = new Map<number, (yes: boolean | null) => void>();
+  let personDone: ((r: { done: boolean; why?: string }) => void) | null = null;
   let askN = 0;
   let steered: (s: Steer) => void = () => undefined;
   let noteN = 0;
@@ -1446,6 +1449,10 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     const a = e.t === "js" ? (e.answer as { id?: unknown; yes?: unknown } | undefined) : undefined;
     if (a && typeof a.id === "number") answered(a.id, a.yes === true);
     if (e.t === "js" && typeof e.pause === "boolean") steered({ pause: e.pause });
+    if (e.t === "js" && e.person && typeof e.person === "object") {
+      personDone?.(e.person as { done: boolean; why?: string });
+      personDone = null;
+    }
     if (e.t === "js" && typeof e.note === "string" && e.note.trim()) {
       const text = e.note.trim().slice(0, 500);
       state.notes = [...state.notes, { id: ++noteN, text, read: false }].slice(-20);
@@ -1640,11 +1647,20 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
       return { drawn: true, ...(prefs.marks ? { boxes: state.boxes.length } : {}) };
     },
     /** A scripted person on the panel (films): Pause or Resume, or a note typed and sent. No OS input. */
-    person(act: { pause: boolean } | { note: string }): { done: boolean; why?: string } {
+    async person(
+      act: { pause: boolean } | { note: string },
+    ): Promise<{ done: boolean; why?: string }> {
       if (!enabled || !drawn || !host)
         return { done: false, why: why ?? "the overlay is not drawn" };
+      personDone?.({ done: false, why: "a newer act took its place" });
+      // glide, press, and ~130 ms a key
+      const ms = 6000 + ("note" in act ? act.note.length * 200 : 0);
+      const r = new Promise<{ done: boolean; why?: string }>((resolve) => {
+        personDone = resolve;
+        setTimeout(() => resolve({ done: false, why: "the panel did not answer" }), ms).unref?.();
+      });
       host.send({ t: "js", js: `ui.person(${JSON.stringify(act)})` });
-      return { done: true };
+      return r;
     },
     /** A marks shot's numbered boxes stay drawn; the boxes button shows and hides them. */
     async marked(page: S, boxes: Array<{ n: number; box: Box }>): Promise<void> {

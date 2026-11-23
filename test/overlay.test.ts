@@ -486,21 +486,32 @@ describe("headed overlay, out of the page", () => {
       const h = await webHost(browser);
       const page = await browser.newPage();
       const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry: geo() });
-      expect(o.person({ pause: true })).toMatchObject({ done: false });
+      expect(await o.person({ pause: true })).toMatchObject({ done: false });
       const got: Steer[] = [];
       o.onSteer((s) => got.push(s));
       await o.set(page, { goal: "save the form" });
       await h.idle();
       await settled(h.view);
-      expect(o.person({ pause: true })).toEqual({ done: true });
-      await expect.poll(() => got, { timeout: 5000 }).toEqual([{ pause: true }]);
+      expect(await o.person({ pause: true })).toEqual({ done: true });
+      expect(got).toEqual([{ pause: true }]);
       await o.held(page, { since: Date.now(), arming: false });
       await h.idle();
-      o.person({ note: "go on" });
-      await expect.poll(() => got.at(-1), { timeout: 8000 }).toEqual({ note: "go on" });
+      expect(await o.person({ note: "go on" })).toEqual({ done: true });
+      expect(got.at(-1)).toEqual({ note: "go on" });
       expect(o.takeNotes()).toEqual(["go on"]);
       // never asked for the keyboard: the person's own focus stays where it was
       expect(h.posts.some((m) => m.key === true)).toBe(false);
+      // the island (films): Resume on its small Pause, then a note through its pill
+      const hi = await webHost(browser);
+      const i = overlayFor(true, { host: hi.factory, geometry: geo() });
+      const isl: Steer[] = [];
+      i.onSteer((s) => isl.push(s));
+      await i.flash(page, { text: "Save" }, "click: Post");
+      await hi.idle();
+      await settled(hi.view);
+      expect(await i.person({ pause: true })).toEqual({ done: true });
+      expect(await i.person({ note: "shorter" })).toEqual({ done: true });
+      expect(isl).toEqual([{ pause: true }, { note: "shorter" }]);
     } finally {
       await browser.close();
     }
