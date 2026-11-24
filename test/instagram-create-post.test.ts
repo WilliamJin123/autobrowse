@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { instagramCreatePost } from "../src/browser/flows/instagram-create-post.js";
+import { handleOf, instagramCreatePost } from "../src/browser/flows/instagram-create-post.js";
 import type { Hints } from "../src/browser/locate.js";
 import { BROWSER_FLOWS } from "../src/engine/browser-service.js";
 import { instagram } from "../src/sites/instagram.js";
@@ -67,6 +67,29 @@ describe("instagram/create-post", () => {
       instagramCreatePost.run(fp, { file: "/tmp/a.png", account: "someoneelse" }),
     ).rejects.toThrow(/posts as @wrenautomation/);
     expect(acts).toEqual([]);
+  });
+
+  it("takes a profile pick (instagram@label) as no handle: the rail names the account", async () => {
+    expect(handleOf("instagram@lana2")).toBeUndefined();
+    expect(handleOf("@wrenautomation")).toBe("wrenautomation");
+    let shared = false;
+    const { fp } = fakePage({
+      text: ["", "", "", "", "", "Your post has been shared."],
+      present: () => true,
+      url: "https://www.instagram.com/",
+      onAct: (n) => {
+        if (n === 6) shared = true;
+      },
+    });
+    fp.html = async () =>
+      shared
+        ? `${RAIL}<a href="/p/NEW/">new</a><a href="/p/OLD/">old</a>`
+        : `${RAIL}<a href="/p/OLD/">old</a>`;
+    const out = await instagramCreatePost.run(fp, {
+      file: "/tmp/a.png",
+      account: "instagram@lana2",
+    });
+    expect(out).toEqual({ url: "https://www.instagram.com/p/NEW/" });
   });
 
   it("hands over when the composer never opens, before any upload", async () => {

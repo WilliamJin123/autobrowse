@@ -36,14 +36,15 @@ export const instagramCreatePost = defineFlow<CreatePostInput, { url: string | n
   strategies: ["ui"],
   async run(fp, input) {
     await fp.open(HOME);
-    if (input.account) {
+    const handle = handleOf(input.account);
+    if (handle) {
       const who = await signedInAs(fp);
-      if (who && who.toLowerCase() !== input.account.toLowerCase().replace(/^@/, ""))
+      if (who && who.toLowerCase() !== handle.toLowerCase())
         return fp.human(
-          `this profile posts as @${who}, not @${input.account}: sign it in as that account`,
+          `this profile posts as @${who}, not @${handle}: sign it in as that account`,
         );
     }
-    const before = await postLinks(fp, input.account ?? (await signedInAs(fp)) ?? "");
+    const before = await postLinks(fp, handle ?? (await signedInAs(fp)) ?? "");
     // The rail item opens a menu (Post / Live video / Ad); its Post entry
     // carries the icon, so the icon is what names it.
     await fp.act(
@@ -82,7 +83,7 @@ export const instagramCreatePost = defineFlow<CreatePostInput, { url: string | n
       if (/something went wrong|couldn.t share|try again/i.test(text))
         return fp.human(`Instagram did not take the post: ${text.slice(0, 200)}`);
       if (!/your post has been shared|post shared/i.test(text)) continue;
-      const who = input.account ?? (await signedInAs(fp)) ?? "";
+      const who = handle ?? (await signedInAs(fp)) ?? "";
       for (let j = 0; j < 10; j++) {
         await fp.open(`${HOME}${who}/`);
         const fresh = (await postLinks(fp, who)).filter((u) => !before.includes(u));
@@ -94,6 +95,12 @@ export const instagramCreatePost = defineFlow<CreatePostInput, { url: string | n
     return fp.human(`the composer never confirmed the post (on ${fp.url()})`);
   },
 });
+
+/** `@name`/`name`: a handle. `instagram@lana2`: plan.account's profile pick (`runnerForAccount`), no handle; the rail says it. */
+export function handleOf(account: string | undefined): string | undefined {
+  const a = account?.replace(/^@/, "");
+  return a && !a.includes("@") ? a : undefined;
+}
 
 /** The handle the rail shows for the signed-in account, or null when the page does not say. */
 async function signedInAs(fp: { html(): Promise<string> }): Promise<string | null> {
