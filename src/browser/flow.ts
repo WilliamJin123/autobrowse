@@ -317,6 +317,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               .then(() => true)
               .catch(() => false));
           let signingIn = false;
+          // a sign-in that worked in this run: authbridge saves the profile when the run ends ok
+          let signedIn = false;
           let triedCaptcha = false;
           let captchaTries = 0;
           let captchaSolved: boolean | null = null;
@@ -503,7 +505,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               if (mode === "read") throw new SignInAlone();
               signingIn = true;
               try {
-                return await stepped(
+                const got = await stepped(
                   { kind: "sign-in", goal: `sign in to ${site ?? flow.site}` },
                   () =>
                     (runner.login as NonNullable<RunnerOptions["login"]>)(
@@ -512,6 +514,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
                       account,
                     ),
                 );
+                if (got === "signed-in") signedIn = true;
+                return got;
               } finally {
                 signingIn = false;
               }
@@ -802,6 +806,7 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
                 );
                 if (outcome !== "signed-in")
                   throw new NeedsHuman(`${flow.site}: ${wall.detail} (${outcome})`, wall.kind);
+                signedIn = true;
               } finally {
                 signingIn = false;
               }
@@ -1051,6 +1056,18 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
                 await shareTrace(path, { site: key, flow: flow.name, outcome: "ok" });
               if (path && !watch) rmSync(path, { force: true });
             }
+            // authbridge: a run that ended ok keeps the profile's sign-in (after a sign-in or a
+            // person's turn, else daily); only a browser autobrowse owns, never the person's own
+            if (
+              outcome === "ok" &&
+              !broken &&
+              opts.signIns &&
+              opts.tier === "local" &&
+              !session.shared
+            )
+              await opts.signIns
+                .afterRun(key, session.context, signedIn || withPerson)
+                .catch(() => undefined);
             // The pool parks or closes the browser when its last user leaves.
             // A run that waits for a person keeps every tab: the answer may need one.
             leave({

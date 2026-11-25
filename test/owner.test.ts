@@ -48,11 +48,17 @@ describe("names", () => {
     expect(named("sites")).toBe("sites");
     expect(named("sites", "me")).toBe("sites");
     expect(named("sites", "acme")).toBe("sites_acme");
-    expect(ownerKeys("me")).toEqual({ ssm: "/autobrowse/config", shots: "", inputs: "inputs/" });
+    expect(ownerKeys("me")).toEqual({
+      ssm: "/autobrowse/config",
+      shots: "",
+      inputs: "inputs/",
+      signins: "signins/",
+    });
     expect(ownerKeys("acme")).toEqual({
       ssm: "/autobrowse/owners/acme/config",
       shots: "owners/acme/",
       inputs: "inputs/owners/acme/",
+      signins: "owners/acme/signins/",
     });
   });
 

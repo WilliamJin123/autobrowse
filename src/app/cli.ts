@@ -24,6 +24,7 @@ import { localBackend, proofsOf, spentKeysFor, workflowsOf } from "./backend.js"
 import { registerAccessCommands } from "./cli-access.js";
 import { registerAccountsCommands } from "./cli-accounts.js";
 import { registerAuthCommands } from "./cli-auth.js";
+import { registerAuthbridgeCommands } from "./cli-authbridge.js";
 import { registerAutotrackCommands } from "./cli-autotrack.js";
 import { registerAwsCommands } from "./cli-aws.js";
 import { registerCallsCommands } from "./cli-calls.js";
@@ -1084,6 +1085,7 @@ registerSkillsCommands(program);
 registerEvalsCommands(program, settings);
 registerJobCommands(program, settings);
 registerAutotrackCommands(program, settings);
+registerAuthbridgeCommands(program, settings);
 registerAccessCommands(program, settings);
 
 tidyHelp(program);

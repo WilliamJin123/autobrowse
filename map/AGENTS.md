@@ -32,6 +32,7 @@ Each word below has one meaning. A thing that used to share a word has its own w
 | Chrome profile | one browser profile, named per account: `x`, `x@wren` | `Site = string` (`src/browser/flow-api.ts:21`) |
 | site API | a site's official API behind one facade | `SiteApi` (`src/sites/types.ts:155`) |
 | login | how one site signs in | `SiteLogin` (`src/auth/login.ts:56`) |
+| sign-in snapshot | a profile's saved sign-in, sealed in S3, restorable anywhere (authbridge) | `SignInSnapshot` (`src/authbridge/snapshot.ts`) |
 | sign-in provider | the account a login goes through: google, github, microsoft | `IdentityProvider` (`auth/providers`, `auth/identities`) |
 | workflow | engine steps and gates on Restate; a compiled workflow wraps flows | `Workflow` |
 | flow | one browser leg | `BrowserFlow` |

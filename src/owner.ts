@@ -24,12 +24,18 @@ export const named = (base: string, owner: string = operator()): string =>
 /** Where an owner's things sit in SSM and S3. */
 export function ownerKeys(owner: string) {
   if (isDefaultOwner(owner))
-    return { ssm: "/autobrowse/config", shots: "", inputs: "inputs/" } as const;
+    return {
+      ssm: "/autobrowse/config",
+      shots: "",
+      inputs: "inputs/",
+      signins: "signins/",
+    } as const;
   checkOwner(owner);
   return {
     ssm: `/autobrowse/owners/${owner}/config`,
     shots: `owners/${owner}/`,
     inputs: `inputs/owners/${owner}/`,
+    signins: `owners/${owner}/signins/`,
   } as const;
 }
 

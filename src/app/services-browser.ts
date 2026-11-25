@@ -27,6 +27,7 @@ import { senderDomainWorkflow } from "../workflows/sender-domain/index.js";
 import { workspaceInboxWorkflow } from "../workflows/workspace-inbox/index.js";
 import type { Settings } from "./config.js";
 import { type Display, displayOf, headed } from "./display.js";
+import { bridgeFor } from "./services-authbridge.js";
 import { gmailFor } from "./services-reach.js";
 import { loginFor } from "./services-signin.js";
 import { credentialsFor, llmCallsDirFor } from "./services-state.js";
@@ -104,6 +105,10 @@ export function browserOptions(
   display: Display = displayOf(settings),
 ): BrowserOptions {
   const store = credentialsFor(settings);
+  const egress = egressOf((n) => process.env[n], {
+    signsIn: (site) => SITE_LOGINS.some((l) => l.site === site),
+  });
+  const signIns = bridgeFor(settings, egress);
   return {
     // Read when a browser opens, so the switch applies to the next one.
     get headless() {
@@ -125,9 +130,9 @@ export function browserOptions(
     cdpUrl: settings.browserCdpUrl ?? null,
     own: ownBrowserOf(settings.ownBrowser, settings.ownBrowserSites),
     // Exits are named in the env (`EGRESS_SITES`, `EGRESS_<NAME>`), so read there.
-    egress: egressOf((n) => process.env[n], {
-      signsIn: (site) => SITE_LOGINS.some((l) => l.site === site),
-    }),
+    egress,
+    // authbridge: a run that ends ok keeps its profile's sign-in in the shots bucket
+    ...(signIns ? { signIns } : {}),
     ...(settings.browserTimezone ? { timezone: settings.browserTimezone } : {}),
     profilesDir: settings.profilesDir,
     channel: settings.browserChannel,

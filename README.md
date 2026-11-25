@@ -233,6 +233,13 @@ a row; it is work.
   needs one yes per file and host. `read_file{name}` gives a doc's text.
   `files migrate` moves an old `papers` dir in once
   (designs/2026-10-20-files.md).
+- **Sign-in snapshots.** A run that signs in (or that a person finished) saves
+  the profile's cookies, localStorage and IndexedDB, sealed, to the shots
+  bucket under `signins/`; a signed-in profile also saves once a day.
+  `autobrowse authbridge save <profile>` saves one now; `list` and `show` give
+  counts, never values; `restore <profile> [--into <name>] [--replace]` puts a
+  version into an empty folder (an existing one moves aside) and checks the
+  site's sign-in. Off a Mac set `AUTOBROWSE_MACHINE` (designs/2026-11-25-authbridge.md).
 - **Track.** `autotrack` (its own repo) records every input and screen on a
   laptop and ships it to a private bucket (`TRACK_BUCKET`). `autobrowse autotrack
   enroll <device>` makes that device a write-only key and prints its install

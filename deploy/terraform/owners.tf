@@ -69,6 +69,22 @@ data "aws_iam_policy_document" "owners" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.shots.arn}/owners/${local.owner_tag}/*"]
   }
+  # authbridge: an owner's sign-in snapshots, read back to restore them
+  statement {
+    sid       = "OwnSignIns"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.shots.arn}/owners/${local.owner_tag}/signins/*"]
+  }
+  statement {
+    sid       = "ListOwnSignIns"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.shots.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["owners/${local.owner_tag}/signins/*"]
+    }
+  }
   statement {
     sid       = "OwnRunInputs"
     actions   = ["s3:PutObject", "s3:GetObject"]

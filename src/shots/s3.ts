@@ -5,6 +5,13 @@
 import { createWriteStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
+import {
+  POINTER,
+  PointerMoved,
+  SEALED,
+  type SnapshotStore,
+  safeProfile,
+} from "../authbridge/store.js";
 import { type AwsConfig, s3Aws } from "../owner.js";
 import type { BlobStore } from "./ship.js";
 import type { TraceStore } from "./traces.js";
@@ -134,6 +141,116 @@ export function s3FileBucket(o: { bucket: string; aws: AwsConfig }) {
     async remove(key: string) {
       const { s3, sdk } = await client;
       await s3.send(new sdk.DeleteObjectCommand({ Bucket: o.bucket, Key: key }));
+    },
+  };
+}
+
+type Sdk = typeof import("@aws-sdk/client-s3");
+
+/** authbridge snapshots under `prefix` (`signins/`, an owner's `owners/<owner>/signins/`). */
+export function s3SnapshotStore(o: {
+  bucket: string;
+  prefix: string;
+  aws: AwsConfig;
+}): SnapshotStore {
+  let made: Promise<{ s3: import("@aws-sdk/client-s3").S3Client; sdk: Sdk }> | null = null;
+  const client = () => {
+    made ??= import("@aws-sdk/client-s3").then((sdk) => ({
+      s3: new sdk.S3Client(s3Aws(o.aws)),
+      sdk,
+    }));
+    return made;
+  };
+  const key = (profile: string, file: string) => `${o.prefix}${safeProfile(profile)}/${file}`;
+  const notFound = (err: unknown) =>
+    (err as { name?: string })?.name === "NoSuchKey" ||
+    (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
+  const conflict = (err: unknown) => {
+    const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+    // 412: the tag no longer matches; 409: a concurrent conditional write won
+    return status === 412 || status === 409;
+  };
+  async function text(k: string): Promise<{ body: string; tag: string } | null> {
+    const { s3, sdk } = await client();
+    try {
+      const got = await s3.send(new sdk.GetObjectCommand({ Bucket: o.bucket, Key: k }));
+      return { body: (await got.Body?.transformToString("utf8")) ?? "", tag: got.ETag ?? "" };
+    } catch (err) {
+      if (notFound(err)) return null;
+      throw err;
+    }
+  }
+  async function list(prefix: string, delimiter?: string) {
+    const { s3, sdk } = await client();
+    const keys: string[] = [];
+    const dirs: string[] = [];
+    let token: string | undefined;
+    do {
+      const page = await s3.send(
+        new sdk.ListObjectsV2Command({
+          Bucket: o.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+          ...(delimiter ? { Delimiter: delimiter } : {}),
+        }),
+      );
+      for (const c of page.Contents ?? []) if (c.Key) keys.push(c.Key);
+      for (const p of page.CommonPrefixes ?? []) if (p.Prefix) dirs.push(p.Prefix);
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return { keys, dirs };
+  }
+  return {
+    where: `s3://${o.bucket}/${o.prefix}`,
+    async putSealed(profile, version, sealed) {
+      const { s3, sdk } = await client();
+      await s3.send(
+        new sdk.PutObjectCommand({
+          Bucket: o.bucket,
+          Key: key(profile, `${version}${SEALED}`),
+          Body: sealed,
+          ContentType: "text/plain",
+          // a version is written once; a second write of the same name is a bug
+          IfNoneMatch: "*",
+        }),
+      );
+    },
+    async getSealed(profile, version) {
+      return (await text(key(profile, `${version}${SEALED}`)))?.body ?? null;
+    },
+    async versions(profile) {
+      const { keys } = await list(key(profile, ""));
+      return keys
+        .map((k) => k.slice(k.lastIndexOf("/") + 1))
+        .filter((f) => f.endsWith(SEALED))
+        .map((f) => f.slice(0, -SEALED.length))
+        .sort()
+        .reverse();
+    },
+    async profiles() {
+      const { dirs } = await list(o.prefix, "/");
+      return dirs.map((d) => d.slice(o.prefix.length, -1));
+    },
+    async pointer(profile) {
+      const got = await text(key(profile, POINTER));
+      return got ? { value: JSON.parse(got.body), tag: got.tag } : null;
+    },
+    async setPointer(profile, value, tag) {
+      const { s3, sdk } = await client();
+      try {
+        await s3.send(
+          new sdk.PutObjectCommand({
+            Bucket: o.bucket,
+            Key: key(profile, POINTER),
+            Body: JSON.stringify(value, null, 2),
+            ContentType: "application/json",
+            ...(tag === null ? { IfNoneMatch: "*" } : { IfMatch: tag }),
+          }),
+        );
+      } catch (err) {
+        if (conflict(err)) throw new PointerMoved(profile);
+        throw err;
+      }
     },
   };
 }

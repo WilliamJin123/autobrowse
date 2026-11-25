@@ -9,6 +9,7 @@ import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Browser, BrowserContext, Page } from "playwright";
+import type { SignInSaver } from "../authbridge/snapshot.js";
 import { type HttpClient, safeUrls } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
 import { assertProfileFree } from "./browsers.js";
@@ -172,6 +173,8 @@ export interface BrowserOptions {
   own?: OwnBrowser | null;
   /** Where each local profile leaves from (`browser/egress`); none = the machine's own line. */
   egress?: Egress;
+  /** authbridge: saves a profile's sign-in when a run on it ends ok; none = never saved. */
+  signIns?: SignInSaver;
   /**
    * The time zone a local browser says (`America/New_York`): the one where its
    * IP is, or a site sees a Virginia IP on UTC. A profile behind an exit says
