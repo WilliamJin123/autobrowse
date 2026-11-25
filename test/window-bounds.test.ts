@@ -21,7 +21,13 @@ it("a place opens the window there: halves of the free screen, or a box", async 
   expect(await windowPlace("left", screen)).toEqual({ x: 0, y: 33, w: 755, h: 949 });
   expect(await windowPlace("right", screen)).toEqual({ x: 755, y: 33, w: 756, h: 949 });
   expect(await windowPlace("10, 20, 800, 600", screen)).toEqual({ x: 10, y: 20, w: 800, h: 600 });
-  await expect(windowPlace("top", screen)).rejects.toThrow(/left, right or x,y,w,h/);
+  expect(await windowPlace("full", screen)).toEqual({ x: 0, y: 33, w: 1511, h: 949 });
+  expect(await windowPlace("Right-Third", screen)).toEqual({ x: 1007, y: 33, w: 504, h: 949 });
+  expect(await windowPlace("center", screen)).toEqual({ x: 151, y: 80, w: 1208, h: 854 });
+  // % of the free area, mixed with points
+  expect(await windowPlace("60%,0%,40%,100%", screen)).toEqual({ x: 906, y: 33, w: 605, h: 949 });
+  expect(await windowPlace("100,0%,800,50%", screen)).toEqual({ x: 100, y: 33, w: 800, h: 474 });
+  await expect(windowPlace("top", screen)).rejects.toThrow(/full, center, left, right/);
   await expect(windowPlace("0,0,0,600", screen)).rejects.toThrow(/above 0/);
   expect(geometry(false, "darwin", { x: 755, y: 33, w: 756, h: 949 }).args).toEqual([
     "--window-position=755,33",

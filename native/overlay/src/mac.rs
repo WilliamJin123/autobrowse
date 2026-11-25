@@ -382,7 +382,7 @@ impl Os for Mac {
 
     fn find(&self, pid: u32, want: Rect) -> Option<u32> {
         let opt = CGWindowListOption::OptionAll | CGWindowListOption::ExcludeDesktopElements;
-        windows(opt, 0, pid == 0)
+        let all: Vec<_> = windows(opt, 0, pid == 0)
             .into_iter()
             .filter(|w| {
                 w.layer == 0
@@ -392,6 +392,9 @@ impl Os for Mac {
                         w.chrome
                     }
             })
+            .collect();
+        let near = all
+            .iter()
             .map(|w| {
                 let b = w.bounds;
                 (
@@ -404,7 +407,17 @@ impl Os for Mac {
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .filter(|(_, d)| *d < 40.0)
-            .map(|(id, _)| id)
+            .map(|(id, _)| id);
+        // stale `want` (moved before the match): the pid's one big on-screen window; tab strips, 1x1s and offscreen ones skipped
+        near.or_else(|| {
+            let mut big = all
+                .iter()
+                .filter(|w| pid != 0 && w.onscreen && w.bounds.w >= 200.0 && w.bounds.h >= 200.0);
+            match (big.next(), big.next()) {
+                (Some(w), None) => Some(w.id),
+                _ => None,
+            }
+        })
     }
 
     fn frame(&self, id: u32) -> Option<(Rect, bool)> {

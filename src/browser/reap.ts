@@ -4,11 +4,14 @@
  * browser is an orphan: its root process was handed to init (ppid 1). This
  * finds the orphans on our own profiles and stops them. A browser whose
  * owner is alive is never touched, however old: the owner closes it (an
- * explore session closes itself when idle).
+ * explore session closes itself when idle). A background-launched browser
+ * (`browser/background-launch`) is init's child from birth: its owner is the
+ * pid in its `--autobrowse-owner` flag.
  */
 import { execFile } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
+import { OWNER_FLAG } from "./background-launch.js";
 
 export interface Proc {
   pid: number;
@@ -39,12 +42,25 @@ export function browserRoots(procs: Proc[], profilesDir: string): Array<Proc & O
   return out;
 }
 
-/** Root browser processes (not helpers) on a profile under `profilesDir`, owned by init. */
+const OWNER_RE = new RegExp(`${OWNER_FLAG}=(\\d+)`);
+
+/** The owner a background-launched browser names on its command line; null for any other. */
+export function ownerPid(command: string): number | null {
+  const m = OWNER_RE.exec(command);
+  return m ? Number(m[1]) : null;
+}
+
+/** Root browser processes (not helpers) on a profile under `profilesDir`, with no live owner. */
 export function orphanBrowsers(procs: Proc[], profilesDir: string, self = process.pid): Orphan[] {
   // In a container the worker can be init itself: ppid 1 is then our own live browser.
   if (self === 1) return [];
+  const live = new Set(procs.map((p) => p.pid));
   return browserRoots(procs, profilesDir)
-    .filter((p) => p.ppid === 1)
+    .filter((p) => {
+      if (p.ppid !== 1) return false;
+      const owner = ownerPid(p.command);
+      return owner === null || !live.has(owner);
+    })
     .map((p) => ({ pid: p.pid, profile: p.profile }));
 }
 

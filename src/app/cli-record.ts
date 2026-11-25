@@ -81,7 +81,7 @@ export function registerRecordCommands(
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
     .option(
       "--window <place>",
-      "headed, and the window opens there: left or right (half the screen) or x,y,w,h",
+      "headed, and the window opens there: full (the default), center, left, right, left-third, right-third, left-two-thirds, right-two-thirds, or x,y,w,h in points or % of the free screen (60%,0%,40%,100%)",
     )
     .option(
       "--idle <minutes>",

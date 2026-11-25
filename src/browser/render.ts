@@ -15,6 +15,7 @@ import { htmlText } from "../reach/html.js";
 import { challengeOf, NoExit } from "../reach/ladder.js";
 import { checkUrl, landedOk } from "../reach/net-guard.js";
 import { type CaptchaOutcome, type Eyes, findCaptcha, solveCaptcha } from "./captcha/index.js";
+import { backgroundPage } from "./flow-steps.js";
 import type { Hands } from "./human/index.js";
 import type { SessionPark } from "./park.js";
 import { ProfilePool } from "./profile-pool.js";
@@ -125,7 +126,9 @@ export function renderer(deps: RenderDeps): Render {
         let healthy = false;
         try {
           // A joined read already has its own tab; the owner keeps the main page as it was.
-          const page = lease.owner ? await session.context.newPage() : lease.page;
+          const page = lease.owner
+            ? await backgroundPage(session.context, session.page)
+            : lease.page;
           try {
             let last: PwResponse | null = null;
             page.on("response", (r) => {

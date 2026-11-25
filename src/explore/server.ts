@@ -109,7 +109,7 @@ export { type PageChange, pageChange } from "./steer.js";
 export { commandId, withRepeat } from "./wire.js";
 
 import { scrollAndSettle } from "../browser/page-scroll.js";
-import { windowBounds } from "../browser/window-bounds.js";
+import { windowBounds, windowPlace } from "../browser/window-bounds.js";
 import { type Held, heldOther, replaceQuestion, type SecretSink, valueMark } from "../deps/sink.js";
 import { desktopAnswer } from "../desktop/answer.js";
 import { desktopHands } from "../desktop/hands.js";
@@ -2279,8 +2279,14 @@ async function serve(
           throw new Error(
             "this session is headless: no window to place. Stop it, then start it again with --headed",
           );
-        const { cmd: _, ...want } = c;
-        return { window: await windowBounds(page, want) };
+        const { cmd: _, place, ...want } = c;
+        // a preset or notation, as `explore --window` takes it
+        return {
+          window: await windowBounds(
+            page,
+            place ? { ...(await windowPlace(place)), ...want } : want,
+          ),
+        };
       }
       case "overlay": {
         const { cmd: _, refs, on, name, color, person, ...fields } = c;

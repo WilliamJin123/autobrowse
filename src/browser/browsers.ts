@@ -10,7 +10,7 @@ import { hostname, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { ExploreInfo } from "../explore/server.js";
 import { type Crash, recentCrashes } from "./launch-hygiene.js";
-import { browserRoots, footprintKb, listProcs, type Proc } from "./reap.js";
+import { browserRoots, footprintKb, listProcs, ownerPid, type Proc } from "./reap.js";
 
 /** An explore server idle this long, not held, is forgotten. */
 export const IDLE_WARN_MINUTES = 120;
@@ -101,7 +101,9 @@ export function holderOf(
     ...(op ? { op } : {}),
     ...(ageS !== undefined ? { ageS } : {}),
   });
-  for (let p = byPid.get(root.ppid), hops = 0; p && hops < 8; p = byPid.get(p.ppid), hops++) {
+  const owner = ownerPid(root.command);
+  const first = byPid.get(owner ?? root.ppid);
+  for (let p = first, hops = 0; p && hops < 8; p = byPid.get(p.ppid), hops++) {
     const ex = explorers.find(
       (e) => e.pid === p?.pid && (profile === e.site || profile.startsWith(`${e.site}@`)),
     );
@@ -112,7 +114,7 @@ export function holderOf(
       return out("cli", argsAfter(p.command, /app\/cli\.[jt]s|\/autobrowse(?=\s|$)/));
   }
   // Checked last: in a container the worker is init itself.
-  return out(root.ppid === 1 ? "orphan" : "other");
+  return out(root.ppid === 1 && (owner === null || !first) ? "orphan" : "other");
 }
 
 /** The explore servers whose process still lives, from their info files. */

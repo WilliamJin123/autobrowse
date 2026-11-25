@@ -168,7 +168,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             leave({ keepTabs: true });
             park.pin(key);
             try {
-              const page = await session.context.newPage();
+              // watchers and armed prepares: nobody watches, and a foreground tab takes the front
+              const page = await backgroundPage(session.context, session.page);
               keptTabs.add(page);
               let released = false;
               return {
@@ -545,8 +546,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
                 err.person = true;
                 throw err;
               }
+              // back on screen, never in front: bringToFront takes the front from the person's app
               await held.offscreen?.(false);
-              await session.page.bringToFront().catch(() => undefined);
               for (let t = 0; t < ms; t += PERSON_POLL_MS) {
                 await session.page.waitForTimeout(PERSON_POLL_MS).catch(() => undefined);
                 if (session.page.isClosed() || (await gone().catch(() => false))) return;

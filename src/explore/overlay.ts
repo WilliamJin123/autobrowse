@@ -1320,7 +1320,7 @@ export async function geometryOf(page: Page): Promise<Geometry | null> {
 }
 
 /** A host that draws but never finds Chrome's window: under Wayland, its windows are not X11's. */
-const NOT_FOUND = "the overlay cannot find Chrome's window (Wayland?)";
+const NOT_FOUND = `the overlay cannot find Chrome's window${process.platform === "linux" ? " (Wayland?)" : ""}`;
 const FOUND_MS = 3_000;
 
 /** What the person did on the panel: pause or resume the agent, or a note to it. */
@@ -1512,7 +1512,8 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
     ]);
     if (!g || !host) return;
     const key = `${g.pid}:${g.windowId}`;
-    if (key !== windowKey) {
+    // not found yet: fresh bounds each draw, as a window moved before the match never meets the old ones
+    if (key !== windowKey || found < targets) {
       windowKey = key;
       host.send({ t: "target", pid: g.pid, ...g.bounds, ...(g.screen ? { screen: true } : {}) });
       const n = ++targets;
@@ -1645,8 +1646,12 @@ export function overlayFor<S extends object = Page>(startOn: boolean, deps: Over
         });
       }
       if (!(await draw(page))) return { drawn: false, ...(why ? { why } : {}) };
-      // Boxes off: no count, so a 0 never reads as controls missing.
-      return { drawn: true, ...(prefs.marks ? { boxes: state.boxes.length } : {}) };
+      // Boxes off: no count, so a 0 never reads as controls missing. Drawn but unplaced: the why.
+      return {
+        drawn: true,
+        ...(prefs.marks ? { boxes: state.boxes.length } : {}),
+        ...(why ? { why } : {}),
+      };
     },
     /** A scripted person on the panel (films): Pause or Resume, or a note typed and sent. No OS input. */
     async person(

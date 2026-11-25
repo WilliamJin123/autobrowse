@@ -54,7 +54,7 @@ The desk's watchers and reads can take a profile (x@wren) first. To keep the des
 
 `--headed`: a window a person watches (the panel, a film, a hand-off); use it when asked for a visible window. Without it sessions are headless.
 
-`--window right` (`left`, `x,y,w,h`): headed, Chrome opens there (halves less menu bar and Dock), with no jump after launch. Use it whenever you know the spot.
+Headed: Chrome fills the free screen, focus kept. Films: `--window` `center`, `left`, `right`, `left-third`… or `x,y,w,h` (points or `%`).
 
 `--look-only` (a page you do not trust): only reads, `open`, `wait`, `done`, `close`; a click, a script, a `place` or a `flow` is refused.
 
@@ -91,7 +91,7 @@ Look:
   - `{"cmd":"network","scripts":true}`: API paths and GraphQL operations the page's scripts name, before any fires.
   - `{"cmd":"memory","find":"followers"}`: this site's calls and fields from all earlier sessions. Look here first.
   - A flow reads that JSON with `pageJson`/`pagedJson` (cookie rung) or `captureJson` (intercept rung), in `ladder` rungs (`src/browser/ladder.ts`).
-- `{"cmd":"window"}` — Chrome's own window in screen points (`x`, `y`, `w`, `h`, `state`). `{"cmd":"window","x":756,"y":33,"w":756,"h":884}` moves and sizes it; `"state":"maximized"` fills the screen. Move a headed session with this, not `os place` (no window list needed); start with `--window` to open in place. Refused headless; never journaled.
+- `{"cmd":"window"}` — Chrome's own window in screen points (`x`, `y`, `w`, `h`, `state`). `{"cmd":"window","place":"right"}` (any `--window` place) or `"x":756,"y":33,"w":756,"h":884` moves it; `"state":"maximized"`. Move a headed session with this, not `os place` (no window list needed); start with `--window` to open in place. Refused headless; never journaled.
 - `{"cmd":"pages"}` / `{"cmd":"page","index":1}` or `"main"` — OAuth popups; back to main when the popup closes. A tab your command opened closes on `open` or `page main` (`closedTabs`): read it first.
 
 Act (journaled):

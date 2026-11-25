@@ -16,6 +16,20 @@ describe("orphaned browsers", () => {
   it("only roots on our profiles whose owner died", () => {
     expect(orphanBrowsers(procs, `${dir}/`, 4242)).toEqual([{ pid: 10, profile: "npm" }]);
   });
+  it("a background-launched root is init's child: its named owner decides", () => {
+    const relay = { pid: 600, ppid: 500, command: "node background-launch.js /tmp/args" };
+    const owned = {
+      pid: 60,
+      ppid: 1,
+      command: `/chrome --user-data-dir=${dir}/x --autobrowse-owner=600`,
+    };
+    const lost = {
+      pid: 70,
+      ppid: 1,
+      command: `/chrome --user-data-dir=${dir}/y --autobrowse-owner=999`,
+    };
+    expect(orphanBrowsers([relay, owned, lost], dir, 4242)).toEqual([{ pid: 70, profile: "y" }]);
+  });
   it("never in a container where we are init: ppid 1 is then our own", () => {
     expect(orphanBrowsers(procs, dir, 1)).toEqual([]);
   });

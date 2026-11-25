@@ -155,9 +155,13 @@ export const commandSchema = z.discriminatedUnion("cmd", [
   }),
   /** A screenshot with a numbered box on each control in view, and the list; act with `hints:{mark:n}`. */
   z.object({ cmd: z.literal("marks") }),
-  /** Chrome's own window: no field reads it; x, y, w, h (screen points) move and size it; `state` maximizes. */
+  /**
+   * Chrome's own window: no field reads it; x, y, w, h (screen points) move and size it; `place`
+   * takes `explore --window`'s presets and notation (`right`, `60%,0%,40%,100%`); `state` maximizes.
+   */
   z.object({
     cmd: z.literal("window"),
+    place: z.string().min(1).max(64).optional(),
     x: z.number().int().min(-20_000).max(20_000).optional(),
     y: z.number().int().min(-20_000).max(20_000).optional(),
     w: z.number().int().min(200).max(20_000).optional(),

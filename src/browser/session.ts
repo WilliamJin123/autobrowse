@@ -6,18 +6,21 @@
  * after it; `flow.ts` decides when and holds the per-site lock.
  */
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Browser, BrowserContext, Page } from "playwright";
 import type { SignInSaver } from "../authbridge/snapshot.js";
 import { type HttpClient, safeUrls } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
+import { REAL_BROWSER_ENV, relayShim } from "./background-launch.js";
 import { assertProfileFree } from "./browsers.js";
 import { type Dialogs, watchDialogs } from "./dialogs.js";
 import { boundRequests } from "./driver-memory.js";
 import type { Egress, Exit } from "./egress.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
+import { guardFocus, markNewTargets } from "./focus-guard.js";
 import { type Fault, type HarOptions, injectFaults, replayHar, scrubOrDrop } from "./har.js";
 import { keepSessionCookies, keptDomains } from "./keep-session.js";
 import {
@@ -36,7 +39,7 @@ import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { listProcs, reapOrphans, reapTempDirs } from "./reap.js";
 import { assertNotReserved, isDesk } from "./reserve.js";
 import { type PasskeyRecord, type Passkeys, virtualAuthenticator } from "./webauthn.js";
-import type { WindowPlace } from "./window-bounds.js";
+import { DEFAULT_WINDOW, type WindowPlace, windowPlace } from "./window-bounds.js";
 
 const run = promisify(execFile);
 
@@ -222,6 +225,9 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
   const profile = (await opts.profileName?.(asked)) ?? asked;
   let context: BrowserContext;
   let browser: Browser | null = null;
+  /** Headed on a Mac: the front stays the person's (`browser/focus-guard`). */
+  let focus: ReturnType<typeof guardFocus> | null = null;
+  let unmark: (() => Promise<void>) | null = null;
   /** Local launches only: a cap on the browser's memory (`browser/memory-guard`). */
   let guard: ReturnType<typeof guardMemory> | null = null;
   if (opts.tier === "browserbase") {
@@ -255,7 +261,11 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
       },
     );
     guard = guardMemory(context, profileDir);
-    if (opts.headless === false) await keepOutOfTheWay();
+    if (opts.headless === false && process.platform === "darwin") {
+      const f = guardFocus({ pid: await browserPid(context) });
+      focus = f;
+      unmark = await markNewTargets(context, () => f.mark()).catch(() => null);
+    }
     // `navigator.webdriver` is already false (LOCAL_ARGS). No init-script shim: an own
     // `webdriver` property on navigator, reading undefined, is itself a tell.
   }
@@ -304,6 +314,8 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     async close() {
       closing = true;
       guard?.stop();
+      focus?.release();
+      await unmark?.();
       // Before the pages go: each pane's last frame holds until now.
       await film?.stop();
       // An attached app keeps its windows; only what we launched or rented closes.
@@ -369,13 +381,6 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
 }
 
 /**
- * A headed Chrome on a laptop someone is using: give focus back to the app
- * that had it; the window stays, behind. Never hidden: a hidden window
- * stops Chrome routing clicks into a cross-site frame inside a frame (the
- * parent gets them), so a captcha checkbox never ticks. Best effort; only
- * macOS has the tools.
- */
-/**
  * Hides or shows the Chrome launched on `profileDir`, as Cmd-H does: the app, not the window.
  * Each profile is its own Chrome app, so no other window goes with it. Measured 11-10 on
  * macOS 26: a hidden app's page stays `visible`, its timers and frames run at full rate
@@ -402,26 +407,6 @@ function appHider(profileDir: string): (off: boolean) => Promise<void> {
       // no permission, or past the cap: the window stays where it is
     }
   };
-}
-
-async function keepOutOfTheWay(): Promise<void> {
-  if (process.platform !== "darwin") return;
-  // Async, with a cap: a System Events that hangs (memory pressure, a permission prompt) once
-  // froze the desk's event loop for minutes, and every Restate call on it died (2026-10-16).
-  const osascript = (script: string) =>
-    run("osascript", ["-e", script], { encoding: "utf8", timeout: 5_000 });
-  try {
-    const { stdout } = await osascript(
-      'tell application "System Events" to get name of first process whose frontmost is true',
-    );
-    const front = stdout.trim();
-    if (front)
-      await osascript(
-        `tell application "System Events" to set frontmost of process "${front.replace(/"/g, "")}" to true`,
-      );
-  } catch {
-    // no Accessibility permission, nothing frontmost, or past the cap: Chrome keeps the focus
-  }
 }
 
 /** Launch flags that keep a site from telling the browser apart from a person's. */
@@ -456,6 +441,30 @@ const PROXIED_ARGS = ["--webrtc-ip-handling-policy=disable_non_proxied_udp"];
 /** The headed fingerprint of this host's Chrome, learned on the first headless launch. */
 let headedFingerprint: Fingerprint | null = null;
 
+/** Google Chrome's binary on this Mac, or Playwright's Chromium (`channel: "chromium"`, or no Chrome). */
+async function realBrowser(channel: BrowserOptions["channel"]): Promise<string> {
+  const app = "Google Chrome.app/Contents/MacOS/Google Chrome";
+  if (channel !== "chromium")
+    for (const dir of ["/Applications", expandHome("~/Applications")])
+      if (existsSync(join(dir, app))) return join(dir, app);
+  return (await chromium()).executablePath();
+}
+
+/** The browser process's own pid: a relay can stand between us and it. 0 if unknown. */
+async function browserPid(context: BrowserContext): Promise<number> {
+  try {
+    const s = await context.browser()?.newBrowserCDPSession();
+    if (!s) return 0;
+    const r = (await s.send("SystemInfo.getProcessInfo")) as {
+      processInfo: Array<{ type: string; id: number }>;
+    };
+    await s.detach().catch(() => undefined);
+    return r.processInfo.find((x) => x.type === "browser")?.id ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function launchLocal(
   profileDir: string,
   opts: BrowserOptions,
@@ -463,9 +472,15 @@ async function launchLocal(
 ): Promise<BrowserContext> {
   const proxy = exit?.proxy ?? null;
   const headless = opts.headless ?? true;
+  // headed with no place: the screen's free area, never Chrome's own 1280x900 in a corner
+  const place =
+    opts.window ??
+    (!headless && !opts.film && process.platform === "darwin"
+      ? await windowPlace(DEFAULT_WINDOW).catch(() => undefined)
+      : undefined);
   const { args: sizeArgs, ...size } = opts.film
     ? filmGeometry(opts.film.size)
-    : geometry(headless, process.platform, opts.window);
+    : geometry(headless, process.platform, place);
   // Headless says the headed fingerprint (fingerprint.ts). Not through Playwright's
   // `userAgent`: that rebuilds the client hints from the UA string and sends
   // `Sec-CH-UA-Arch: "x86"` and platform version "10_15_7" from an arm Mac on 26.x.
@@ -493,7 +508,29 @@ async function launchLocal(
       : {}),
     ...(tz ? { env: { ...process.env, TZ: tz } } : {}),
   });
+  // headed on a Mac: launched in the background (`browser/background-launch`), else guarded
   const launch = async (o: ReturnType<typeof base>) => {
+    if (o.headless || process.platform !== "darwin") return plainLaunch(o);
+    const real = await realBrowser(opts.channel);
+    try {
+      return await (await chromium()).launchPersistentContext(profileDir, {
+        ...o,
+        executablePath: relayShim(),
+        env: { ...(o.env ?? process.env), [REAL_BROWSER_ENV]: real },
+      });
+    } catch (err) {
+      console.error(
+        `autobrowse: background launch failed, launching in front: ${err instanceof Error ? err.message.split("\n")[0] : err}`,
+      );
+    }
+    const focus = guardFocus();
+    try {
+      return await plainLaunch(o);
+    } finally {
+      focus.release();
+    }
+  };
+  const plainLaunch = async (o: ReturnType<typeof base>) => {
     if (opts.channel !== "chromium") {
       try {
         return await (await chromium()).launchPersistentContext(profileDir, {

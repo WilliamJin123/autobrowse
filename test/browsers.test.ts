@@ -72,6 +72,26 @@ describe("who owns a browser", () => {
     expect(as("agent:claude")).toBe("agent:9090");
     expect(as("person")).toBe("teach:9090");
   });
+  it("a background-launched browser: its owner flag leads to the relay, then its launcher", () => {
+    const bg = [
+      ...procs,
+      { pid: 600, ppid: 300, command: "node background-launch.js /tmp/args" },
+      {
+        pid: 60,
+        ppid: 1,
+        age: 60,
+        command: `/chrome --user-data-dir=${dir}/x --autobrowse-owner=600`,
+      },
+      {
+        pid: 70,
+        ppid: 1,
+        age: 60,
+        command: `/chrome --user-data-dir=${dir}/y --autobrowse-owner=999`,
+      },
+    ];
+    expect(openerOf(60, "x", bg, explorers)).toBe("explore:9090");
+    expect(openerOf(70, "y", bg, explorers)).toBe("orphan");
+  });
   it("in a container the worker is init: its browser is no orphan", () => {
     const boxed = [{ pid: 1, ppid: 0, command: "node dist/app/main.js" }, chrome(7, 1, "x")];
     expect(openerOf(7, "x", boxed, [])).toBe("worker");

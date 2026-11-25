@@ -243,6 +243,8 @@ describe("headed overlay, out of the page", () => {
         },
       });
       await o.set(page, { goal: "x" });
+      // the host says moved only after a found
+      h.emit({ t: "found" });
       h.emit({ t: "moved" });
       await new Promise((r) => setTimeout(r, 50));
       expect(h.sent.filter((m) => m.t === "view").map((m) => m.innerH)).toEqual([700, 800]);
@@ -1018,6 +1020,27 @@ describe("headed overlay, out of the page", () => {
       await browser.close();
     }
   }, 15_000);
+
+  it("a window moved before the host's match gets fresh bounds on the next draw; found, they stop", async () => {
+    const browser = await chromium.launch();
+    try {
+      const h = await webHost(browser);
+      const page = await browser.newPage();
+      let x = 0;
+      const geometry = async () => ({ ...FAKE_GEO, bounds: { ...FAKE_GEO.bounds, x } });
+      const o = overlayFor(true, { prefs: { look: "panel" }, host: h.factory, geometry });
+      await o.set(page, { goal: "x" });
+      x = 700;
+      await o.set(page, { goal: "y" });
+      const targets = () => h.sent.filter((m) => m.t === "target");
+      expect(targets().map((m) => m.x)).toEqual([0, 700]);
+      h.emit({ t: "found" });
+      await o.set(page, { goal: "z" });
+      expect(targets()).toHaveLength(2);
+    } finally {
+      await browser.close();
+    }
+  });
 
   it("the page's context closing ends the window", async () => {
     const browser = await chromium.launch();
