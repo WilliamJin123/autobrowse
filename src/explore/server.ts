@@ -567,7 +567,7 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
           resolve({ fp, finish });
         }),
     });
-    const runner = flowRunner(opts.browser, {
+    const runner = flowRunner(opts.allowHosts ? { ...opts.browser, fenced: true } : opts.browser, {
       pace: opts.pace ?? null,
       network: { maxRows: MAX_ROWS, maxBodyBytes: MAX_BODY_BYTES, on: exploreNetworkOn() },
       ...(login

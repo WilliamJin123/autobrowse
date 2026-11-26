@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import type { BrowserContext } from "playwright";
 import { memoryNow } from "./browsers.js";
 import { recordCrash } from "./launch-hygiene.js";
-import { footprintKb, listProcs, type Proc } from "./reap.js";
+import { footprintKb, listProcs, type Proc, profileRoots } from "./reap.js";
 
 export const GUARD_EVERY_MS = 30_000;
 const WARN_SHARE = 0.6;
@@ -28,12 +28,8 @@ export const GUARD_LOG = join(homedir(), ".config/autobrowse/browser-memory.json
 
 /** The tree's pids under the browser launched on `profileDir`: root first. */
 export function treeOf(procs: Proc[], profileDir: string): number[] {
-  const flag = `--user-data-dir=${profileDir.replace(/\/$/, "")}`;
-  const root = procs.find(
-    (p) =>
-      !p.command.includes("--type=") &&
-      (p.command.includes(`${flag} `) || p.command.endsWith(flag)),
-  );
+  const dir = profileDir.replace(/\/$/, "");
+  const root = profileRoots(procs).find((p) => p.dir === dir);
   if (!root) return [];
   const kids = new Map<number, number[]>();
   for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p.pid]);
@@ -43,6 +39,13 @@ export function treeOf(procs: Proc[], profileDir: string): number[] {
     for (const k of kids.get(pid) ?? []) walk(k);
   };
   walk(root.pid);
+  // WebKit: pages live in XPC services launchd owns (ppid 1), from the build's folder. One pool
+  // for every WebKit session here: two sessions each count both, so the cap trips early, never late.
+  const build = /^(.*\/ms-playwright\/webkit-\d+)\//.exec(root.command)?.[1];
+  if (build)
+    for (const p of procs)
+      if (p.command.startsWith(`${build}/com.apple.WebKit.`) && !out.includes(p.pid))
+        out.push(p.pid);
   return out;
 }
 

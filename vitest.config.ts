@@ -39,7 +39,12 @@ export default defineConfig({
       SETTINGS_FILE: join(tmpdir(), "autobrowse-test-settings", "settings.json"),
       LIMITS_FILE: join(tmpdir(), "autobrowse-test-limits", "limits.json"),
       FILE_CACHE_DIR,
+      // Playwright's Chromium, never the person's Chrome app: an update it stages kills each launch
+      // ("Library missing", a crash report per test, 11-26)
+      BROWSER_ENGINE: "chromium",
     },
+    // default is cores - 1 (9 here), each fork up to a browser: the 16 GB Mac swapped 17 GB (11-26)
+    maxWorkers: 4,
     testTimeout: 120_000,
     hookTimeout: 180_000,
   },

@@ -116,6 +116,7 @@ export function browserOptions(
     },
     ...(display.window ? { window: display.window } : {}),
     ...(display.live ? { live: true } : {}),
+    engine: display.engine ?? settings.browserEngine,
     headedView: settings.headedView,
     liveViewScale: settings.liveViewScale,
     // The site's account's passkeys ride along in its session.
@@ -138,7 +139,6 @@ export function browserOptions(
     ...(signIns ? { signIns } : {}),
     ...(settings.browserTimezone ? { timezone: settings.browserTimezone } : {}),
     profilesDir: settings.profilesDir,
-    channel: settings.browserChannel,
     readTabs: settings.readTabs,
     artifactsDir: settings.artifactsDir,
     ...(settings.watchFlows ? { watchFlows: settings.watchFlows } : {}),

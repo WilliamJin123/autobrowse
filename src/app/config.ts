@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseDotenv } from "credvault";
 import { z } from "zod";
+import { ENGINES } from "../browser/engines.js";
 import { DEFAULT_DB } from "../devices/phone.js";
 import { PROVIDERS } from "../llm/index.js";
 import { checkOwner, isDefaultOwner, OWNER_NAME, operator } from "../owner.js";
@@ -100,8 +101,8 @@ const schema = z.object({
   browserTimezone: timeZone.optional(),
   /** Persistent browser profiles (logins survive between runs). */
   profilesDir: z.string().min(1).default("~/.config/autobrowse/profiles"),
-  /** Local browser: the installed Chrome (default, falls back) or Playwright's chromium (containers). */
-  browserChannel: z.enum(["chrome", "chromium"]).default("chrome"),
+  /** Local browser build (designs/2026-11-26-browser-engines.md): chrome (falls back to chromium), a brand, firefox, webkit, ios. */
+  browserEngine: z.enum(ENGINES).default("chrome"),
   /** Headless by default; false on a laptop worker, since Cloudflare's bot check passes only with a window. */
   browserHeadless: z
     .string()
@@ -437,7 +438,7 @@ export const ENV_KEYS = {
   ownBrowserSites: "OWN_BROWSER_SITES",
   browserTimezone: "BROWSER_TIMEZONE",
   profilesDir: "PROFILES_DIR",
-  browserChannel: "BROWSER_CHANNEL",
+  browserEngine: "BROWSER_ENGINE",
   browserHeadless: "BROWSER_HEADLESS",
   browserKeepMinutes: "BROWSER_KEEP_MINUTES",
   headedView: "HEADED_VIEW",
@@ -552,6 +553,11 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     const value = env[key];
     if (value !== undefined && value !== "") raw[field] = value;
   }
+  // gone 11-26 (designs/2026-11-26-browser-engines.md); a leftover would otherwise do nothing in silence
+  if (env.BROWSER_CHANNEL)
+    console.error(
+      `autobrowse: BROWSER_CHANNEL is ignored; set BROWSER_ENGINE=${env.BROWSER_CHANNEL === "chromium" ? "chromium" : "chrome"}`,
+    );
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     const lines = parsed.error.issues.map(

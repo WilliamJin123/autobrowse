@@ -11,6 +11,8 @@
  * request leaves; the popup is then blanked.
  * Own CDP `Fetch` on Document requests only: Playwright's `route` would turn
  * the HTTP cache off for the whole context, which sites can see.
+ * Firefox and WebKit have no CDP, and `context.route` never sees a redirect hop (measured 11-26):
+ * the session refuses a fenced run there (`engines.ts` `refusalOf`); this throws if one gets here.
  */
 import type { BrowserContext, CDPSession, Page } from "playwright";
 import { NetRefused } from "../reach/net-guard.js";
@@ -46,9 +48,30 @@ export async function fenceNavigations(
   allow: HostRule,
   onRefused?: (url: string) => void,
 ): Promise<void> {
+  const first = context.pages()[0];
+  if (
+    first &&
+    !(await context.newCDPSession(first).then(
+      (c) => c.detach().then(() => true),
+      () => false,
+    ))
+  )
+    throw new Error("the nav fence needs Chromium: this browser cannot stop a redirect hop");
   const whole = await fenceBrowser(context, allow, onRefused).catch(() => false);
-  // the answer of a load that got past a fence is kept from the agent
-  const watch = (page: Page): void => {
+  const watch = blankOutside(allow, onRefused);
+  const each = whole
+    ? async (p: Page) => watch(p)
+    : async (p: Page) => {
+        await fencePage(context, p, allow, onRefused);
+        watch(p);
+      };
+  await Promise.all(context.pages().map(each));
+  context.on("page", (p) => void each(p).catch(() => undefined));
+}
+
+/** The answer of a load that got past a fence (a page already open) is kept from the agent. */
+function blankOutside(allow: HostRule, onRefused?: (url: string) => void) {
+  return (page: Page): void => {
     const blank = () => {
       if (!urlAllowed(page.url(), allow)) {
         onRefused?.(page.url());
@@ -60,14 +83,6 @@ export async function fenceNavigations(
       if (f === page.mainFrame()) blank();
     });
   };
-  const each = whole
-    ? async (p: Page) => watch(p)
-    : async (p: Page) => {
-        await fencePage(context, p, allow, onRefused);
-        watch(p);
-      };
-  await Promise.all(context.pages().map(each));
-  context.on("page", (p) => void each(p).catch(() => undefined));
 }
 
 type Paused = { requestId: string; frameId: string; request: { url: string } };

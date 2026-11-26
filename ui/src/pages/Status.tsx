@@ -17,7 +17,7 @@ export function StatusPage() {
     ],
     [
       "browser",
-      `${s.browser.tier} (${s.browser.channel}, ${s.browser.headless ? "headless" : "headed"}, ${s.browser.pace} pace)`,
+      `${s.browser.tier} (${s.browser.engine}, ${s.browser.headless ? "headless" : "headed"}, ${s.browser.pace} pace)`,
     ],
     ["memory", s.memory],
     ["channels", s.channels.join(", ") || "none: gates wait on the Runs page"],

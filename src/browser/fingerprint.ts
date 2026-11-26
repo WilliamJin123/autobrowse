@@ -44,7 +44,11 @@ export async function learnFingerprint(
   page: Page,
 ): Promise<{ headless: boolean; fingerprint: Fingerprint }> {
   await page.route(PROBE_URL, (r) => r.fulfill({ contentType: "text/html", body: "" }));
-  await page.goto(PROBE_URL);
+  // Opera GX aborts the first navigation of a fresh profile (its start page wins): once more
+  await page.goto(PROBE_URL).catch((err: Error) => {
+    if (!/ERR_ABORTED/.test(err.message)) throw err;
+    return page.goto(PROBE_URL);
+  });
   await page.unroute(PROBE_URL);
   const seen = await page.evaluate(async () => {
     const data = (

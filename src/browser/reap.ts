@@ -28,18 +28,55 @@ export interface Orphan {
   profile: string;
 }
 
-/** Root browser processes (not helpers) on a profile under `profilesDir`, whoever owns them. */
-export function browserRoots(procs: Proc[], profilesDir: string): Array<Proc & Orphan> {
-  const prefix = `--user-data-dir=${profilesDir.replace(/\/$/, "")}/`;
-  const out: Array<Proc & Orphan> = [];
+/**
+ * The profile folder a browser process runs on: Chromium and WebKit `--user-data-dir=<dir>`,
+ * Firefox `-profile <dir>`. null for a helper (`--type=`) or any other process.
+ */
+export function profileFolderOf(command: string): string | null {
+  if (command.includes("--type=")) return null;
+  // the folder ends at the next flag or a trailing URL (`plainLaunch` puts URLs after it)
+  const end = String.raw`(?=\s+(?:-|[a-z][a-z0-9+.-]*:)|\s*$)`;
+  const m =
+    new RegExp(String.raw`(?:^|\s)--user-data-dir=(.+?)${end}`).exec(command) ??
+    new RegExp(String.raw`(?:^|\s)-profile\s+(.+?)${end}`).exec(command);
+  return m?.[1] ? m[1].replace(/\/$/, "") : null;
+}
+
+/**
+ * Each browser process with its profile folder. Of a chain on one folder only the innermost
+ * counts: WebKit's `pw_run.sh` waits on Playwright.app without `exec`, so a signal to the
+ * wrapper leaves the browser on the profile.
+ */
+export function profileRoots(procs: Proc[]): Array<Proc & { dir: string; outerPpid: number }> {
+  const on = new Map<number, string>();
   for (const p of procs) {
-    if (p.command.includes("--type=")) continue;
-    const at = p.command.indexOf(prefix);
-    if (at < 0) continue;
-    const dir = p.command.slice(at + "--user-data-dir=".length).split(" --")[0] ?? "";
-    out.push({ ...p, profile: basename(dir.trim()) });
+    const dir = profileFolderOf(p.command);
+    if (dir) on.set(p.pid, dir);
   }
-  return out;
+  const byPid = new Map(procs.map((p) => [p.pid, p]));
+  const wrappers = new Set(
+    procs.filter((p) => on.has(p.pid) && on.get(p.ppid) === on.get(p.pid)).map((p) => p.ppid),
+  );
+  return procs.flatMap((p) => {
+    const dir = on.get(p.pid);
+    if (!dir || wrappers.has(p.pid)) return [];
+    // the chain's top decides orphanhood: the wrapper, not the app, goes to init
+    let top = p;
+    for (let up = byPid.get(top.ppid); up && on.get(up.pid) === dir; up = byPid.get(up.ppid))
+      top = up;
+    return [{ ...p, dir, outerPpid: top.ppid }];
+  });
+}
+
+/** Root browser processes (not helpers) on a profile under `profilesDir`, whoever owns them. */
+export function browserRoots(
+  procs: Proc[],
+  profilesDir: string,
+): Array<Proc & Orphan & { outerPpid: number }> {
+  const base = `${profilesDir.replace(/\/$/, "")}/`;
+  return profileRoots(procs)
+    .filter((p) => p.dir.startsWith(base))
+    .map(({ dir, outerPpid, ...p }) => ({ ...p, outerPpid, profile: basename(dir) }));
 }
 
 const OWNER_RE = new RegExp(`${OWNER_FLAG}=(\\d+)`);
@@ -57,7 +94,7 @@ export function orphanBrowsers(procs: Proc[], profilesDir: string, self = proces
   const live = new Set(procs.map((p) => p.pid));
   return browserRoots(procs, profilesDir)
     .filter((p) => {
-      if (p.ppid !== 1) return false;
+      if (p.outerPpid !== 1) return false;
       const owner = ownerPid(p.command);
       return owner === null || !live.has(owner);
     })

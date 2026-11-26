@@ -1,7 +1,9 @@
 /**
  * Live view (designs/2026-11-25-live-view.md): a headless session shown in a background Mac app.
  * The session serves the viewer page and its socket on 127.0.0.1; the app (`overlay-host live`)
- * holds only the window, the toast, the Dock and the clipboard.
+ * holds only the window, the toast, the Dock and the clipboard. Chromium streams over CDP;
+ * Firefox and WebKit (`browser/engines`) over `page.screencast`, with no page script: no
+ * select menu, cursor or copy out (a binding outside an isolated world is visible to the page).
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -37,6 +39,10 @@ export interface LiveViewOptions {
   dpr: number;
   /** The fingerprint's screen: the viewport never grows past it. */
   screen: { width: number; height: number };
+  /** An emulated device's viewport (`ios`): kept whatever size the viewer is. */
+  fixed?: { w: number; h: number } | undefined;
+  /** A touch device (`ios`): a click lands as a tap; a mouse press means nothing to its pages. */
+  touch?: boolean | undefined;
   /** The session's first page: ⌘W never closes it. */
   main: Page;
   /** Default the app (`overlay-host live`); tests pass a fake. */
@@ -71,7 +77,8 @@ export interface LiveGeometry {
 interface Tab {
   id: number;
   page: Page;
-  cdp: CDPSession;
+  /** null: no CDP (Firefox, WebKit); frames come from `page.screencast`. */
+  cdp: CDPSession | null;
   title: string;
   /** The isolated world's context in the main frame. */
   world: number | null;
@@ -202,7 +209,7 @@ export async function startLiveView(
   let moved = false;
   let closed = false;
   let personAt = 0;
-  let view = fitViewport({ w: 1280, h: 800 }, opts.screen);
+  let view = opts.fixed ?? fitViewport({ w: 1280, h: 800 }, opts.screen);
   /** The page the overlay follows: drawn only while it is the shown tab. */
   let followed: Page | null = null;
   const send = (m: object) => {
@@ -267,9 +274,9 @@ export async function startLiveView(
       overlay: !!shown && shown.page === followed,
     });
 
-  const frame = (t: Tab, data: string) => {
+  const frame = (t: Tab, data: string | Buffer) => {
     if (t !== streaming) return;
-    const buf = Buffer.from(data, "base64");
+    const buf = typeof data === "string" ? Buffer.from(data, "base64") : data;
     for (const c of clients) if (c.bufferedAmount < BACKLOG) c.send(buf);
   };
 
@@ -281,10 +288,12 @@ export async function startLiveView(
       const size = streamSize(view, opts.scale);
       const key = want ? `${want.id}:${size.maxWidth}x${size.maxHeight}` : "";
       if (key === streamKey) return;
-      if (streaming) await streaming.cdp.send("Page.stopScreencast").catch(() => undefined);
+      if (streaming?.cdp) await streaming.cdp.send("Page.stopScreencast").catch(() => undefined);
+      else if (streaming) await streaming.page.screencast.stop().catch(() => undefined);
       streaming = want;
       streamKey = key;
       if (!want) return;
+      if (!want.cdp) return castFrames(want, size);
       // a static page sends no frame: one screenshot first
       const shot = await want.cdp
         .send("Page.captureScreenshot", {
@@ -302,6 +311,21 @@ export async function startLiveView(
   };
   let streamKey = "";
 
+  /** No CDP: Playwright's screencast, same JPEG frames; a screenshot first for a static page. */
+  const castFrames = async (t: Tab, size: { maxWidth: number; maxHeight: number }) => {
+    const shot = await t.page
+      .screenshot({ type: "jpeg", quality: QUALITY, scale: "css" })
+      .catch(() => null);
+    if (shot) frame(t, shot);
+    await t.page.screencast
+      .start({
+        onFrame: (f) => frame(t, f.data),
+        size: { width: size.maxWidth, height: size.maxHeight },
+        quality: QUALITY,
+      })
+      .catch((e: Error) => log(`screencast: ${e.message.split("\n")[0]}`));
+  };
+
   const show = async (t: Tab) => {
     if (shown === t) return;
     shown = t;
@@ -311,7 +335,9 @@ export async function startLiveView(
 
   /** Viewport, screen and window, as a real window of this size reports them. */
   const sizeTab = async (t: Tab) => {
+    if (opts.fixed) return; // the device's own viewport, set at launch
     await t.page.setViewportSize({ width: view.w, height: view.h }).catch(() => undefined);
+    if (!t.cdp) return;
     // Playwright's resize sets screen to the viewport: put the fingerprint's back
     await t.cdp
       .send("Emulation.setDeviceMetricsOverride", {
@@ -335,14 +361,16 @@ export async function startLiveView(
 
   const worldOf = async (t: Tab): Promise<number | null> => {
     if (t.world) return t.world;
-    const tree = await t.cdp.send("Page.getFrameTree").catch(() => null);
+    const cdp = t.cdp;
+    if (!cdp) return null;
+    const tree = await cdp.send("Page.getFrameTree").catch(() => null);
     if (!tree) return null;
     t.frame = tree.frameTree.frame.id;
-    const w = await t.cdp
+    const w = await cdp
       .send("Page.createIsolatedWorld", { frameId: t.frame, worldName: WORLD })
       .catch(() => null);
     if (!w) return null;
-    await t.cdp
+    await cdp
       .send("Runtime.evaluate", { expression: PAGE_SCRIPT, contextId: w.executionContextId })
       .catch(() => undefined);
     t.world = w.executionContextId;
@@ -364,12 +392,8 @@ export async function startLiveView(
     if (m.t === "select" || m.t === "cursor") send(m);
   };
 
-  const add = async (page: Page) => {
-    if (closed || tabs.some((t) => t.page === page)) return;
-    const cdp = await context.newCDPSession(page).catch(() => null);
-    if (!cdp) return;
-    const t: Tab = { id: nextId++, page, cdp, title: "", world: null, frame: "" };
-    tabs.push(t);
+  /** Chromium: CDP frames, and the page script in an isolated world (select menu, cursor, copy). */
+  const attachCdp = async (t: Tab, cdp: CDPSession) => {
     cdp.on("Page.screencastFrame", (f) => {
       cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => undefined);
       frame(t, f.data);
@@ -387,13 +411,6 @@ export async function startLiveView(
     cdp.on("Page.frameNavigated", ({ frame: f }) => {
       if (!f.parentId) t.frame = f.id;
     });
-    page.on("filechooser", (fc) => {
-      // the agent's own chooser stays the agent's; the person's opens the Mac panel
-      if (Date.now() - personAt > PERSON_MS) return;
-      void pick(fc.isMultiple()).then((files) =>
-        files.length ? fc.setFiles(files).catch(() => undefined) : undefined,
-      );
-    });
     await Promise.all([
       cdp.send("Page.enable"),
       cdp.send("Runtime.enable"),
@@ -403,6 +420,23 @@ export async function startLiveView(
         worldName: WORLD,
       }),
     ]).catch((e: Error) => log(`tab setup: ${e.message.split("\n")[0]}`));
+  };
+
+  const add = async (page: Page) => {
+    if (closed || tabs.some((t) => t.page === page)) return;
+    // no CDP (Firefox, WebKit): frames and input still work; the page script stays off
+    const cdp = await context.newCDPSession(page).catch(() => null);
+    if (closed || tabs.some((t) => t.page === page)) return;
+    const t: Tab = { id: nextId++, page, cdp, title: "", world: null, frame: "" };
+    tabs.push(t);
+    if (cdp) await attachCdp(t, cdp);
+    page.on("filechooser", (fc) => {
+      // the agent's own chooser stays the agent's; the person's opens the Mac panel
+      if (Date.now() - personAt > PERSON_MS) return;
+      void pick(fc.isMultiple()).then((files) =>
+        files.length ? fc.setFiles(files).catch(() => undefined) : undefined,
+      );
+    });
     void worldOf(t);
     await sizeTab(t);
     page.on("framenavigated", (fr) => {
@@ -485,6 +519,7 @@ export async function startLiveView(
     const page = t?.page;
     switch (m.t) {
       case "size": {
+        if (opts.fixed) return;
         const next = fitViewport({ w: num(m.w), h: num(m.h) }, opts.screen);
         if (next.w === view.w && next.h === view.h) return;
         view = next;
@@ -503,6 +538,10 @@ export async function startLiveView(
         const x = num(m.x);
         const y = num(m.y);
         const o = { button: button(m.button), clickCount: Math.max(1, num(m.clickCount)) };
+        if (opts.touch) {
+          if (m.type === "up" && o.button === "left") queue(() => page.touchscreen.tap(x, y));
+          return;
+        }
         queue(async () => {
           await page.mouse.move(x, y);
           if (m.type === "down") await page.mouse.down(o);
@@ -546,7 +585,7 @@ export async function startLiveView(
         if (!t) return;
         const i = Math.trunc(num(m.i));
         void worldOf(t).then((ctx) =>
-          ctx
+          ctx && t.cdp
             ? t.cdp
                 .send("Runtime.evaluate", { expression: `__abPick(${i})`, contextId: ctx })
                 .catch(() => undefined)

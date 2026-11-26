@@ -68,6 +68,7 @@ async function onProfile<O>(
   name: string,
   run: (fp: FlowPage) => Promise<O>,
 ): Promise<O> {
+  const { onChromeFolder } = await import("../browser/engines.js");
   const { flowRunner } = await import("../browser/flow.js");
   const { defineFlow } = await import("../browser/flow-api.js");
   const { runLeg } = await import("../engine/leg.js");
@@ -76,6 +77,8 @@ async function onProfile<O>(
     {
       ...opts,
       tier: "local",
+      // the folder `dirOf` names: Chrome's (Chromium in a container), whatever the site map says
+      engine: onChromeFolder(settings.browserEngine) ? settings.browserEngine : "chrome",
       profile,
       profileName: async (n) => n,
       providerProfile: async () => null,

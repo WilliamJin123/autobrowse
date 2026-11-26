@@ -9,8 +9,17 @@ import { readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { hostname, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { ExploreInfo } from "../explore/server.js";
+import { ENGINES, familyOf } from "./engines.js";
 import { type Crash, recentCrashes } from "./launch-hygiene.js";
-import { browserRoots, footprintKb, listProcs, ownerPid, type Proc } from "./reap.js";
+import {
+  browserRoots,
+  footprintKb,
+  listProcs,
+  ownerPid,
+  type Proc,
+  profileFolderOf,
+  profileRoots,
+} from "./reap.js";
 
 /** An explore server idle this long, not held, is forgotten. */
 export const IDLE_WARN_MINUTES = 120;
@@ -38,6 +47,8 @@ export interface BrowserRow {
   pid: number;
   opener: Opener;
   profile: string;
+  /** Set for a profile under `.engines/<engine>/`; absent on Chrome's (and Chromium's) own folder. */
+  engine?: string;
   /** Seconds. */
   age: number;
   /** Memory of the process tree: the footprint on macOS, resident elsewhere. */
@@ -151,6 +162,25 @@ export function lockHolder(profileDir: string, alive = isAlive): number | null {
   return alive(pid) ? pid : null;
 }
 
+/**
+ * The browser root holding `profileDir`. Chromium: the `SingletonLock` pid, when that pid
+ * is a browser (else the lock is stale). Firefox and WebKit write no such lock: the
+ * browser root whose profile flag names the folder.
+ */
+export function holderPid(procs: Proc[], profileDir: string, lock = lockHolder): number | null {
+  const pid = lock(profileDir);
+  if (pid && isBrowser(procs.find((p) => p.pid === pid)?.command ?? "")) return pid;
+  const dir = profileDir.replace(/\/$/, "");
+  // Chromium drops its lock before it exits: a closing Chrome no longer holds the folder
+  if (!LOCKLESS_FOLDER.test(dir)) return null;
+  return profileRoots(procs).find((p) => p.dir === dir)?.pid ?? null;
+}
+
+/** Folders of engines that write no `SingletonLock`. */
+const LOCKLESS_FOLDER = new RegExp(
+  `/\\.engines/(${ENGINES.filter((e) => familyOf(e) !== "chromium").join("|")})/[^/]+$`,
+);
+
 /** Everything `browsers` and `doctor` show; never throws. */
 export async function browsersNow(profilesDir: string, procs?: Proc[]): Promise<BrowsersView> {
   const ps = procs ?? (await withFootprint(await listProcs().catch(() => []), profilesDir));
@@ -176,6 +206,23 @@ export async function withFootprint(procs: Proc[], profilesDir: string): Promise
     : procs;
 }
 
+/** A lock's pid is a browser: it names a profile folder (any brand), or it is a Chrome that shows none. */
+const isBrowser = (command: string): boolean =>
+  profileFolderOf(command) !== null || /chrom/i.test(command);
+
+/** `<enginesDir>/<engine>/<profile>` → the engine; any other folder → null. */
+function engineOfFolder(dir: string, enginesDir: string): string | null {
+  return dir.startsWith(`${enginesDir}/`)
+    ? (dir.slice(enginesDir.length + 1).split("/")[0] ?? null)
+    : null;
+}
+
+/** `.engines/brave/x@wren` → `x@wren (brave)`. */
+function labelOfFolder(folder: string): string {
+  const [dot, engine, profile] = folder.split("/");
+  return dot === ".engines" && engine && profile ? `${profile} (${engine})` : folder;
+}
+
 export function viewOf(
   procs: Proc[],
   profilesDir: string,
@@ -187,21 +234,34 @@ export function viewOf(
   for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p]);
   const treeKb = (p: Proc): number =>
     (p.rss ?? 0) + (kids.get(p.pid) ?? []).reduce((s, k) => s + treeKb(k), 0);
-  const browsers = browserRoots(procs, profilesDir).map((p) => ({
-    pid: p.pid,
-    opener: openerOf(p.pid, p.profile, procs, explorers),
-    profile: p.profile,
-    age: p.age ?? 0,
-    mb: Math.round(treeKb(p) / 1024),
-  }));
+  const enginesDir = join(profilesDir, ".engines");
+  const browsers = browserRoots(procs, profilesDir).map((p) => {
+    const engine = engineOfFolder(profileFolderOf(p.command) ?? "", enginesDir);
+    return {
+      pid: p.pid,
+      opener: openerOf(p.pid, p.profile, procs, explorers),
+      profile: p.profile,
+      ...(engine ? { engine } : {}),
+      age: p.age ?? 0,
+      mb: Math.round(treeKb(p) / 1024),
+    };
+  });
   const ours = new Set(browsers.map((b) => b.pid));
   const byPid = new Map(procs.map((p) => [p.pid, p]));
   const strangers: Stranger[] = [];
-  for (const profile of safe(() => readdirSync(profilesDir), [] as string[])) {
-    const pid = locks(profile);
+  const folders = [
+    ...safe(() => readdirSync(profilesDir), [] as string[]).filter((f) => f !== ".engines"),
+    ...safe(() => readdirSync(enginesDir), [] as string[]).flatMap((e) =>
+      safe(() => readdirSync(join(enginesDir, e)), [] as string[]).map((f) =>
+        join(".engines", e, f),
+      ),
+    ),
+  ];
+  for (const folder of folders) {
+    const pid = locks(folder);
     // A pid reused by something that is no browser is a stale lock: Chrome clears it.
-    if (pid && !ours.has(pid) && /chrom/i.test(byPid.get(pid)?.command ?? ""))
-      strangers.push({ profile, pid });
+    if (pid && !ours.has(pid) && isBrowser(byPid.get(pid)?.command ?? ""))
+      strangers.push({ profile: labelOfFolder(folder), pid });
   }
   return {
     browsers,
@@ -229,14 +289,17 @@ export function warnings(v: BrowsersView): string[] {
       );
   }
   const byProfile = new Map<string, BrowserRow[]>();
-  for (const b of v.browsers) byProfile.set(b.profile, [...(byProfile.get(b.profile) ?? []), b]);
+  for (const b of v.browsers) {
+    const key = b.engine ? `${b.profile} (${b.engine})` : b.profile;
+    byProfile.set(key, [...(byProfile.get(key) ?? []), b]);
+  }
   for (const [profile, rows] of byProfile)
     if (rows.length > 1)
       out.push(
         `profile ${profile} open twice: ${rows.map((b) => `pid ${b.pid} (${b.opener})`).join(", ")}; stop one`,
       );
   for (const s of v.strangers)
-    out.push(`profile ${s.profile} is locked by pid ${s.pid}, not ours: close that Chrome`);
+    out.push(`profile ${s.profile} is locked by pid ${s.pid}, not ours: close that browser`);
   for (const e of v.explorers.filter((x) => x.mb > DRIVER_WARN_MB))
     out.push(
       `explore ${e.port} (${e.site}) driver uses ${e.mb} MB (it starts near 150): say so on WA-1118, then autobrowse stop ${e.port} and start again (the journal resumes)`,
@@ -327,15 +390,14 @@ export async function assertProfileFree(
   profile: string,
   reaped: number[] = [],
 ): Promise<void> {
-  let pid = lockHolder(profileDir);
+  let procs = await listProcs().catch(() => []);
+  let pid = holderPid(procs, profileDir);
   for (let i = 0; pid && reaped.includes(pid) && i < 20; i++) {
     await new Promise((r) => setTimeout(r, 250));
-    pid = lockHolder(profileDir);
+    procs = await listProcs().catch(() => []);
+    pid = holderPid(procs, profileDir);
   }
   if (!pid) return;
-  const procs = await listProcs().catch(() => []);
-  const holder = procs.find((p) => p.pid === pid);
-  if (!holder || !/chrom/i.test(holder.command)) return; // a reused pid: the lock is stale
   const { opener, ...held } = holderOf(pid, profile, procs, readExplorers(procs));
   throw new ProfileBusy(profile, pid, opener, profileDir, held);
 }

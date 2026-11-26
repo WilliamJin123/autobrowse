@@ -7,6 +7,7 @@ import type { StepRecord } from "../agent/explorer.js";
 import { runJson } from "../agent/run-json.js";
 import { urlWithoutQuery } from "../auth/guard.js";
 import { type SecretValues, sessionHosts } from "../auth/signup.js";
+import { ENGINES, engineOf } from "../browser/engines.js";
 import { windowPlace } from "../browser/window-bounds.js";
 import type { Command as ExploreCommand } from "../explore/commands.js";
 import { DEFAULT_IDLE_MINUTES, pidAlive } from "../explore/lease.js";
@@ -16,7 +17,11 @@ import type { LlmUsage } from "../llm/types.js";
 import { explorerOpener, type LocalBackend } from "./backend.js";
 import { group } from "./cli-groups.js";
 import type { Settings } from "./config.js";
-import { headed } from "./display.js";
+import { displayOf, headed } from "./display.js";
+
+const ENGINE_FLAG = "--engine <engine>";
+const ENGINE_HELP = `browser build for this session: ${ENGINES.join(", ")} (default: BROWSER_ENGINE)`;
+
 import { browserOptions, COMPILED_DIR, llmFor } from "./services.js";
 
 /** The Claude Code session this CLI runs under, if any: who an explore session answers to. */
@@ -61,18 +66,25 @@ export function registerRecordCommands(
   local: LocalBackend,
 ): void {
   /** Headless as the env says unless the person asks to watch. */
-  const opener = async (o: { headed?: boolean; window?: string; live?: boolean }) =>
-    explorerOpener(
+  const opener = async (o: {
+    headed?: boolean;
+    window?: string | true;
+    live?: boolean;
+    engine?: string;
+  }) => {
+    const display = o.live
+      ? { headless: true, live: true }
+      : o.window
+        ? { headless: false, window: await windowPlace(o.window === true ? "full" : o.window) }
+        : o.headed
+          ? headed
+          : undefined;
+    return explorerOpener(
       settings,
       undefined,
-      o.live
-        ? { headless: true, live: true }
-        : o.window
-          ? { headless: false, window: await windowPlace(o.window) }
-          : o.headed
-            ? headed
-            : undefined,
+      o.engine ? { ...(display ?? displayOf(settings)), engine: engineOf(o.engine) } : display,
     );
+  };
   program
     .command("explore <site>")
     .description(
@@ -81,13 +93,14 @@ export function registerRecordCommands(
     .option("--url <url>", "start here")
     .option("--port <port>", "loopback port", "9090")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
+    .option(ENGINE_FLAG, ENGINE_HELP)
     .option(
       "--live",
       "headless, shown in the live view app on this Mac: no Chrome window, never takes the front (the default for --headed while HEADED_VIEW=live)",
     )
     .option(
-      "--window <place>",
-      "headed, and the window opens there: full (the default), center, left, right, left-third, right-third, left-two-thirds, right-two-thirds, or x,y,w,h in points or % of the free screen (60%,0%,40%,100%)",
+      "--window [place]",
+      "a real Chrome window, never the live view (films, OBS, a hand-off); it opens there: full (bare --window), center, left, right, left-third, right-third, left-two-thirds, right-two-thirds, or x,y,w,h in points or % of the free screen (60%,0%,40%,100%)",
     )
     .option(
       "--idle <minutes>",
@@ -138,8 +151,9 @@ export function registerRecordCommands(
           url?: string;
           port: string;
           headed?: boolean;
-          window?: string;
+          window?: string | true;
           live?: boolean;
+          engine?: string;
           idle: string;
           hold?: boolean;
           codes?: string;
@@ -396,22 +410,29 @@ export function registerRecordCommands(
     .option("--site <site>", "use this site's logged-in profile", "scratch")
     .option("--url <url>", "start here")
     .option("--terminal", "also record a shell session in this terminal after the browser closes")
-    .action(async (name: string, o: { site: string; url?: string; terminal?: boolean }) => {
-      const { recordChore } = await import("../recorder/index.js");
-      // a person records: Chrome's own window, the observer's journal reads it
-      const opts = { ...browserOptions(settings, headed), headedView: "window" as const };
-      if (opts.tier !== "local") throw new Error("record needs BROWSER=local");
-      const dir = await recordChore({
-        name,
-        site: o.site,
-        startUrl: o.url ?? null,
-        terminal: o.terminal ?? false,
-        recordingsDir: settings.recordingsDir,
-        browser: opts,
-        io: { stdin: process.stdin, stdout: process.stdout },
-      });
-      console.log(`recording saved to ${dir}`);
-    });
+    .option(ENGINE_FLAG, ENGINE_HELP)
+    .action(
+      async (
+        name: string,
+        o: { site: string; url?: string; terminal?: boolean; engine?: string },
+      ) => {
+        const { recordChore } = await import("../recorder/index.js");
+        // a person records: Chrome's own window, the observer's journal reads it
+        const display = o.engine ? { ...headed, engine: engineOf(o.engine) } : headed;
+        const opts = { ...browserOptions(settings, display), headedView: "window" as const };
+        if (opts.tier !== "local") throw new Error("record needs BROWSER=local");
+        const dir = await recordChore({
+          name,
+          site: o.site,
+          startUrl: o.url ?? null,
+          terminal: o.terminal ?? false,
+          recordingsDir: settings.recordingsDir,
+          browser: opts,
+          io: { stdin: process.stdin, stdout: process.stdout },
+        });
+        console.log(`recording saved to ${dir}`);
+      },
+    );
 
   program
     .command("agent <site> <goal>")

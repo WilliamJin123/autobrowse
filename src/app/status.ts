@@ -10,7 +10,7 @@ export interface Status {
   llm: string;
   /** The daily token cap and today's spend; null when LLM_DAILY_TOKENS=0 or there is no model. */
   budget: { cap: number; usedToday: number } | null;
-  browser: { tier: string; headless: boolean; pace: string; channel: string };
+  browser: { tier: string; headless: boolean; pace: string; engine: string };
   memory: string;
   channels: string[];
   codes: string[];
@@ -52,7 +52,7 @@ export function statusOf(
       tier: settings.browser,
       headless: settings.browserHeadless,
       pace: settings.pace,
-      channel: settings.browserChannel,
+      engine: settings.browserEngine,
     },
     memory: live.memory,
     channels,

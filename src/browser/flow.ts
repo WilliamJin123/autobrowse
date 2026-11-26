@@ -77,6 +77,7 @@ const FLOW_NET_BYTES = 8 * 1024 * 1024;
 export * from "./flow-api.js";
 
 import { NetRefused } from "../reach/net-guard.js";
+import { onChromeFolder } from "./engines.js";
 import {
   type BrowserFlow,
   FlowFailed,
@@ -1074,7 +1075,8 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
               !broken &&
               opts.signIns &&
               opts.tier === "local" &&
-              !session.shared
+              !session.shared &&
+              onChromeFolder(session.engine ?? "chrome")
             )
               await opts.signIns
                 .afterRun(key, session.context, signedIn || withPerson)

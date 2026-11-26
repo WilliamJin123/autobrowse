@@ -6,10 +6,8 @@
  * after it; `flow.ts` decides when and holds the per-site lock.
  */
 import { execFile, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { promisify } from "node:util";
-import type { Browser, BrowserContext, Page } from "playwright";
+import type { Browser, BrowserContext, BrowserType, Page } from "playwright";
 import type { SignInSaver } from "../authbridge/snapshot.js";
 import { type HttpClient, safeUrls } from "../clients/http.js";
 import { expandHome } from "../google/auth.js";
@@ -18,6 +16,19 @@ import { assertProfileFree } from "./browsers.js";
 import { type Dialogs, watchDialogs } from "./dialogs.js";
 import { boundRequests } from "./driver-memory.js";
 import type { Egress, Exit } from "./egress.js";
+import {
+  deviceOf,
+  type Engine,
+  EngineMissing,
+  familyOf,
+  hasAppBinary,
+  installedBinary,
+  labelOf,
+  launchTarget,
+  missingOf,
+  profileDirOf,
+  refusalOf,
+} from "./engines.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
 import { guardFocus, markNewTargets } from "./focus-guard.js";
@@ -52,6 +63,22 @@ const run = promisify(execFile);
  */
 const chromium = async () =>
   (await import("patchright")).chromium as unknown as typeof import("playwright").chromium;
+
+/** Patchright for the chromium family; plain Playwright for Firefox and WebKit, which patchright does not patch. */
+async function browserTypeOf(e: Engine): Promise<BrowserType> {
+  const f = familyOf(e);
+  if (f === "chromium") return (await chromium()) as unknown as BrowserType;
+  const pw = await import("playwright");
+  return f === "firefox" ? pw.firefox : pw.webkit;
+}
+
+/** The binary that runs: the fingerprint's key, the relay's target, ⌘⇧O's app. */
+async function binaryOf(e: Engine): Promise<string> {
+  const bin = installedBinary(e);
+  if (bin) return bin;
+  if (hasAppBinary(e) && e !== "chrome") throw new EngineMissing(e);
+  return (await browserTypeOf(e)).executablePath();
+}
 
 /** A page needs a person: login, captcha, consent, or a layout nobody planned for. */
 export class NeedsHuman extends Error {
@@ -151,12 +178,10 @@ export interface BrowserOptions {
   /** Most background tabs `code`'s `fp.each` reads in at once (`READ_TABS`). */
   readTabs?: number;
   headless?: boolean;
-  /**
-   * Which local browser: "chrome" (the installed Google Chrome, what a
-   * person's login looks like) or "chromium" (Playwright's bundle, what a
-   * container has). "chrome" falls back to chromium when none is installed.
-   */
-  channel?: "chrome" | "chromium";
+  /** The local build (`--engine`, else `BROWSER_ENGINE`; `browser/engines`); none = chrome. One per process. */
+  engine?: Engine;
+  /** The nav fence will hold this session (explore with `allowHosts`): Chromium only (`refusalOf`). */
+  fenced?: boolean;
   browserbase?: { apiKey: string; projectId: string; http: HttpClient } | null;
   /** `BROWSER=cdp`: the endpoint to attach to (`http://127.0.0.1:9222` or a `ws://` URL). */
   cdpUrl?: string | null;
@@ -225,6 +250,8 @@ export interface Session {
   dialogs: Dialogs;
   /** The live view this session shows in (`browser/live-view.ts`): `person` asks for the person. */
   live?: LiveView;
+  /** The local build it runs; absent on a rented or attached browser. */
+  engine?: Engine;
   close(): Promise<void>;
 }
 
@@ -243,17 +270,10 @@ export function isLive(
   return o.headless === false && o.headedView === "live" && !o.film && !o.window;
 }
 
-/** ⌘⇧O: the person's own Chrome on the profile, the tabs reopened; no automation attached. */
-async function openInChrome(
-  profileDir: string,
-  urls: string[],
-  channel: BrowserOptions["channel"],
-) {
-  const bin = await realBrowser(channel);
-  spawn(bin, [`--user-data-dir=${profileDir}`, "--no-first-run", ...urls], {
-    detached: true,
-    stdio: "ignore",
-  }).unref();
+/** ⌘⇧O: the same Chromium build on the profile, in a window, the tabs reopened; no automation attached. */
+async function openInWindow(profileDir: string, urls: string[], engine: Engine) {
+  const args = [`--user-data-dir=${profileDir}`, "--no-first-run", ...urls];
+  spawn(await binaryOf(engine), args, { detached: true, stdio: "ignore" }).unref();
 }
 
 export async function openSession(site: string, given: BrowserOptions): Promise<Session> {
@@ -265,6 +285,25 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
   const opts: BrowserOptions = live ? { ...given, headless: true, live: true } : given;
   const asked = opts.profile ?? site;
   const profile = (await opts.profileName?.(asked)) ?? asked;
+  const engine = opts.engine ?? "chrome";
+  // a failed read: Chromium opens without them; any other family refuses (no authenticator to fall back on)
+  const stored =
+    (await opts.passkeys?.(site).catch((err: Error) => {
+      if (familyOf(engine) === "chromium") return [];
+      throw new Error(
+        `BROWSER_ENGINE=${engine}: cannot read ${site}'s passkeys (${err.message}); use chrome`,
+      );
+    })) ?? [];
+  const exit = opts.tier === "local" ? (opts.egress?.exitFor(profile) ?? null) : null;
+  const refused = refusalOf(engine, {
+    tier: opts.tier,
+    window: opts.headless === false,
+    film: !!opts.film,
+    proxied: !!exit,
+    passkeys: stored.length,
+    fenced: !!opts.fenced,
+  });
+  if (refused) throw new Error(refused);
   let context: BrowserContext;
   let browser: Browser | null = null;
   let profileDir = "";
@@ -286,7 +325,7 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
     browser = await (await chromium()).connectOverCDP(opts.cdpUrl);
     context = browser.contexts()[0] ?? (await browser.newContext());
   } else {
-    profileDir = join(expandHome(opts.profilesDir), profile);
+    profileDir = profileDirOf(expandHome(opts.profilesDir), profile, engine);
     if (isDesk()) assertNotReserved(profile, profileDir);
     // A browser left by a dead owner would hold this profile; stop those first.
     const reaped = await reapOrphans(expandHome(opts.profilesDir));
@@ -298,13 +337,21 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
     if (cleanUncleanExit(profileDir))
       recordCrash({ profile, reason: "unclean-exit", detail: "found at launch; restore cleared" });
     void reapTempDirs(); // files a crashed upload left, in the background
-    context = await launchLocal(profileDir, opts, opts.egress?.exitFor(profile) ?? null).catch(
-      (err: unknown) => {
-        throw launchFailed(err, profile);
-      },
-    );
+    context = await launchLocal(profileDir, opts, exit, engine).catch((err: unknown) => {
+      throw launchFailed(err, profile);
+    });
     guard = guardMemory(context, profileDir);
-    if (opts.headless === false && process.platform === "darwin") {
+    if (engine !== "chrome") {
+      const off = missingOf(engine);
+      console.error(
+        `autobrowse: ${labelOf(engine)} ${context.browser()?.version() ?? ""}${off.length ? `; off: ${off.join(", ")}` : ""}`,
+      );
+    }
+    if (
+      opts.headless === false &&
+      process.platform === "darwin" &&
+      familyOf(engine) === "chromium"
+    ) {
       const pid = await browserPid(context);
       if (!pid) console.error("autobrowse: no browser pid; the focus guard is off");
       const f = guardFocus({ pid });
@@ -346,10 +393,14 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
   const recording = local ? opts.har?.record : undefined;
   const dialogs = watchDialogs(context);
   const film = opts.film ? await filmContext(context, opts.film) : null;
-  const passkeys = virtualAuthenticator(context, await opts.passkeys?.(site).catch(() => []));
+  const passkeys = virtualAuthenticator(context, stored);
   const hide =
-    local && opts.headless === false && !opts.film && process.platform === "darwin"
-      ? appHider(join(expandHome(opts.profilesDir), profile))
+    local &&
+    opts.headless === false &&
+    !opts.film &&
+    process.platform === "darwin" &&
+    familyOf(engine) === "chromium"
+      ? appHider(profileDir)
       : null;
   let session: Session | null = null;
   const view =
@@ -357,15 +408,20 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
       ? await startLiveView(context, {
           site,
           scale: opts.liveViewScale ?? 1.2,
-          ...liveScreen(),
+          ...liveScreen(await deviceFor(engine)),
           main: page,
-          // ⌘⇧O: the profile goes to a real window; this session ends
-          onWindow: async (urls) => {
-            await keepSessionCookies(context, /./, Date.now(), LIVE_COOKIE_MS).catch(() => 0);
-            await session?.close();
-            await openInChrome(profileDir, urls, opts.channel);
-            return null;
-          },
+          // ⌘⇧O: the profile goes to a real window; this session ends. Chromium only: no focus
+          // guard holds a Firefox or WebKit window back from the front
+          ...(familyOf(engine) === "chromium"
+            ? {
+                onWindow: async (urls: string[]) => {
+                  await keepSessionCookies(context, /./, Date.now(), LIVE_COOKIE_MS).catch(() => 0);
+                  await session?.close();
+                  await openInWindow(profileDir, urls, engine);
+                  return null;
+                },
+              }
+            : {}),
         })
       : null;
   session = {
@@ -376,6 +432,7 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
     ...(film ? { filmed: true } : {}),
     ...(hide ? { offscreen: hide } : {}),
     ...(view ? { live: view } : {}),
+    ...(local ? { engine } : {}),
     ...(local && opts.egress ? { newIp: () => (opts.egress as Egress).newIp(profile) } : {}),
     async close() {
       if (closing) return;
@@ -402,8 +459,31 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
   return session;
 }
 
-/** The headless screen and DPR (fingerprint.ts): the live view's page keeps them. */
-function liveScreen(): { dpr: number; screen: { width: number; height: number } } {
+/** The descriptors carry `screen` (iPhone 15 Pro: 393×852); Playwright's type leaves it out. */
+type Device = typeof import("playwright")["devices"][string] & {
+  screen?: { width: number; height: number };
+};
+
+/** The engine's emulated device (`ios`); Playwright loads only then. */
+async function deviceFor(engine: Engine): Promise<Device | undefined> {
+  const name = deviceOf(engine);
+  return name ? (await import("playwright")).devices[name] : undefined;
+}
+
+/** The headless screen and DPR (fingerprint.ts), or the device's: the live view's page keeps them. */
+function liveScreen(d: Device | undefined): {
+  dpr: number;
+  screen: { width: number; height: number };
+  fixed?: { w: number; h: number };
+  touch?: boolean;
+} {
+  if (d)
+    return {
+      dpr: d.deviceScaleFactor,
+      screen: d.screen ?? d.viewport,
+      fixed: { w: d.viewport.width, h: d.viewport.height },
+      touch: d.hasTouch,
+    };
   const g = geometry(true) as {
     screen: { width: number; height: number };
     deviceScaleFactor: number;
@@ -517,17 +597,8 @@ const HEADED_ARGS = ["--test-type"];
  */
 const PROXIED_ARGS = ["--webrtc-ip-handling-policy=disable_non_proxied_udp"];
 
-/** The headed fingerprint of this host's Chrome, learned on the first headless launch. */
-let headedFingerprint: Fingerprint | null = null;
-
-/** Google Chrome's binary on this Mac, or Playwright's Chromium (`channel: "chromium"`, or no Chrome). */
-async function realBrowser(channel: BrowserOptions["channel"]): Promise<string> {
-  const app = "Google Chrome.app/Contents/MacOS/Google Chrome";
-  if (channel !== "chromium")
-    for (const dir of ["/Applications", expandHome("~/Applications")])
-      if (existsSync(join(dir, app))) return join(dir, app);
-  return (await chromium()).executablePath();
-}
+/** The headed fingerprint of each Chromium binary on this host, learned on its first headless launch. */
+const headedFingerprints = new Map<string, Fingerprint>();
 
 /** The browser process's own pid: a relay can stand between us and it. 0 if unknown. */
 async function browserPid(context: BrowserContext): Promise<number> {
@@ -548,7 +619,9 @@ async function launchLocal(
   profileDir: string,
   opts: BrowserOptions,
   exit: Exit | null,
+  engine: Engine,
 ): Promise<BrowserContext> {
+  if (familyOf(engine) !== "chromium") return launchPlaywrightBuild(profileDir, opts, exit, engine);
   const proxy = exit?.proxy ?? null;
   const headless = opts.headless ?? true;
   // headed with no place: the screen's free area, never Chrome's own 1280x900 in a corner
@@ -594,7 +667,7 @@ async function launchLocal(
   // headed on a Mac: launched in the background (`browser/background-launch`); a failed relay costs one steal
   const launch = async (o: ReturnType<typeof base>) => {
     if (o.headless || process.platform !== "darwin") return plainLaunch(o);
-    const real = await realBrowser(opts.channel);
+    const real = await binaryOf(engine);
     try {
       return await (await chromium()).launchPersistentContext(profileDir, {
         ...o,
@@ -610,35 +683,87 @@ async function launchLocal(
     await reapOrphans(expandHome(opts.profilesDir)).catch(() => []);
     return plainLaunch(o);
   };
+  const type = await browserTypeOf(engine);
+  const target = launchTarget(engine);
   const plainLaunch = async (o: ReturnType<typeof base>) => {
-    if (opts.channel !== "chromium") {
-      try {
-        return await (await chromium()).launchPersistentContext(profileDir, {
-          ...o,
-          channel: "chrome",
-        });
-      } catch (err) {
-        if (!/executable doesn't exist|chrome/i.test(err instanceof Error ? err.message : ""))
-          throw err;
-      }
+    try {
+      return await type.launchPersistentContext(profileDir, { ...o, ...target });
+    } catch (err) {
+      // no Google Chrome (a container): Playwright's Chromium
+      const missing = /executable doesn't exist|chrome/i.test(
+        err instanceof Error ? err.message : "",
+      );
+      if (engine !== "chrome" || !missing) throw err;
     }
-    return (await chromium()).launchPersistentContext(profileDir, o);
+    console.error("autobrowse: Google Chrome is not installed here; using Playwright's Chromium");
+    return type.launchPersistentContext(profileDir, o);
   };
-  const context = await launch(base(headedFingerprint?.userAgent ?? null));
+  const key = await binaryOf(engine).catch(() => engine);
+  const known = headedFingerprints.get(key) ?? null;
+  const context = await launch(base(known?.userAgent ?? null));
   if (!headless) return context;
-  if (headedFingerprint) {
-    wearFingerprint(context, headedFingerprint);
+  if (known) {
+    wearFingerprint(context, known);
     return context;
   }
   // Headless Chrome says "HeadlessChrome/153…" and sites like YouTube Studio refuse it as an
   // unsupported browser. The version is only known once launched: learn it, relaunch as the headed one.
-  const learned = await learnFingerprint(context.pages()[0] ?? (await context.newPage()));
+  // a throw here would leave the browser running under a live owner, which no reap touches
+  const learned = await learnFingerprint(context.pages()[0] ?? (await context.newPage())).catch(
+    async (err) => {
+      await context.close().catch(() => undefined);
+      throw err;
+    },
+  );
   if (!learned.headless) return context;
-  headedFingerprint = learned.fingerprint;
+  headedFingerprints.set(key, learned.fingerprint);
   await context.close();
-  const relaunched = await launch(base(headedFingerprint.userAgent));
-  wearFingerprint(relaunched, headedFingerprint);
+  const relaunched = await launch(base(learned.fingerprint.userAgent));
+  wearFingerprint(relaunched, learned.fingerprint);
   return relaunched;
+}
+
+/**
+ * Firefox and WebKit: Playwright's own builds. No Chromium flag applies; their headless UA
+ * is already the headed one (measured 11-26). Headed only off a Mac (`refusalOf`).
+ */
+async function launchPlaywrightBuild(
+  profileDir: string,
+  opts: BrowserOptions,
+  exit: Exit | null,
+  engine: Engine,
+): Promise<BrowserContext> {
+  const proxy = exit?.proxy ?? null;
+  const headless = opts.headless ?? true;
+  const device = await deviceFor(engine);
+  const { args: _chromiumOnly, ...size } = device
+    ? { args: [] as string[] }
+    : geometry(headless, process.platform, opts.window);
+  const tz = exit?.timezone ?? opts.timezone;
+  return (await browserTypeOf(engine)).launchPersistentContext(profileDir, {
+    headless,
+    ...size,
+    ...(device
+      ? {
+          viewport: device.viewport,
+          screen: device.screen ?? device.viewport,
+          userAgent: device.userAgent,
+          deviceScaleFactor: device.deviceScaleFactor,
+          isMobile: device.isMobile,
+          hasTouch: device.hasTouch,
+        }
+      : {}),
+    timeout: LAUNCH_TIMEOUT_MS,
+    ...(proxy ? { proxy } : {}),
+    // WebRTC on the proxy only, as PROXIED_ARGS does for Chromium; WebKit behind an exit is refused
+    ...(proxy && familyOf(engine) === "firefox"
+      ? { firefoxUserPrefs: { "media.peerconnection.ice.proxy_only": true } }
+      : {}),
+    ...(opts.har?.record
+      ? { recordHar: { path: opts.har.record, content: "embed" as const } }
+      : {}),
+    ...(tz ? { env: { ...process.env, TZ: tz }, timezoneId: tz } : {}),
+  });
 }
 
 // --- Browserbase: persistent contexts keyed by site name -------------------

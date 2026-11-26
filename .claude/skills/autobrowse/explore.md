@@ -52,9 +52,9 @@ held session yourself; `doctor` flags one held over 12 hours.
 
 The desk's watchers and reads can take a profile (x@wren) first. To keep the desk off it (a film take, a person at the account): `autobrowse browsers reserve <profile> --minutes 60 --by <id> --why "…"`: its desk browser closes, its watcher pauses, its calls wait; your session still opens it. `browsers unreserve <profile>` ends it.
 
-`--headed`: a window a person watches (the panel, a film, a hand-off); use it when asked for a visible window. Without it sessions are headless.
+`--headed`: a person watches, in the live view (`HEADED_VIEW=live`); it never takes focus.
 
-Headed: Chrome fills the free screen, focus kept. Films: `--window` `center`, `left`, `right`, `left-third`… or `x,y,w,h` (points or `%`).
+A real Chrome window (film, hand-off): `--window`; bare fills the screen, or a place: `center`, `left`, `right`, `left-third`… or `x,y,w,h` (points or `%`). `try --film` and `record` get one.
 
 `--look-only` (a page you do not trust): only reads, `open`, `wait`, `done`, `close`; a click, a script, a `place` or a `flow` is refused.
 

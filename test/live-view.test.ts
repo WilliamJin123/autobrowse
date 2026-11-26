@@ -136,11 +136,17 @@ describe("live view session", () => {
     await context?.close();
   });
 
-  async function start(onWindow?: (urls: string[]) => Promise<string | null>) {
-    context = await browser.newContext();
+  async function start(
+    onWindow?: (urls: string[]) => Promise<string | null>,
+    o: { touch?: boolean; noCdp?: boolean } = {},
+  ) {
+    context = await browser.newContext(o.touch ? { hasTouch: true } : {});
     page = await context.newPage();
+    // Firefox and WebKit have no CDP session: same refusal, Chromium's speed
+    if (o.noCdp) context.newCDPSession = () => Promise.reject(new Error("no CDP"));
     app = fakeHost();
     live = await startLiveView(context, {
+      ...(o.touch ? { touch: true } : {}),
       site: "example",
       scale: 1,
       dpr: 1,
@@ -282,6 +288,38 @@ describe("live view session", () => {
     const g = await lv.geometry(page);
     expect(g).toMatchObject({ pid: 4242, bounds: { x: 0, y: 0 } });
     expect(g && "screen" in g).toBe(false);
+    v.ws.close();
+  });
+
+  it("streams and clicks with no CDP (Firefox, WebKit)", async () => {
+    const lv = await start(undefined, { noCdp: true });
+    await page.setContent(
+      "<body style='background:#c00'><button id=b style='position:fixed;left:0;top:0;width:200px;height:40px' onclick='this.textContent=\"hit\"'>b</button></body>",
+    );
+    const v = await viewer(lv);
+    await v.until(() => v.msgs.find((m) => m.t === "tabs"));
+    app.emit({ t: "visible", on: true });
+    await v.until(() => v.frames() > 0);
+    v.send({ t: "mouse", type: "down", x: 20, y: 20, button: "left", clickCount: 1 });
+    v.send({ t: "mouse", type: "up", x: 20, y: 20, button: "left", clickCount: 1 });
+    await expect.poll(() => page.textContent("#b")).toBe("hit");
+    v.ws.close();
+  });
+
+  it("lands a click as one tap on a touch device (ios), on the release", async () => {
+    const lv = await start(undefined, { touch: true });
+    await page.setContent(
+      "<div id=d style='position:fixed;inset:0'></div><script>window.seen=[];for(const e of ['touchstart','touchend','mousedown'])d.addEventListener(e,()=>seen.push(e))</script>",
+    );
+    const v = await viewer(lv);
+    await v.until(() => v.msgs.find((m) => m.t === "tabs"));
+    v.send({ t: "mouse", type: "down", x: 30, y: 30, button: "left", clickCount: 1 });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await page.evaluate(() => (window as unknown as { seen: string[] }).seen)).toEqual([]);
+    v.send({ t: "mouse", type: "up", x: 30, y: 30, button: "left", clickCount: 1 });
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { seen: string[] }).seen.slice(0, 2)))
+      .toEqual(["touchstart", "touchend"]);
     v.ws.close();
   });
 
