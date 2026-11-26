@@ -26,8 +26,9 @@ export async function keepSessionCookies(
   context: Pick<BrowserContext, "cookies" | "addCookies">,
   domains: RegExp,
   now = Date.now(),
+  keepMs = KEEP_DAYS * 86_400_000,
 ): Promise<number> {
-  const expires = Math.floor(now / 1000) + KEEP_DAYS * 86_400;
+  const expires = Math.floor((now + keepMs) / 1000);
   const session = (await context.cookies()).filter(
     (c) => c.expires === -1 && domains.test(c.domain.replace(/^\./, "")),
   );

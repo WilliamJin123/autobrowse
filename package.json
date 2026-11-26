@@ -10,6 +10,7 @@
     "dist",
     "!dist/**/*.test.*",
     "assets/overlay/bin",
+    "assets/live-view",
     "vendor/google-maps-scraper-kit",
     "!vendor/**/.engine",
     "evals",
@@ -105,6 +106,7 @@
     "@types/pngjs": "^6.0.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
     "@vitejs/plugin-react": "6.1.1",
     "happy-dom": "21.0.4",
     "typescript": "5.9.3",
@@ -155,6 +157,7 @@
     "tsx": "4.23.13",
     "undici": "7.16.0",
     "unpdf": "1.8.1",
+    "ws": "8.22.0",
     "zod": "4.6.5"
   },
   "license": "PolyForm-Strict-1.0.0"

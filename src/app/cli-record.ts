@@ -61,15 +61,17 @@ export function registerRecordCommands(
   local: LocalBackend,
 ): void {
   /** Headless as the env says unless the person asks to watch. */
-  const opener = async (o: { headed?: boolean; window?: string }) =>
+  const opener = async (o: { headed?: boolean; window?: string; live?: boolean }) =>
     explorerOpener(
       settings,
       undefined,
-      o.window
-        ? { headless: false, window: await windowPlace(o.window) }
-        : o.headed
-          ? headed
-          : undefined,
+      o.live
+        ? { headless: true, live: true }
+        : o.window
+          ? { headless: false, window: await windowPlace(o.window) }
+          : o.headed
+            ? headed
+            : undefined,
     );
   program
     .command("explore <site>")
@@ -79,6 +81,10 @@ export function registerRecordCommands(
     .option("--url <url>", "start here")
     .option("--port <port>", "loopback port", "9090")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
+    .option(
+      "--live",
+      "headless, shown in the live view app on this Mac: no Chrome window, never takes the front (HEADED_VIEW=live does this for every headed session)",
+    )
     .option(
       "--window <place>",
       "headed, and the window opens there: full (the default), center, left, right, left-third, right-third, left-two-thirds, right-two-thirds, or x,y,w,h in points or % of the free screen (60%,0%,40%,100%)",
@@ -133,6 +139,7 @@ export function registerRecordCommands(
           port: string;
           headed?: boolean;
           window?: string;
+          live?: boolean;
           idle: string;
           hold?: boolean;
           codes?: string;

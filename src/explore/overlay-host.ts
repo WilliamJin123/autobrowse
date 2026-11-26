@@ -12,6 +12,8 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -107,21 +109,72 @@ export function hostBinary(): Promise<string> {
   return built;
 }
 
+/** The live view's Info.plist: the Dock and menu say "Autobrowse Live"; http to 127.0.0.1 loads. */
+const LIVE_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Autobrowse Live</string>
+<key>CFBundleDisplayName</key><string>Autobrowse Live</string>
+<key>CFBundleIdentifier</key><string>com.wrenautomation.autobrowse.live</string>
+<key>CFBundleExecutable</key><string>${EXE}</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+</dict></plist>
+`;
+
+/**
+ * macOS: the host binary inside `Autobrowse Live-<hash>.app` (designs/2026-11-25-live-view.md).
+ * The hash is the binary's: a shipped prebuilt has no crate to hash.
+ */
+export async function liveBinary(): Promise<string> {
+  const bin = await hostBinary();
+  const hash = createHash("sha256").update(readFileSync(bin)).digest("hex").slice(0, 12);
+  const app = join(cacheDir(), `Autobrowse Live-${hash}.app`);
+  const exe = join(app, "Contents", "MacOS", EXE);
+  if (existsSync(exe)) return exe;
+  // per-pid temp, then rename: two sessions never see half a bundle
+  const tmp = `${app}.${process.pid}`;
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(join(tmp, "Contents", "MacOS"), { recursive: true });
+  writeFileSync(join(tmp, "Contents", "Info.plist"), LIVE_PLIST);
+  copyFileSync(bin, join(tmp, "Contents", "MacOS", EXE));
+  try {
+    renameSync(tmp, app);
+  } catch {
+    // another session won the rename
+    rmSync(tmp, { recursive: true, force: true });
+  }
+  return exe;
+}
+
 /** A host that never says `ready` in this time is dead (a missing system library, no display). */
 const READY_MS = 15_000;
 
-/** A host process; null when this machine cannot draw one (the reason in `why`). */
-export async function nativeHost(why: (reason: string) => void): Promise<OverlayHost | null> {
+/**
+ * A host process; null when this machine cannot draw one (the reason in `why`).
+ * `mode` "live": the live view's window, from its app bundle (macOS).
+ */
+export async function nativeHost(
+  why: (reason: string) => void,
+  mode?: "live",
+): Promise<OverlayHost | null> {
   let bin: string;
   try {
-    bin = await hostBinary();
+    if (mode === "live" && process.platform !== "darwin")
+      throw new Error(`the live view has no window host for ${process.platform}`);
+    bin = mode === "live" ? await liveBinary() : await hostBinary();
   } catch (e) {
     why((e as Error).message);
     return null;
   }
   // X11 only on Linux: under Wayland the window cannot be placed or stacked
   const env = process.platform === "linux" ? { ...process.env, GDK_BACKEND: "x11" } : process.env;
-  const child: ChildProcess = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"], env });
+  const child: ChildProcess = spawn(bin, mode ? [mode] : [], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env,
+  });
   child.unref();
   const fns: Array<(e: HostEvent) => void> = [];
   let open = true;
@@ -140,6 +193,8 @@ export async function nativeHost(why: (reason: string) => void): Promise<Overlay
     child.on("exit", (code) => {
       open = false;
       done(`the overlay host exited (${code}): ${err.split("\n")[0] || "no message"}`);
+      // after ready: the person quit it, or it died
+      for (const fn of fns) fn({ t: "exit", code });
     });
   });
   child.stderr?.setEncoding("utf8");

@@ -60,6 +60,7 @@ import {
   type BrowserOptions,
   bodyText,
   type FailureRecord,
+  isLive,
   looksLikeWall,
   NeedsHuman,
   openSession,
@@ -541,18 +542,27 @@ export function flowRunner(opts: BrowserOptions, runner: RunnerOptions = {}): Fl
             async person(reason, gone, ms = PERSON_MS) {
               const why = `${flow.site}: ${reason}`;
               // A joined read never holds the window: it runs again alone, with a person.
-              if ((!withPerson && sessionOpts.headless !== false) || !lease.owner) {
+              const canHold = withPerson || sessionOpts.headless === false || isLive(sessionOpts);
+              if (!canHold || !lease.owner) {
                 const err = new NeedsHuman(why);
                 err.person = true;
                 throw err;
               }
               // back on screen, never in front: bringToFront takes the front from the person's app
               await held.offscreen?.(false);
-              for (let t = 0; t < ms; t += PERSON_POLL_MS) {
-                await session.page.waitForTimeout(PERSON_POLL_MS).catch(() => undefined);
-                if (session.page.isClosed() || (await gone().catch(() => false))) return;
+              // live view: the toast and the Dock bounce, never the front
+              held.live?.person(why);
+              try {
+                for (let t = 0; t < ms; t += PERSON_POLL_MS) {
+                  await session.page.waitForTimeout(PERSON_POLL_MS).catch(() => undefined);
+                  // ⌘⇧O: the person finishes in their own window; the next run has the profile
+                  if (held.live?.moved) throw new NeedsHuman(`${why} (moved to a window)`);
+                  if (session.page.isClosed() || (await gone().catch(() => false))) return;
+                }
+                throw new NeedsHuman(`${why} (no answer in ${Math.round(ms / 60_000)} min)`);
+              } finally {
+                held.live?.person(null);
               }
-              throw new NeedsHuman(`${why} (no answer in ${Math.round(ms / 60_000)} min)`);
             },
             passkeys: session.passkeys,
             ...(network ? { network } : {}),

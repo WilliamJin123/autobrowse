@@ -17,7 +17,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std", "libc", "objc2-core-foundation", "NSApplication", "NSRunningApplication", "NSColor", "NSEvent",
   "NSGraphics", "NSPanel", "NSResponder", "NSScreen", "NSView", "NSWindow",
-  "NSButton", "NSControl", "NSImage", "NSMenu", "NSMenuItem", "NSStatusBar", "NSStatusBarButton", "NSStatusItem",
+  "NSButton", "NSControl", "NSPasteboard", "NSImage", "NSMenu", "NSMenuItem", "NSStatusBar", "NSStatusBarButton", "NSStatusItem",
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
   "std", "CFArray", "CFDictionary", "CFNumber", "CFString", "CFCGTypes",

@@ -359,7 +359,11 @@ a row; it is work.
   /api/settings {headless}`): every browser opened from then on follows it;
   `BROWSER_HEADLESS` is only its value at boot. `explore`, `agent`, `repair`
   and `login` take `--headed` when you want to watch one; `record` is always
-  headed.
+  headed. `explore --live` (or `HEADED_VIEW=live` for every headed browser)
+  runs Chrome headless and shows it in a background Mac app: it never takes
+  the front, a person step asks with a toast, ⌘⇧O hands the profile to a
+  plain Chrome window. `LIVE_VIEW_SCALE` sets the stream's sharpness
+  (default 1.2). Design: `designs/2026-11-25-live-view.md`.
 - **Where the browser is.** `BROWSER=local` (a Chrome per site profile),
   `browserbase`, or `cdp` with `BROWSER_CDP_URL=http://127.0.0.1:9222`: a
   browser already running, or an Electron app (new Outlook, Slack, Notion)

@@ -14,9 +14,22 @@ mod os;
 #[path = "linux.rs"]
 mod os;
 
+/// `overlay-host live`: the live view's window (designs/2026-11-25-live-view.md); macOS only so far
+#[cfg(target_os = "macos")]
+mod live_mac;
+
 #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn main() {
-    os::run()
+    match std::env::args().nth(1).as_deref() {
+        #[cfg(target_os = "macos")]
+        Some("live") => live_mac::run(),
+        None => os::run(),
+        // an old binary must never answer `ready` to a mode it lacks
+        Some(m) => {
+            eprintln!("the overlay host has no mode {m:?} on this platform");
+            std::process::exit(2)
+        }
+    }
 }
 
 #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]

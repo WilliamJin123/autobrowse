@@ -37,6 +37,20 @@ const KEEP = 100;
 const MESSAGE = 500;
 const byContext = new WeakMap<BrowserContext, Dialogs>();
 
+/** A dialog shown to someone: null answers with the default. */
+export type DialogAsker = (d: {
+  type: string;
+  message: string;
+  defaultValue: string;
+}) => Promise<DialogAnswer | null>;
+const askers = new WeakMap<BrowserContext, DialogAsker>();
+
+/** The live view asks the person while they look (designs/2026-11-25-live-view.md); null: stop. */
+export function askDialogsWith(context: BrowserContext, ask: DialogAsker | null): void {
+  if (ask) askers.set(context, ask);
+  else askers.delete(context);
+}
+
 /** The default answer: say yes to what only informs or leaves, no to what asks. */
 export function defaultAnswer(type: string): boolean {
   return type === "beforeunload" || type === "alert";
@@ -65,8 +79,13 @@ export function watchDialogs(target: BrowserContext | Page): Dialogs {
     let text: string | undefined;
     if (!theirs) {
       const asks = type === "confirm" || type === "prompt";
-      const a = asks && next ? next : null;
+      let a = asks && next ? next : null;
       if (asks) next = null;
+      const ask = a ? undefined : askers.get(context);
+      if (ask)
+        a = await ask({ type, message: d.message(), defaultValue: d.defaultValue() }).catch(
+          () => null,
+        );
       answered = a ? a.accept : defaultAnswer(type);
       text = answered && type === "prompt" ? (a?.text ?? d.defaultValue()) : undefined;
       await (answered ? d.accept(text) : d.dismiss()).catch(() => undefined);

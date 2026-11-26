@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src ws://127.0.0.1:*; frame-src about:">
+<title>autobrowse</title>
+<!-- The live view's page (designs/2026-11-25-live-view.md), in the `overlay-host live` window. Talks only to its session's socket. -->
+<style>
+:root{color-scheme:light dark;--bg:#ecebe8;--bar:#e3e2de;--fg:#1d1d1b;--mut:#6f6d68;--tab:transparent;--tabh:rgba(0,0,0,.05);--on:#fbfbfa;--field:rgba(0,0,0,.055);--fieldf:#fff;--ring:#2f6fed;--line:rgba(0,0,0,.09);--needs:#fbefd2;--needsfg:#5c4307;--sheet:#fbfbfa;--shadow:0 12px 40px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.06);--menuh:#2f6fed;--menuhfg:#fff;--pri:#1d1d1b;--onpri:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1b;--bar:#242423;--fg:#ecebe6;--mut:#9b998f;--tabh:rgba(255,255,255,.06);--on:#323230;--field:rgba(255,255,255,.07);--fieldf:#1c1c1b;--ring:#6d9bff;--line:rgba(255,255,255,.08);--needs:#3e3216;--needsfg:#f3dfa8;--sheet:#2b2b29;--shadow:0 12px 40px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08);--pri:#ecebe6;--onpri:#1c1c1b}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font:13px/1.3 -apple-system,system-ui,sans-serif;-webkit-user-select:none;user-select:none;cursor:default}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:default}
+#top{background:var(--bar)}
+#strip{height:40px;display:flex;align-items:flex-end;padding:0 8px 0 78px;gap:2px}
+#tabs{display:flex;gap:2px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;height:34px;align-items:flex-end}
+#tabs::-webkit-scrollbar{display:none}
+.tab{position:relative;flex:0 1 200px;min-width:120px;height:32px;display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;border-radius:9px 9px 0 0;color:var(--mut);transition:background-color .15s,color .15s,flex-basis .15s}
+.tab:hover{background:var(--tabh)}
+.tab.on{background:var(--on);color:var(--fg)}
+.tab .t{flex:1;min-width:0;font-size:12px;line-height:14px;max-height:28px;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical}
+.tab .x{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;opacity:0;transition:opacity .12s}
+.tab:hover .x,.tab.on .x{opacity:.7}
+.tab .x:hover{background:var(--tabh);opacity:1}
+.tab.main .x{visibility:hidden}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#newtab{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--mut);margin-bottom:3px}
+#newtab:hover{background:var(--tabh);color:var(--fg)}
+#nav{display:flex;align-items:center;gap:2px;padding:6px 8px;background:var(--on);border-bottom:1px solid var(--line)}
+.nb{width:30px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--mut);transition:background-color .12s,color .12s}
+.nb:hover{background:var(--tabh);color:var(--fg)}
+.nb:disabled{opacity:.35}
+#url{flex:1;min-width:80px;height:28px;margin:0 6px;border:0;border-radius:7px;padding:0 10px;background:var(--field);color:var(--fg);font:inherit;outline:none;-webkit-user-select:text;user-select:text;transition:background-color .12s,box-shadow .12s}
+#url:focus{background:var(--fieldf);box-shadow:0 0 0 2px var(--ring)}
+#needs{display:grid;grid-template-rows:0fr;transition:grid-template-rows .18s cubic-bezier(.16,1,.3,1);background:var(--needs);color:var(--needsfg)}
+#needs.on{grid-template-rows:1fr}
+#needs>div{overflow:hidden}
+#needs p{margin:0;padding:8px 12px;display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}
+#stage{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--bg)}
+#c{position:absolute;left:0;top:0;outline:none;background:#fff}
+#ov{position:absolute;left:0;top:0;border:0;background:transparent;pointer-events:none;transform-origin:0 0;color-scheme:normal}
+#ov.off{display:none}
+#sink{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;resize:none;pointer-events:none}
+#app{height:100%;display:flex;flex-direction:column}
+.cover{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);color:var(--mut);font-size:14px;transition:opacity .15s}
+.cover.hide{opacity:0;pointer-events:none}
+#menu{position:absolute;z-index:5;min-width:120px;max-height:60vh;overflow-y:auto;padding:4px;border-radius:8px;background:var(--sheet);box-shadow:var(--shadow);font-size:13px;transition:opacity .12s;opacity:0}
+#menu.on{opacity:1}
+#menu .o{padding:4px 10px;border-radius:5px;overflow-wrap:anywhere}
+#menu .o.at{background:var(--menuh);color:var(--menuhfg)}
+#menu .o.dis{opacity:.4}
+#menu .g{padding:6px 10px 2px;color:var(--mut);font-size:11px;font-weight:600}
+#menu .o.in{padding-left:20px}
+#dlg{position:absolute;inset:0;z-index:6;display:grid;place-items:start center;padding-top:40px;background:rgba(0,0,0,.12);transition:opacity .15s;opacity:0}
+#dlg.on{opacity:1}
+#dlg .s{width:min(420px,calc(100% - 32px));padding:16px;border-radius:12px;background:var(--sheet);box-shadow:var(--shadow)}
+#dlg .h{color:var(--mut);font-size:12px;margin-bottom:6px}
+#dlg .m{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto;-webkit-user-select:text;user-select:text}
+#dlg input{width:100%;margin-top:10px;height:28px;border:0;border-radius:7px;padding:0 10px;background:var(--field);color:var(--fg);font:inherit;outline:none}
+#dlg input:focus{box-shadow:0 0 0 2px var(--ring)}
+#dlg .b{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.btn{height:28px;padding:0 14px;border-radius:7px;background:var(--field);font-weight:500}
+.btn.p{background:var(--pri);color:var(--onpri)}
+#notes{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:7;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
+.note{max-width:min(520px,calc(100vw - 32px));padding:8px 12px;border-radius:9px;background:var(--sheet);box-shadow:var(--shadow);overflow-wrap:anywhere;animation:up .18s cubic-bezier(.16,1,.3,1);transition:opacity .3s}
+@keyframes up{from{opacity:0;transform:translateY(6px)}}
+@media (max-width:520px){#url{min-width:40px}.tab{min-width:90px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div id="strip"><div id="tabs" role="tablist"></div><button type="button" id="newtab" title="New tab (⌘T)" aria-label="New tab (⌘T)"><svg class="ic" aria-hidden="true" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button></div>
+    <div id="nav">
+      <button type="button" class="nb" id="back" title="Back (⌘[)" aria-label="Back (⌘[)"><svg class="ic" aria-hidden="true" viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+      <button type="button" class="nb" id="fwd" title="Forward (⌘])" aria-label="Forward (⌘])"><svg class="ic" aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg></button>
+      <button type="button" class="nb" id="reload" title="Reload (⌘R)" aria-label="Reload (⌘R)"><svg class="ic" aria-hidden="true" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 2.5v3h-3"/></svg></button>
+      <input id="url" spellcheck="false" autocomplete="off" aria-label="Address">
+      <button type="button" class="nb" id="win" title="Open in a window (⌘⇧O)" aria-label="Open in a window (⌘⇧O)"><svg class="ic" aria-hidden="true" viewBox="0 0 16 16"><path d="M9 2.5h4.5V7M13.5 2.5 8 8M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/></svg></button>
+    </div>
+    <div id="needs"><div><p><svg class="ic" aria-hidden="true" viewBox="0 0 16 16"><path d="M8 2 14.5 13.5h-13zM8 6.5v3M8 11.5v.01"/></svg><span id="why"></span></p></div></div>
+  </div>
+  <div id="stage">
+    <canvas id="c" tabindex="-1"></canvas>
+    <iframe id="ov" class="off" title="autobrowse overlay"></iframe>
+    <textarea id="sink" aria-label="Keys to the page" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    <div id="cover" class="cover">Connecting</div>
+    <div id="notes"></div>
+  </div>
+</div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const c = $('c'), g = c.getContext('2d'), stage = $('stage'), sink = $('sink'), urlEl = $('url'), ov = $('ov');
+const k = new URLSearchParams(location.search).get('k') || '';
+const host = (m) => { try { window.webkit.messageHandlers.host.postMessage(JSON.stringify(m)); } catch {} };
+let ws = null, view = { w: 0, h: 0 }, tabs = [], shownTab = null, canWindow = false, gone = false;
+
+// --- socket ---------------------------------------------------------------------
+const tx = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/?k=${encodeURIComponent(k)}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { size(true); tx({ t: 'visible', on: !document.hidden }); };
+  ws.onmessage = (e) => (typeof e.data === 'string' ? msg(JSON.parse(e.data)) : frame(e.data));
+  ws.onclose = () => { gone = true; cover('The session ended'); };
+}
+
+// --- frames: one decode at a time, a newer frame replaces a waiting one ----------
+let decoding = false, waiting = null, first = true;
+async function frame(buf) {
+  if (decoding) { waiting = buf; return; }
+  decoding = true;
+  for (let b = buf; b; b = waiting, waiting = null) {
+    try {
+      const bmp = await createImageBitmap(new Blob([b], { type: 'image/jpeg' }));
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(bmp, 0, 0, c.width, c.height);
+      bmp.close();
+      if (first) { first = false; cover(null); }
+    } catch {}
+  }
+  decoding = false;
+}
+
+// --- size: the stage is the page's viewport, in CSS px ----------------------------
+let sizeT = 0;
+function layout() {
+  const w = stage.clientWidth, h = stage.clientHeight, dpr = devicePixelRatio || 1;
+  c.style.width = `${w}px`; c.style.height = `${h}px`;
+  const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; }
+  fitOverlay();
+}
+function size(now) {
+  layout();
+  clearTimeout(sizeT);
+  const send = () => tx({ t: 'size', w: stage.clientWidth, h: stage.clientHeight });
+  if (now) send(); else sizeT = setTimeout(send, 150);
+}
+new ResizeObserver(() => size(false)).observe(stage);
+document.addEventListener('visibilitychange', () => tx({ t: 'visible', on: !document.hidden }));
+
+// --- messages -------------------------------------------------------------------
+function msg(m) {
+  switch (m.t) {
+    case 'hello':
+      view = m.view; canWindow = !!m.window; $('win').hidden = !canWindow;
+      needs(m.needs);
+      return;
+    case 'tabs': return drawTabs(m.tabs, m.overlay);
+    case 'needs': return needs(m.why);
+    case 'cursor': c.style.cursor = m.c || 'default'; return;
+    case 'select': return openMenu(m);
+    case 'dialog': return openDialog(m);
+    case 'dialog-gone': if (dlg && dlg.id === m.id) closeDialog(); return;
+    case 'note': return note(m.text);
+    case 'moving': return m.off ? cover(null) : cover('Opening a window');
+    case 'ov-html': return ovHtml(m.html);
+    case 'ov-js': return ovJs(m.js);
+    case 'ov-view': ovView = { w: m.w, h: m.h }; fitOverlay(); return;
+    case 'ov-shown': ovShown = m.on; ovVisible(); return;
+  }
+}
+function cover(text) {
+  const el = $('cover');
+  if (text) { el.textContent = text; el.classList.remove('hide'); } else el.classList.add('hide');
+}
+function needs(why) {
+  $('why').textContent = why ? `The run waits for you: ${why}` : '';
+  $('needs').classList.toggle('on', !!why);
+}
+function note(text) {
+  const n = document.createElement('div');
+  n.className = 'note'; n.textContent = text;
+  $('notes').append(n);
+  setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
+}
+
+// --- tabs -----------------------------------------------------------------------
+const X = '<svg class="ic" aria-hidden="true" viewBox="0 0 16 16" style="width:12px;height:12px"><path d="m4 4 8 8M12 4l-8 8"/></svg>';
+function drawTabs(list, overlay) {
+  tabs = list;
+  const box = $('tabs');
+  const had = new Map([...box.children].map((n) => [Number(n.dataset.id), n]));
+  const keep = new Set();
+  list.forEach((t, i) => {
+    let n = had.get(t.id);
+    if (!n) {
+      n = document.createElement('div');
+      n.className = 'tab'; n.dataset.id = t.id; n.setAttribute('role', 'tab');
+      n.innerHTML = `<span class="t"></span><button class="x" title="Close tab (⌘W)">${X}</button>`;
+      n.addEventListener('mousedown', (e) => { if (e.button === 1) tx({ t: 'close', id: t.id }); });
+      n.addEventListener('click', (e) => { if (e.target.closest('.x')) tx({ t: 'close', id: t.id }); else tx({ t: 'tab', id: t.id }); });
+    }
+    n.querySelector('.t').textContent = t.title || t.url || 'New tab';
+    n.title = t.url;
+    n.classList.toggle('on', t.on);
+    n.classList.toggle('main', t.main);
+    if (box.children[i] !== n) box.insertBefore(n, box.children[i] || null);
+    keep.add(t.id);
+  });
+  for (const [id, n] of had) if (!keep.has(id)) n.remove();
+  const on = list.find((t) => t.on) || null;
+  if (on && (!shownTab || on.id !== shownTab.id)) { first = true; }
+  shownTab = on;
+  if (on) {
+    if (document.activeElement !== urlEl) urlEl.value = on.url === 'about:blank' ? '' : on.url;
+    host({ t: 'title', text: on.title || 'autobrowse' });
+    box.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  ovFollowed = !!overlay; ovVisible();
+}
+
+// --- toolbar --------------------------------------------------------------------
+$('back').onclick = () => tx({ t: 'back' });
+$('fwd').onclick = () => tx({ t: 'forward' });
+$('reload').onclick = () => tx({ t: 'reload' });
+$('newtab').onclick = () => tx({ t: 'new' });
+$('win').onclick = () => tx({ t: 'window' });
+urlEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { tx({ t: 'go', url: urlEl.value }); focusPage(); e.preventDefault(); }
+  else if (e.key === 'Escape') { urlEl.value = shownTab ? shownTab.url : ''; focusPage(); e.preventDefault(); }
+});
+urlEl.addEventListener('focus', () => setTimeout(() => urlEl.select(), 0));
+// the bar drags the window; a double click zooms it (a Mac title bar's own jobs)
+for (const id of ['strip', 'tabs']) {
+  $(id).addEventListener('mousedown', (e) => { if (e.target === e.currentTarget && e.button === 0 && e.detail === 1) host({ t: 'drag' }); });
+  $(id).addEventListener('dblclick', (e) => { if (e.target === e.currentTarget) host({ t: 'zoom' }); });
+}
+
+// --- hotkeys: the viewer's own; every other key goes to the page --------------------
+function hotkey(e) {
+  const cmd = e.metaKey && !e.ctrlKey && !e.altKey;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (e.ctrlKey && e.altKey && !e.metaKey && e.code === 'KeyP') { tx({ t: 'pause' }); return true; }
+  if (!cmd) return false;
+  if (e.shiftKey) {
+    if (e.code === 'KeyO') { if (canWindow) tx({ t: 'window' }); return true; }
+    if (e.code === 'KeyW') { host({ t: 'hide' }); return true; }
+    return false;
+  }
+  if (key === 'l') { urlEl.focus(); return true; }
+  if (key === 'r') { tx({ t: 'reload' }); return true; }
+  if (key === '[') { tx({ t: 'back' }); return true; }
+  if (key === ']') { tx({ t: 'forward' }); return true; }
+  if (key === 't') { tx({ t: 'new' }); return true; }
+  if (key === 'w') { if (shownTab && !shownTab.main) tx({ t: 'close', id: shownTab.id }); return true; }
+  if (/^[1-9]$/.test(key)) {
+    const t = key === '9' ? tabs.at(-1) : tabs[Number(key) - 1];
+    if (t) tx({ t: 'tab', id: t.id });
+    return true;
+  }
+  return false;
+}
+window.addEventListener('keydown', (e) => {
+  if (menu) return menuKey(e);
+  if (dlg) { if (e.key === 'Escape') { answer(false); e.preventDefault(); } return; }
+  if (hotkey(e)) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
+// --- input to the page ------------------------------------------------------------
+const focusPage = () => { if (!gone) sink.focus({ preventScroll: true }); };
+const pos = (e) => {
+  const r = c.getBoundingClientRect();
+  const vw = view.w || r.width, vh = view.h || r.height;
+  return { x: Math.round(((e.clientX - r.left) / r.width) * vw), y: Math.round(((e.clientY - r.top) / r.height) * vh) };
+};
+const BTN = ['left', 'middle', 'right'];
+let moveRaf = 0, moveAt = null, down = 0;
+c.addEventListener('mousedown', (e) => {
+  closeMenu(-1);
+  focusPage();
+  down |= 1 << e.button;
+  tx({ t: 'mouse', type: 'down', ...pos(e), button: BTN[e.button], clickCount: e.detail || 1 });
+  e.preventDefault();
+});
+window.addEventListener('mouseup', (e) => {
+  if (!(down & (1 << e.button))) return;
+  down &= ~(1 << e.button);
+  tx({ t: 'mouse', type: 'up', ...pos(e), button: BTN[e.button], clickCount: e.detail || 1 });
+});
+window.addEventListener('mousemove', (e) => {
+  if (e.target !== c && !down) return;
+  moveAt = pos(e);
+  if (!moveRaf) moveRaf = requestAnimationFrame(() => { moveRaf = 0; if (moveAt) tx({ t: 'mouse', type: 'move', ...moveAt }); });
+});
+c.addEventListener('wheel', (e) => {
+  const f = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? stage.clientHeight : 1;
+  tx({ t: 'wheel', ...pos(e), dx: e.deltaX * f, dy: e.deltaY * f });
+  e.preventDefault();
+}, { passive: false });
+c.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// keys: a composing key (IME, a dead key) stays in the sink until it commits as text
+const PW = { ' ': 'Space', Esc: 'Escape', Del: 'Delete', OS: 'Meta' };
+sink.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229 || e.key === 'Dead' || e.key === 'Process') return;
+  if (e.metaKey && e.code === 'KeyV') return; // the Edit menu's paste fires `paste` below
+  if (e.metaKey && (e.code === 'KeyC' || e.code === 'KeyX')) { tx({ t: e.code === 'KeyC' ? 'copy' : 'cut' }); e.preventDefault(); return; }
+  tx({ t: 'key', type: 'down', key: keyName(e) });
+  e.preventDefault();
+});
+sink.addEventListener('keyup', (e) => {
+  if (e.isComposing || e.keyCode === 229 || e.key === 'Dead' || e.key === 'Process') return;
+  if (e.metaKey && ['KeyV', 'KeyC', 'KeyX'].includes(e.code)) return;
+  tx({ t: 'key', type: 'up', key: keyName(e) });
+});
+// a character Playwright's layout lacks (å from ⌥A) goes as text: the session's fallback
+const keyName = (e) => PW[e.key] || e.key;
+sink.addEventListener('compositionend', (e) => { if (e.data) tx({ t: 'text', text: e.data }); sink.value = ''; });
+sink.addEventListener('input', (e) => {
+  if (e.isComposing) return;
+  if (e.inputType === 'insertText' && e.data) tx({ t: 'text', text: e.data });
+  sink.value = '';
+});
+sink.addEventListener('paste', (e) => {
+  const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (text) tx({ t: 'text', text });
+  e.preventDefault();
+});
+// a click on the stage that lands on nothing focusable gives the keys to the page
+stage.addEventListener('mousedown', (e) => { if (e.target === stage) focusPage(); });
+window.addEventListener('focus', () => { if (!dlg && document.activeElement !== urlEl && document.activeElement !== ov) focusPage(); });
+
+// --- <select>: headless paints no popup, so the page script sends the options --------
+let menu = null;
+function openMenu(m) {
+  closeMenu(-1);
+  const el = document.createElement('div');
+  el.id = 'menu'; el.setAttribute('role', 'listbox');
+  const r = c.getBoundingClientRect(), sx = r.width / (view.w || r.width), sy = r.height / (view.h || r.height);
+  let group = null;
+  const items = [];
+  m.options.forEach((o, i) => {
+    if (o.group !== group) {
+      group = o.group;
+      if (group) { const gh = document.createElement('div'); gh.className = 'g'; gh.textContent = group; el.append(gh); }
+    }
+    const d = document.createElement('div');
+    d.className = `o${o.disabled ? ' dis' : ''}${o.group ? ' in' : ''}`;
+    d.textContent = o.label || ' ';
+    d.setAttribute('role', 'option');
+    if (!o.disabled) {
+      d.addEventListener('mouseenter', () => menuAt(i));
+      d.addEventListener('mouseup', () => closeMenu(i));
+    }
+    items[i] = d;
+    el.append(d);
+  });
+  const [x, y, w, h] = m.rect;
+  el.style.left = `${Math.max(4, r.left - stage.getBoundingClientRect().left + x * sx)}px`;
+  el.style.minWidth = `${Math.max(120, w * sx)}px`;
+  stage.append(el);
+  const top = (y + h) * sy + 2, room = stage.clientHeight - top - 8;
+  el.style.top = `${room < Math.min(el.offsetHeight, 200) ? Math.max(4, y * sy - el.offsetHeight - 2) : top}px`;
+  menu = { el, items, at: -1, options: m.options };
+  menuAt(m.at);
+  requestAnimationFrame(() => el.classList.add('on'));
+  setTimeout(() => window.addEventListener('mousedown', menuOutside, true), 0);
+}
+function menuOutside(e) { if (menu && !menu.el.contains(e.target)) closeMenu(-1); }
+function menuAt(i) {
+  if (!menu) return;
+  menu.items[menu.at]?.classList.remove('at');
+  menu.at = i;
+  const d = menu.items[i];
+  if (d) { d.classList.add('at'); d.scrollIntoView({ block: 'nearest' }); }
+}
+function menuKey(e) {
+  const step = (d) => {
+    for (let i = menu.at + d; i >= 0 && i < menu.options.length; i += d) if (!menu.options[i].disabled) return menuAt(i);
+  };
+  if (e.key === 'ArrowDown') step(1);
+  else if (e.key === 'ArrowUp') step(-1);
+  else if (e.key === 'Enter' || e.key === ' ') closeMenu(menu.at);
+  else if (e.key === 'Escape' || e.key === 'Tab') closeMenu(-1);
+  else return;
+  e.preventDefault(); e.stopPropagation();
+}
+function closeMenu(pick) {
+  if (!menu) return;
+  const el = menu.el;
+  menu = null;
+  window.removeEventListener('mousedown', menuOutside, true);
+  tx({ t: 'select', i: pick });
+  el.classList.remove('on');
+  setTimeout(() => el.remove(), 120);
+  focusPage();
+}
+
+// --- alert, confirm, prompt ---------------------------------------------------------
+let dlg = null;
+function openDialog(m) {
+  if (dlg) closeDialog();
+  const el = document.createElement('div');
+  el.id = 'dlg';
+  const s = document.createElement('div'); s.className = 's'; s.setAttribute('role', 'alertdialog');
+  const h = document.createElement('div'); h.className = 'h'; h.textContent = shownTab ? `${hostOf(shownTab.url)} says` : 'The page says';
+  const msgEl = document.createElement('div'); msgEl.className = 'm'; msgEl.textContent = m.message;
+  s.append(h, msgEl);
+  let input = null;
+  if (m.type === 'prompt') { input = document.createElement('input'); input.value = m.value || ''; s.append(input); }
+  const b = document.createElement('div'); b.className = 'b';
+  const ok = document.createElement('button'); ok.className = 'btn p'; ok.textContent = m.type === 'beforeunload' ? 'Leave' : 'OK';
+  ok.onclick = () => answer(true);
+  if (m.type !== 'alert') { const no = document.createElement('button'); no.className = 'btn'; no.textContent = m.type === 'beforeunload' ? 'Stay' : 'Cancel'; no.onclick = () => answer(false); b.append(no); }
+  b.append(ok); s.append(b); el.append(s);
+  stage.append(el);
+  dlg = { id: m.id, el, input };
+  (input || ok).focus();
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') answer(true); });
+  requestAnimationFrame(() => el.classList.add('on'));
+}
+function answer(accept) {
+  if (!dlg) return;
+  tx({ t: 'dialog', id: dlg.id, accept, ...(dlg.input ? { text: dlg.input.value } : {}) });
+  closeDialog();
+}
+function closeDialog() {
+  const el = dlg.el;
+  dlg = null;
+  el.classList.remove('on');
+  setTimeout(() => el.remove(), 150);
+  focusPage();
+}
+const hostOf = (u) => { try { return new URL(u).host || u; } catch { return u; } };
+
+// --- the agent's overlay panel, over the stream ------------------------------------------
+let ovView = null, ovShown = true, ovFollowed = false, ovRect = null, ovKey = false;
+function ovHtml(html) {
+  ovRect = null; ovKey = false;
+  if (!html) { ov.srcdoc = ''; ovVisible(); return; }
+  ov.onload = () => {
+    const d = ov.contentDocument;
+    // the panel takes the pointer only over its own box
+    d?.addEventListener('mousemove', (e) => { if (!e.buttons) ovPointer(e.clientX, e.clientY); });
+    d?.addEventListener('keydown', (e) => { if (hotkey(e)) e.preventDefault(); }, true);
+    tx({ t: 'overlay-ready' });
+  };
+  ov.srcdoc = html;
+  ovVisible();
+}
+function ovJs(js) {
+  const d = ov.contentDocument;
+  if (!d?.body) return;
+  const s = d.createElement('script');
+  s.textContent = js;
+  d.body.append(s);
+  s.remove();
+}
+function ovVisible() { ov.classList.toggle('off', !(ovShown && ovFollowed && ov.srcdoc)); }
+function fitOverlay() {
+  const w = (ovView?.w) || stage.clientWidth, h = (ovView?.h) || stage.clientHeight;
+  ov.style.width = `${w}px`; ov.style.height = `${h}px`;
+  ov.style.transform = `scale(${stage.clientWidth / w}, ${stage.clientHeight / h})`;
+}
+function ovPointer(x, y) {
+  const r = ovRect;
+  const inside = !!r && x >= r[0] && y >= r[1] && x <= r[0] + r[2] && y <= r[1] + r[3];
+  ov.style.pointerEvents = inside || ovKey ? 'auto' : 'none';
+}
+stage.addEventListener('mousemove', (e) => {
+  if (!ovRect || down) return;
+  const b = ov.getBoundingClientRect(), s = b.width / (ov.offsetWidth || 1);
+  ovPointer((e.clientX - b.left) / s, (e.clientY - b.top) / s);
+});
+// the panel's posts (overlay.ts `post`): in a frame it posts to its parent
+window.addEventListener('message', (e) => {
+  if (e.source !== ov.contentWindow || !e.data || typeof e.data !== 'object' || !e.data.autobrowseOverlay) return;
+  const m = e.data.autobrowseOverlay;
+  if (Array.isArray(m.rect)) ovRect = m.rect;
+  if (m.key === true) { ovKey = true; ov.style.pointerEvents = 'auto'; ov.focus(); }
+  tx({ t: 'overlay', m });
+});
+ov.addEventListener('blur', () => { ovKey = false; });
+
+// --- the app's clipboard answer (live_mac: clip-read) ------------------------------------
+window.live = { clip: (text) => { if (text) tx({ t: 'text', text }); } };
+
+layout();
+connect();
+focusPage();
+</script>
+</body>
+</html>

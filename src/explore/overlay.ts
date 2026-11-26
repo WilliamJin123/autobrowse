@@ -622,6 +622,8 @@ export const panelHtml = (
       : (ui.min ? tab : tui).getBoundingClientRect();
     const m = { rect: [r.x, r.y, r.width, r.height], prefs: ui.prefs(), ...extra };
     if (ui.answer) { m.answer = ui.answer; ui.answer = null; }
+    // in the live view's frame: its parent passes it on (designs/2026-11-25-live-view.md)
+    if (window.parent !== window) { try { parent.postMessage({ autobrowseOverlay: m }, '*'); } catch {} return; }
     try { window.webkit.messageHandlers.host.postMessage(m); } catch {}
   };
   // a rect read mid-animation (peek, spring) is not where it lands

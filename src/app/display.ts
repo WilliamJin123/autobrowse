@@ -11,6 +11,8 @@ export interface Display {
   headless: boolean;
   /** Headed: where the window opens. */
   window?: WindowPlace;
+  /** Headless Chrome in the live view (`explore --live`), whatever `HEADED_VIEW` says. */
+  live?: boolean;
 }
 
 export function displayOf(settings: Pick<Settings, "browserHeadless">): Display {

@@ -5,7 +5,7 @@
  * same idea. Either way the session is opened for one flow and closed
  * after it; `flow.ts` decides when and holds the per-site lock.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -31,6 +31,7 @@ import {
   readyOrThrow,
   recordCrash,
 } from "./launch-hygiene.js";
+import { type LiveView, startLiveView } from "./live-view.js";
 import type { Hints } from "./locate.js";
 import { guardMemory, treeOf } from "./memory-guard.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
@@ -188,6 +189,12 @@ export interface BrowserOptions {
   film?: FilmOptions | null;
   /** Headed: where the window opens (`explore --window`). */
   window?: WindowPlace;
+  /** What headed means on a Mac (`HEADED_VIEW`): Chrome's window, or the live view. */
+  headedView?: "window" | "live";
+  /** This session runs headless in the live view (`explore --live`). */
+  live?: boolean;
+  /** The live view's stream scale (`LIVE_VIEW_SCALE`). */
+  liveViewScale?: number;
   /** Record the run's calls to a HAR (`AUTOBROWSE_HAR`, local only), or answer them from one (tests). */
   har?: HarOptions;
   /** Tests: a status, a delay or a dropped call on matching URLs (`browser/har`). */
@@ -216,15 +223,47 @@ export interface Session {
   offscreen?: (off: boolean) => Promise<void>;
   /** Native dialogs seen and answered (`browser/dialogs.ts`). */
   dialogs: Dialogs;
+  /** The live view this session shows in (`browser/live-view.ts`): `person` asks for the person. */
+  live?: LiveView;
   close(): Promise<void>;
 }
 
-export async function openSession(site: string, opts: BrowserOptions): Promise<Session> {
-  if (runsInOwn(opts.own, site)) return openOwn(opts.own);
+/** The live view's session cookies outlive the hand-off to a window by this long. */
+const LIVE_COOKIE_MS = 3_600_000;
+
+/** Headless in the live view: `--live`, or headed while `HEADED_VIEW=live`. Local Chrome on a Mac only. */
+export function isLive(
+  o: Pick<BrowserOptions, "tier" | "headless" | "headedView" | "live">,
+): boolean {
+  if (o.tier !== "local" || process.platform !== "darwin") return false;
+  return o.live === true || (o.headless === false && o.headedView === "live");
+}
+
+/** ⌘⇧O: the person's own Chrome on the profile, the tabs reopened; no automation attached. */
+async function openInChrome(
+  profileDir: string,
+  urls: string[],
+  channel: BrowserOptions["channel"],
+) {
+  const bin = await realBrowser(channel);
+  spawn(bin, [`--user-data-dir=${profileDir}`, "--no-first-run", ...urls], {
+    detached: true,
+    stdio: "ignore",
+  }).unref();
+}
+
+export async function openSession(site: string, given: BrowserOptions): Promise<Session> {
+  if (runsInOwn(given.own, site)) return openOwn(given.own);
+  const live = isLive(given);
+  if (live && given.film)
+    throw new Error("a live session cannot be filmed: the film needs a window");
+  // from here on, headed means a real window
+  const opts: BrowserOptions = live ? { ...given, headless: true, live: true } : given;
   const asked = opts.profile ?? site;
   const profile = (await opts.profileName?.(asked)) ?? asked;
   let context: BrowserContext;
   let browser: Browser | null = null;
+  let profileDir = "";
   /** Headed on a Mac: the front stays the person's (`browser/focus-guard`). */
   let focus: ReturnType<typeof guardFocus> | null = null;
   let unmark: (() => Promise<void>) | null = null;
@@ -243,7 +282,7 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     browser = await (await chromium()).connectOverCDP(opts.cdpUrl);
     context = browser.contexts()[0] ?? (await browser.newContext());
   } else {
-    const profileDir = join(expandHome(opts.profilesDir), profile);
+    profileDir = join(expandHome(opts.profilesDir), profile);
     if (isDesk()) assertNotReserved(profile, profileDir);
     // A browser left by a dead owner would hold this profile; stop those first.
     const reaped = await reapOrphans(expandHome(opts.profilesDir));
@@ -308,16 +347,36 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     local && opts.headless === false && !opts.film && process.platform === "darwin"
       ? appHider(join(expandHome(opts.profilesDir), profile))
       : null;
-  return {
+  let session: Session | null = null;
+  const view =
+    local && live
+      ? await startLiveView(context, {
+          site,
+          scale: opts.liveViewScale ?? 1.2,
+          ...liveScreen(),
+          main: page,
+          // ⌘⇧O: the profile goes to a real window; this session ends
+          onWindow: async (urls) => {
+            await keepSessionCookies(context, /./, Date.now(), LIVE_COOKIE_MS).catch(() => 0);
+            await session?.close();
+            await openInChrome(profileDir, urls, opts.channel);
+            return null;
+          },
+        })
+      : null;
+  session = {
     context,
     page,
     passkeys,
     dialogs,
     ...(film ? { filmed: true } : {}),
     ...(hide ? { offscreen: hide } : {}),
+    ...(view ? { live: view } : {}),
     ...(local && opts.egress ? { newIp: () => (opts.egress as Egress).newIp(profile) } : {}),
     async close() {
+      if (closing) return;
       closing = true;
+      await view?.close();
       guard?.stop();
       focus?.release();
       await unmark?.();
@@ -336,6 +395,16 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
       await browser?.close().catch(() => undefined);
     },
   };
+  return session;
+}
+
+/** The headless screen and DPR (fingerprint.ts): the live view's page keeps them. */
+function liveScreen(): { dpr: number; screen: { width: number; height: number } } {
+  const g = geometry(true) as {
+    screen: { width: number; height: number };
+    deviceScaleFactor: number;
+  };
+  return { dpr: g.deviceScaleFactor, screen: g.screen };
 }
 
 /** A tab of our own in the person's browser; closing it leaves the browser and their tabs. */
@@ -501,6 +570,10 @@ async function launchLocal(
       ...(proxy ? PROXIED_ARGS : []),
       ...sizeArgs,
       ...uaArgs(ua),
+      // the live view's frames: else headless paints 1x and only says DPR 2
+      ...(opts.live && "deviceScaleFactor" in size
+        ? [`--force-device-scale-factor=${size.deviceScaleFactor}`]
+        : []),
       ...(headless ? [] : [...X11_ARGS, ...HEADED_ARGS]),
     ],
     ignoreDefaultArgs: ["--enable-automation"],

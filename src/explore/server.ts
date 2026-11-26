@@ -62,6 +62,7 @@ import { ariaWithFrames, captchaInView, withFrame } from "../browser/frames.js";
 import { freshSeed, handsFor, seeded, type Typed } from "../browser/human/index.js";
 import { inPage } from "../browser/in-page.js";
 import { layoutText } from "../browser/layout.js";
+import { liveViewOf } from "../browser/live-view.js";
 import { type Hints, locate, locateAll, textOf } from "../browser/locate.js";
 import {
   fenceNavigations,
@@ -636,14 +637,16 @@ async function serve(
   const downloads = watchDownloads(fp.page.context(), join(shotsDir, "downloads"));
   // uncaught errors in every tab, from the observer: `errors`, and new throws on an act
   const pageErrors = pageErrorLog();
+  // the live view (`browser/live-view`): headless, the viewer app is the window
+  const live = liveViewOf(fp.page.context());
+  const inWindow = opts.browser.headless === false && !live;
   // A film stays clean: its rows go to the pane json.
-  const overlay = overlayFor(
-    opts.overlay ?? (opts.browser.headless === false && !opts.browser.film),
-    {
-      tray: opts.browser.headless === false,
-      ...opts.overlayDeps,
-    },
-  );
+  const overlay = overlayFor(opts.overlay ?? ((inWindow || live !== null) && !opts.browser.film), {
+    tray: inWindow,
+    // the panel draws in the viewer, over the stream
+    ...(live ? { host: (why) => live.overlayHost(why), geometry: (p) => live.geometry(p) } : {}),
+    ...opts.overlayDeps,
+  });
   // A new document wipes the layer: the panel comes back on it.
   page.on("load", (p) => void overlay.loaded(p));
   overlay.who(opts.site, handColour(opts.port));
@@ -2243,6 +2246,9 @@ async function serve(
     return fence.answer(given.cmd, await actRaw(given, wait), originOf(fp.page.url()));
   };
   const actRaw = async (given: Command, wait: boolean): Promise<unknown> => {
+    // ⌘⇧O closed this browser; the person's Chrome has the profile now
+    if (live?.moved)
+      throw new Error("the session moved to a window: stop it, the person finishes there");
     page = fp.page;
     // A mark from the last picture, or a ref from the last aria, acts and journals as the control's own hints.
     const h = "hints" in given ? given.hints : undefined;
@@ -2275,9 +2281,11 @@ async function serve(
     switch (c.cmd) {
       case "window": {
         // headless Chrome still answers bounds: a placed window nobody sees
-        if (opts.browser.headless !== false)
+        if (!inWindow)
           throw new Error(
-            "this session is headless: no window to place. Stop it, then start it again with --headed",
+            live
+              ? "this session shows in the live view: no window to place"
+              : "this session is headless: no window to place. Stop it, then start it again with --headed",
           );
         const { cmd: _, place, ...want } = c;
         // a preset or notation, as `explore --window` takes it

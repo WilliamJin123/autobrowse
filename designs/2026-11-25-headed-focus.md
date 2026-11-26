@@ -1,6 +1,6 @@
 # Headed Chrome takes the front for at most 220 ms (WA-1445)
 
-Status 2026-11-26: the goal is not met. The last live proof undid 2 to 3 of 6 steals (decision log). The live view (`designs/2026-11-26-live-view.md`) replaces the headed window on a Mac.
+Status 2026-11-26: the goal is not met. The last live proof undid 2 to 3 of 6 steals (decision log). The live view (`designs/2026-11-25-live-view.md`) replaces the headed window on a Mac.
 
 A headed autobrowse Chrome must not take the person's keyboard at launch. Later in the session, a steal that a site causes may hold the front for at most 220 ms. Keys typed in that time can go to Chrome.
 
@@ -118,4 +118,4 @@ What the guard does when our Chrome activates:
 - 2026-11-25: proof on the shipped path (`explore scratch --headed`, past 75 s): 24 site-caused steals, half right after a Shift tap. 24 undone, in 56-220 ms. Launch and `window place`: no steal. Launch guard: 3 of 3 undone, 267-528 ms.
 - 2026-11-25: goldfish review: 30 findings, 14 applied, 16 rejected; open: the goal wording against D, and whether a person step raises the window.
 - 2026-11-25: after review: rules moved into pure functions; marks only for targets with an opener; a pending activation waits up to 1.5 s for a mark; guards skip other autobrowse Chromes; the no-pid launch guard is gone (the fallback reaps and launches plain); pooled read tabs open in the background; `backgroundPage` moved to `own-tabs.ts`.
-- 2026-11-25: live proof after the review fixes, on an unlocked Mac: FAILED. Idle: 3 of 6 site steals undone; with marks: 2 of 6. A hidden Chrome still takes the front. Unit tests pass (33). The guard stays as a best effort; the headed path moves to the live view (`designs/2026-11-26-live-view.md`): headless Chrome has no window to take the front.
+- 2026-11-25: live proof after the review fixes, on an unlocked Mac: FAILED. Idle: 3 of 6 site steals undone; with marks: 2 of 6. A hidden Chrome still takes the front. Unit tests pass (33). The guard stays as a best effort; the headed path moves to the live view (`designs/2026-11-25-live-view.md`): headless Chrome has no window to take the front.
