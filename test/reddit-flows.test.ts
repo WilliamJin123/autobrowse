@@ -83,7 +83,9 @@ function redditPage(o: {
     };
   });
   const page = {
-    evaluate: async (fn: (arg: unknown) => unknown, arg?: unknown) => fn(arg),
+    // A string is an `inPage` expression: run it in this realm, against the stubs.
+    evaluate: async (fn: string | ((arg: unknown) => unknown), arg?: unknown) =>
+      typeof fn === "string" ? new Function(`return ${fn}`)() : fn(arg),
     locator: (sel: string) => {
       locators.push(sel);
       return { inputValue: async () => o.srValue ?? "" };
@@ -408,6 +410,11 @@ describe("reddit/read", () => {
     await expect(redditRead.run(q.fp, { path: "/comments/zzz" })).rejects.toThrow(/HTTP 500/);
     const r = redditPage({ fetch: () => ({ status: 403 }) });
     await expect(redditRead.run(r.fp, { path: "/api/me" })).rejects.toThrow(/HTTP 403/);
+    // a 200 wall page: refused, never an empty listing
+    const w = redditPage({ fetch: () => ({ status: 200 }) });
+    await expect(redditRead.run(w.fp, { path: "/comments/zzz" })).rejects.toThrow(
+      /HTTP 200 but no JSON/,
+    );
   });
 });
 

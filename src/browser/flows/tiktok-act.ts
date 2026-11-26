@@ -39,6 +39,14 @@ export interface TikTokVideo {
   at: string;
   likes: number | null;
   comments: number | null;
+  views: number | null;
+  shares: number | null;
+  saves: number | null;
+  durationSecs: number | null;
+  /** Cover still URL (signed, expires); null when TikTok sent none. */
+  image: string | null;
+  /** The search item whole. */
+  raw: Record<string, unknown>;
 }
 
 interface RawItem {
@@ -46,8 +54,20 @@ interface RawItem {
   desc?: string;
   createTime?: number | string;
   author?: { uniqueId?: string; nickname?: string; signature?: string };
-  stats?: { diggCount?: number; commentCount?: number };
+  stats?: {
+    diggCount?: number;
+    commentCount?: number;
+    playCount?: number;
+    shareCount?: number;
+    collectCount?: number | string;
+  };
+  video?: { cover?: string; originCover?: string; dynamicCover?: string; duration?: number };
 }
+
+const countOf = (n: unknown) => {
+  const v = typeof n === "string" ? Number(n) : n;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+};
 
 /** Videos from one search call's JSON (`item_list`); a row with no id or author is left. */
 export function searchRows(body: unknown): TikTokVideo[] {
@@ -66,8 +86,14 @@ export function searchRows(body: unknown): TikTokVideo[] {
         bio: i.author?.signature || null,
         text: i.desc ?? "",
         at: Number.isFinite(secs) && secs > 0 ? new Date(secs * 1000).toISOString() : "",
-        likes: typeof i.stats?.diggCount === "number" ? i.stats.diggCount : null,
-        comments: typeof i.stats?.commentCount === "number" ? i.stats.commentCount : null,
+        likes: countOf(i.stats?.diggCount),
+        comments: countOf(i.stats?.commentCount),
+        views: countOf(i.stats?.playCount),
+        shares: countOf(i.stats?.shareCount),
+        saves: countOf(i.stats?.collectCount),
+        durationSecs: countOf(i.video?.duration),
+        image: i.video?.cover || i.video?.originCover || i.video?.dynamicCover || null,
+        raw: i as Record<string, unknown>,
       },
     ];
   });

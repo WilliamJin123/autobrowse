@@ -23,6 +23,7 @@ import { already } from "../attempt.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
 import { pageFetch, parseJson } from "../page-json.js";
+import { inPage } from "../page-script.js";
 import { AccessRefused } from "../session.js";
 import { passCaptcha } from "./kit.js";
 import {
@@ -380,7 +381,7 @@ const SR_SEARCH = new RegExp(`^/r/(${SR})/search$`);
 
 /** One page's rows through the page script; a login wall or a refusal is the read's error. */
 async function htmlRows<R>(fp: FlowPage, url: string, kind: RowKind): Promise<HtmlPage<R>> {
-  const got = (await fp.page.evaluate(pageRows, { url, kind })) as HtmlPage<R>;
+  const got = (await fp.page.evaluate(inPage(pageRows, { url, kind }))) as HtmlPage<R>;
   const said = `reddit read ${new URL(url).pathname}: HTTP ${got.status} (HTML after a 403 on .json)`;
   if (/\/login\b/.test(got.url)) throw new AccessRefused("need_login", `${said}: a login wall`);
   if (got.status === 429) throw new AccessRefused("rate_limited", said);
@@ -498,7 +499,7 @@ const readThreadFull = () => {
 async function readThreadPage(fp: FlowPage, path: string) {
   const id = path.slice("/comments/".length);
   await fp.open(`${WWW}/comments/${id}/`, { allowWall: true });
-  const got = (await fp.page.evaluate(readThreadFull)) as {
+  const got = (await fp.page.evaluate(inPage(readThreadFull))) as {
     post: ShredditRow | null;
     comments: ShredditRow[];
   };
@@ -549,14 +550,21 @@ export const redditRead = defineFlow<ReadInput, unknown>({
     const q = Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)]));
     const got = await fetchJson(fp, path, q, signedOut ? WWW : OLD, read.bare);
     if (got.status === 404) return { error: 404, message: `no such thing: ${path}` };
-    if (got.status === 403) {
+    // a 200 that is not JSON is a wall page (an interstitial, a login), never an empty read
+    const walled = got.status === 403 || (got.status === 200 && got.body === null);
+    if (walled) {
       const viaHtml = await readHtml(fp, path, q, signedOut);
       if (viaHtml !== undefined) return read.slim(viaHtml);
     }
-    if (got.status === 403 && signedOut) {
+    if (walled && signedOut) {
       const viaFeed = await readFeed(fp, path, q);
       if (viaFeed !== undefined) return viaFeed;
     }
+    if (got.status === 200 && got.body === null)
+      throw new AccessRefused(
+        "platform_blocked",
+        `reddit read ${path}: HTTP 200 but no JSON (a wall page)`,
+      );
     if (got.status !== 200) {
       const said = `reddit read ${path}: HTTP ${got.status}`;
       if (got.status === 429) throw new AccessRefused("rate_limited", said);

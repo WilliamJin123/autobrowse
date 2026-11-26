@@ -10,7 +10,14 @@ describe("searchRows", () => {
           desc: "How we doubled bookings #smallbusiness",
           createTime: 1_790_000_000,
           author: { uniqueId: "example.shop", nickname: "Example Shop", signature: "We fix bikes" },
-          stats: { diggCount: 120, commentCount: 8 },
+          stats: {
+            diggCount: 120,
+            commentCount: 8,
+            playCount: 4000,
+            shareCount: 3,
+            collectCount: "9",
+          },
+          video: { cover: "https://p16.example/cover.jpg", duration: 31 },
         },
         { id: "7000000000000000002", desc: "no author" },
         { author: { uniqueId: "no.id" } },
@@ -27,6 +34,12 @@ describe("searchRows", () => {
         at: new Date(1_790_000_000_000).toISOString(),
         likes: 120,
         comments: 8,
+        views: 4000,
+        shares: 3,
+        saves: 9,
+        durationSecs: 31,
+        image: "https://p16.example/cover.jpg",
+        raw: body.item_list[0],
       },
     ]);
   });

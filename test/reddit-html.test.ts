@@ -85,7 +85,11 @@ function page(routes: Record<string, { status: number; html?: string; url?: stri
     };
   });
   const fp = {
-    page: { evaluate: async (fn: (a: unknown) => unknown, arg?: unknown) => fn(arg) },
+    page: {
+      // A string is an `inPage` expression: run it in this realm, against the stubs.
+      evaluate: async (fn: string | ((a: unknown) => unknown), arg?: unknown) =>
+        typeof fn === "string" ? new Function(`return ${fn}`)() : fn(arg),
+    },
     async open(u: string) {
       opens.push(u);
       at = u;

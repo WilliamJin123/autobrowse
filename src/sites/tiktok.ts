@@ -460,7 +460,7 @@ export const tiktok: SiteApi = {
           "no TikTok API searches words: the Business API finds posts that name our account only, and the Research API is for academics",
       },
       summary:
-        "Videos for words as TikTok's search shows them, read from the page's own search call (no API searches): `{ q, data: [{ id, url, username, name, bio, text, at, likes, comments }] }` (`max`, default 30). Reads only",
+        "Videos for words as TikTok's search shows them, read from the page's own search call (no API searches): `{ q, data: [{ id, url, username, name, bio, text, at, likes, comments, views, shares, saves, durationSecs, image, raw }] }` (`image` = cover still, signed URL that expires) (`max`, default 30). Reads only",
       request: webSearch,
       meter: () => ({ search: 1 }),
       browser: { flow: "tiktok/search" },

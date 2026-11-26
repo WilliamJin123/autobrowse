@@ -169,7 +169,10 @@ function wwwPage(o: { json?: number; feeds?: Record<string, { status: number; te
     fetched.push(u);
     const feed = Object.entries(o.feeds ?? {}).find(([k]) => u.includes(k));
     const a = u.includes(".json")
-      ? { status: o.json ?? 403, text: "" }
+      ? {
+          status: o.json ?? 403,
+          text: o.json === 200 ? '{"kind":"Listing","data":{"children":[]}}' : "",
+        }
       : (feed?.[1] ?? { status: 404 });
     return {
       status: a.status,
@@ -181,7 +184,11 @@ function wwwPage(o: { json?: number; feeds?: Record<string, { status: number; te
     };
   });
   const fp = {
-    page: { evaluate: async (fn: (a: unknown) => unknown, arg?: unknown) => fn(arg) },
+    page: {
+      // A string is an `inPage` expression: run it in this realm, against the stubs.
+      evaluate: async (fn: string | ((a: unknown) => unknown), arg?: unknown) =>
+        typeof fn === "string" ? new Function(`return ${fn}`)() : fn(arg),
+    },
     async open(u: string) {
       opens.push(u);
       url = u;
