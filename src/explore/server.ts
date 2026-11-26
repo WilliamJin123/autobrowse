@@ -2252,12 +2252,19 @@ async function serve(
   const act = async (given: Command, wait: boolean): Promise<unknown> => {
     if (opts.lookOnly && !LOOK_ONLY.has(given.cmd))
       throw new Error(`${given.cmd}: refused, this session is look-only (explore --look-only)`);
+    const allow = opts.allowHosts;
+    const outside = (u: string) => !!allow && !urlAllowed(u, allow);
     const seen = landings;
+    // an outside page not yet blanked: a read now holds its text (`open` replaces it)
+    const before = given.cmd === "open" ? "about:blank" : fp.page.url();
     const raw = await actRaw(given, wait);
+    // barrier: the reply comes after every earlier navigation event, so `landings` is current
+    const href = allow
+      ? await fp.page.evaluate<string>("location.href").catch(() => fp.page.url())
+      : "";
     // a hop's outside page loaded mid-command: what it read may hold that page's text
-    if (landings !== seen) {
+    if (landings !== seen || outside(before) || outside(href) || outside(fp.page.url())) {
       // the error names the page's URL: wait out the blank
-      const allow = opts.allowHosts;
       if (allow)
         await fp.page
           .waitForURL((u) => urlAllowed(u.href, allow), { timeout: 3000 })

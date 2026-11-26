@@ -211,6 +211,72 @@ describe("fenceNavigations without CDP", () => {
   );
 });
 
+describe("explore fenced off Chromium", () => {
+  it.skipIf(!existsSync(firefox.executablePath()))(
+    "a hop's outside page never reaches an answer: open, text and url all hold none of its words",
+    async () => {
+      const hits: string[] = [];
+      let away = "";
+      const server = createServer((req, res) => {
+        hits.push(`${req.headers.host?.split(":")[0]}${req.url}`);
+        if (req.url === "/hop") {
+          res.writeHead(302, { location: `${away}/leak?hop` });
+          return res.end();
+        }
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(req.url?.startsWith("/leak") ? "<p>LEAKED-TEXT</p>" : "<p>home</p>");
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const p = (server.address() as AddressInfo).port;
+      const base = `http://127.0.0.1:${p}`;
+      away = `http://localhost:${p}`;
+      const dir = await mkdtemp(join(tmpdir(), "nav-fence-ff-"));
+      const ex = await startExplore({
+        site: "scratch",
+        port: 0,
+        allowHosts: (h) => h === "127.0.0.1",
+        fenceHops: "blank",
+        tokenFile: join(dir, "explore.token"),
+        recordingsDir: join(dir, "recordings"),
+        actTimeoutMs: 6000,
+        browser: {
+          tier: "local",
+          engine: "firefox",
+          profilesDir: join(dir, "profiles"),
+          artifactsDir: join(dir, "artifacts"),
+          headless: true,
+        },
+      });
+      const send = async (cmd: Record<string, unknown>) =>
+        (
+          await fetch(`http://127.0.0.1:${ex.port}/`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${ex.token}` },
+            body: JSON.stringify(cmd),
+          })
+        ).text();
+      try {
+        expect(await send({ cmd: "open", url: `${base}/` })).toContain(`"url":"${base}/"`);
+        const answers = [
+          await send({ cmd: "open", url: `${base}/hop` }),
+          await send({ cmd: "text" }),
+          await send({ cmd: "url" }),
+        ];
+        expect(answers[0]).toMatch(/left this session's sites mid-command/);
+        expect(answers.join("\n")).not.toMatch(/LEAKED-TEXT/);
+        // the hop is sent (no fence sees it): only its answer is kept out
+        expect(hits).toContain("localhost/leak?hop");
+      } finally {
+        await send({ cmd: "close" }).catch(() => undefined);
+        await ex.done;
+        await new Promise<void>((r) => server.close(() => r()));
+        await rm(dir, { recursive: true, force: true, maxRetries: 5 });
+      }
+    },
+    60_000,
+  );
+});
+
 describe("sessionHosts", () => {
   it("the site's own hosts, the start domain, its parent sign-in and the providers; nothing else", () => {
     const ok = sessionHosts("trello@wren", "https://www.example.co.uk/start", ["cdn.test"]);
