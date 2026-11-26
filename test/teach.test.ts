@@ -171,7 +171,7 @@ describe("teach end to end", () => {
   });
   const browser = (dir: string) => ({
     tier: "local" as const,
-    channel: "chromium" as const,
+    engine: "chromium" as const,
     profilesDir: join(dir, "profiles"),
     artifactsDir: join(dir, "artifacts"),
     headless: true,

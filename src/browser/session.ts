@@ -178,8 +178,8 @@ export interface BrowserOptions {
   /** Most background tabs `code`'s `fp.each` reads in at once (`READ_TABS`). */
   readTabs?: number;
   headless?: boolean;
-  /** The local build (`--engine`, else `BROWSER_ENGINE`; `browser/engines`); none = chrome. One per process. */
-  engine?: Engine;
+  /** The local build (`--engine`, else `BROWSER_ENGINE`; `browser/engines`). One per process. Required: a test defaulting to real Chrome races its code-sign clones. */
+  engine: Engine;
   /** The nav fence will hold this session (explore with `allowHosts`): Chromium only (`refusalOf`). */
   fenced?: boolean;
   browserbase?: { apiKey: string; projectId: string; http: HttpClient } | null;
@@ -285,7 +285,7 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
   const opts: BrowserOptions = live ? { ...given, headless: true, live: true } : given;
   const asked = opts.profile ?? site;
   const profile = (await opts.profileName?.(asked)) ?? asked;
-  const engine = opts.engine ?? "chrome";
+  const engine = opts.engine;
   // a failed read: Chromium opens without them; any other family refuses (no authenticator to fall back on)
   const stored =
     (await opts.passkeys?.(site).catch((err: Error) => {

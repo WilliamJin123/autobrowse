@@ -35,7 +35,7 @@ describe("watched flows", () => {
   const runner = flowRunner(
     {
       tier: "local",
-      channel: "chromium",
+      engine: "chromium",
       profilesDir: join(dir, "profiles"),
       artifactsDir,
       headless: true,

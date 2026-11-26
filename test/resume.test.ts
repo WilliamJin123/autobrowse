@@ -40,7 +40,7 @@ describe("a stopped call resumes where it stopped", () => {
   const dir = mkdtempSync(join(tmpdir(), "autobrowse-resume-"));
   const browser = {
     tier: "local" as const,
-    channel: "chromium" as const,
+    engine: "chromium" as const,
     profilesDir: join(dir, "profiles"),
     artifactsDir: join(dir, "artifacts"),
     headless: true,
@@ -180,7 +180,7 @@ describe("the open-failure row", () => {
     const runner = flowRunner(
       {
         tier: "cdp",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,

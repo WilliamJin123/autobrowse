@@ -112,7 +112,7 @@ describe("the bank's code in a 3-D Secure iframe", () => {
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,

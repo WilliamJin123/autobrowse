@@ -72,6 +72,7 @@ describe("own browser", () => {
       tier: "local" as const,
       profilesDir: join(dir, "profiles"),
       artifactsDir: join(dir, "artifacts"),
+      engine: "chromium" as const,
       own,
     };
     const session = await openSession("github@wren", opts);

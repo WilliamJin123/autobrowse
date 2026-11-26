@@ -46,7 +46,7 @@ const opts = (o: Partial<BrowserOptions> = {}): BrowserOptions => ({
   tier: "local",
   profilesDir: "/nonexistent/profiles",
   artifactsDir: "/nonexistent/artifacts",
-  channel: "chrome",
+  engine: "chrome",
   ...o,
 });
 const PROXY = { server: "http://isp.example:8080" };

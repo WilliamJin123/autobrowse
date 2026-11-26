@@ -28,7 +28,7 @@ describe("a person's step in a flow", () => {
   const dir = mkdtempSync(join(tmpdir(), "autobrowse-person-"));
   const opts: BrowserOptions = {
     tier: "local",
-    channel: "chromium",
+    engine: "chromium",
     profilesDir: join(dir, "profiles"),
     artifactsDir: join(dir, "artifacts"),
     headless: true,

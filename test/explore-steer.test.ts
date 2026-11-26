@@ -47,7 +47,7 @@ describe("the panel's Pause and notes steer the agent", () => {
       },
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,

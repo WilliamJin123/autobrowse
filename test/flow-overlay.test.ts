@@ -58,7 +58,7 @@ describe("the overlay on a flow run", () => {
     return flowRunner(
       {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,

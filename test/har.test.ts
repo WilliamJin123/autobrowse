@@ -38,7 +38,7 @@ describe("HAR record, replay, faults", () => {
     flowRunner(
       {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, `profiles-${n}`),
         artifactsDir: join(dir, "artifacts"),
         headless: true,

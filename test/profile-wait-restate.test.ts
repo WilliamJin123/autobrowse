@@ -83,7 +83,7 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "profile-wait-"));
   browser = {
     tier: "local",
-    channel: "chromium",
+    engine: "chromium",
     profilesDir: join(dir, "profiles"),
     artifactsDir: join(dir, "artifacts"),
     headless: true,

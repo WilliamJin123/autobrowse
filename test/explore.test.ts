@@ -121,7 +121,7 @@ describe("explore mode", () => {
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -946,7 +946,7 @@ describe("pause: a person's hand acts land in the journal", () => {
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1000,7 +1000,7 @@ describe("a session nobody closes", () => {
       idleMinutes: 0.005, // 300 ms
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1032,7 +1032,7 @@ describe("a session nobody closes", () => {
       owner: { session: "sess-1" },
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1070,7 +1070,7 @@ describe("a session nobody closes", () => {
       idleMinutes: 0.005, // 300 ms
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1112,7 +1112,7 @@ describe("a session nobody closes", () => {
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1150,7 +1150,7 @@ describe("a session that dies", () => {
         tokenFile: join(dir, "explore.token"),
         browser: {
           tier: "local",
-          channel: "chromium",
+          engine: "chromium",
           profilesDir: join(dir, "profiles"),
           artifactsDir: join(dir, "artifacts"),
           headless: true,
@@ -1224,7 +1224,7 @@ describe("help without a pause", () => {
       recordingsDir: join(dir, "recordings"),
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1283,7 +1283,7 @@ describe("a missed act in the history", () => {
       runs: join(dir, "runs"),
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1325,7 +1325,7 @@ describe("what the model saw, for training", () => {
       runs,
       browser: {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
@@ -1411,7 +1411,7 @@ describe("a session that cannot open", () => {
         recordingsDir: join(dir, "recordings"),
         browser: {
           tier: "browserbase",
-          channel: "chromium",
+          engine: "chromium",
           profilesDir: join(dir, "profiles"),
           artifactsDir: join(dir, "artifacts"),
           headless: true,
@@ -1451,7 +1451,7 @@ describe("network and html", () => {
         recordingsDir: join(dir, "recordings"),
         browser: {
           tier: "local",
-          channel: "chromium",
+          engine: "chromium",
           profilesDir: join(dir, "profiles"),
           artifactsDir: join(dir, "artifacts"),
           headless: true,
@@ -1503,7 +1503,7 @@ describe("network and html", () => {
         recordingsDir: join(dir, "recordings"),
         browser: {
           tier: "local",
-          channel: "chromium",
+          engine: "chromium",
           profilesDir: join(dir, "profiles"),
           artifactsDir: join(dir, "artifacts"),
           headless: true,

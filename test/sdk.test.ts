@@ -313,6 +313,7 @@ describe("browser tiers", () => {
         tier: "cdp",
         profilesDir: "/tmp/x",
         artifactsDir: "/tmp/x",
+        engine: "chromium",
         cdpUrl: null,
       }),
     ).rejects.toThrow(/BROWSER_CDP_URL/);

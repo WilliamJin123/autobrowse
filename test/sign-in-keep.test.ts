@@ -184,7 +184,7 @@ describe("hand sign-in and teach on by default, end to end", () => {
         onHandRun: (r) => handRuns.push(r),
         browser: {
           tier: "local",
-          channel: "chromium",
+          engine: "chromium",
           profilesDir: join(dir, "profiles"),
           artifactsDir: join(dir, "artifacts"),
           headless: true,

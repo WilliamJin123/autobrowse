@@ -208,16 +208,18 @@ describe("authbridge on a real profile", () => {
     try {
       const page = seed.pages()[0] ?? (await seed.newPage());
       await page.goto(origin);
-      await seed.addCookies([{ name: "sid", value: "s1", url: origin, expires: 4102444800 }]);
+      await seed.addCookies([
+        { name: "sid", value: "sid_seed_s1", url: origin, expires: 4102444800 },
+      ]);
       // page code as text: the test project has no DOM types
       await page.evaluate(`(async () => {
-        localStorage.setItem("token", "t1");
+        localStorage.setItem("token", "tok_seed_t1");
         await new Promise((ok, no) => {
           const req = indexedDB.open("app", 1);
           req.onupgradeneeded = () => req.result.createObjectStore("kv");
           req.onsuccess = () => {
             const tx = req.result.transaction("kv", "readwrite");
-            tx.objectStore("kv").put("i1", "key");
+            tx.objectStore("kv").put("idb_seed_i1", "key");
             tx.oncomplete = () => ok();
             tx.onerror = () => no(tx.error);
           };
@@ -244,7 +246,9 @@ describe("authbridge on a real profile", () => {
     } finally {
       await cold.close();
     }
-    expect(sealed).not.toContain("t1");
+    // `_` is outside base64 and the envelope: a hit is a leak, never chance
+    for (const plain of ["sid_seed_s1", "tok_seed_t1", "idb_seed_i1"])
+      expect(sealed).not.toContain(plain);
 
     const into = await chromium.launchPersistentContext(b, { headless: true });
     try {
@@ -264,7 +268,7 @@ describe("authbridge on a real profile", () => {
           req.onerror = () => no(req.error);
         }),
       }))()`);
-      expect(got).toEqual({ cookie: "sid=s1", token: "t1", idb: "i1" });
+      expect(got).toEqual({ cookie: "sid=sid_seed_s1", token: "tok_seed_t1", idb: "idb_seed_i1" });
     } finally {
       await into.close();
     }

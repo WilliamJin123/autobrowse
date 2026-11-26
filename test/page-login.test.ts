@@ -115,7 +115,7 @@ describe("page-login on a real page", () => {
     return flowRunner(
       {
         tier: "local",
-        channel: "chromium",
+        engine: "chromium",
         profilesDir: join(dir, "profiles"),
         artifactsDir: join(dir, "artifacts"),
         headless: true,
