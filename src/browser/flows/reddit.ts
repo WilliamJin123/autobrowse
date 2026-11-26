@@ -554,6 +554,8 @@ export const redditRead = defineFlow<ReadInput, unknown>({
     const walled = got.status === 403 || (got.status === 200 && got.body === null);
     if (walled) {
       const viaHtml = await readHtml(fp, path, q, signedOut);
+      // a "no such thing" page is the answer; slim would turn it into an empty listing
+      if (isObj(viaHtml) && "error" in viaHtml) return viaHtml;
       if (viaHtml !== undefined) return read.slim(viaHtml);
     }
     if (walled && signedOut) {
