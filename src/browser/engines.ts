@@ -20,6 +20,9 @@ export const ENGINES = [
 ] as const;
 export type Engine = (typeof ENGINES)[number];
 export type Family = "chromium" | "firefox" | "webkit";
+/** A fenced run off Chromium: refuse it, or fence by route and blank a redirect hop's outside page. */
+export const FENCE_HOPS = ["block", "blank"] as const;
+export type FenceHops = (typeof FENCE_HOPS)[number];
 
 interface Row {
   family: Family;
@@ -147,8 +150,8 @@ export interface SessionNeeds {
   proxied: boolean;
   /** Passkeys the site's account holds. */
   passkeys: number;
-  /** The nav fence holds the top frame to the session's hosts (an agent run). */
-  fenced?: boolean;
+  /** The nav fence holds the top frame to the session's hosts (an agent run), with this hop mode. */
+  fenced?: FenceHops;
   platform?: NodeJS.Platform;
 }
 
@@ -159,8 +162,8 @@ export function refusalOf(e: Engine, n: SessionNeeds): string | null {
   const name = `BROWSER_ENGINE=${e}`;
   if (n.tier !== "local")
     return `${name}: BROWSER=${n.tier} drives Chromium only; use a local session`;
-  if (n.fenced)
-    return `${name}: the nav fence cannot stop a redirect hop outside Chromium (measured 11-26), so a fenced run needs a Chromium engine`;
+  if (n.fenced === "block")
+    return `${name}: the nav fence cannot hold every redirect hop outside Chromium (measured 11-26), so FENCE_HOPS=block needs a Chromium engine; FENCE_HOPS=blank runs it`;
   if (n.film) return `${name}: a film needs Chromium (CDP frames and a window); use chrome`;
   if (n.window && (n.platform ?? process.platform) === "darwin")
     return `${name} has no focus guard, so its window would take the front: use the live view (--live) or a Chromium engine`;

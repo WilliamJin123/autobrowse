@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseDotenv } from "credvault";
 import { z } from "zod";
-import { ENGINES } from "../browser/engines.js";
+import { ENGINES, FENCE_HOPS } from "../browser/engines.js";
 import { DEFAULT_DB } from "../devices/phone.js";
 import { PROVIDERS } from "../llm/index.js";
 import { checkOwner, isDefaultOwner, OWNER_NAME, operator } from "../owner.js";
@@ -103,6 +103,8 @@ const schema = z.object({
   profilesDir: z.string().min(1).default("~/.config/autobrowse/profiles"),
   /** Local browser build (designs/2026-11-26-browser-engines.md): chrome (falls back to chromium), a brand, firefox, webkit, ios. */
   browserEngine: z.enum(ENGINES).default("chrome"),
+  /** A fenced agent run off Chromium: block = refuse; blank = a redirect hop's outside page loads, is blanked, its answer dropped. */
+  fenceHops: z.enum(FENCE_HOPS).default("blank"),
   /** Headless by default; false on a laptop worker, since Cloudflare's bot check passes only with a window. */
   browserHeadless: z
     .string()
@@ -439,6 +441,7 @@ export const ENV_KEYS = {
   browserTimezone: "BROWSER_TIMEZONE",
   profilesDir: "PROFILES_DIR",
   browserEngine: "BROWSER_ENGINE",
+  fenceHops: "FENCE_HOPS",
   browserHeadless: "BROWSER_HEADLESS",
   browserKeepMinutes: "BROWSER_KEEP_MINUTES",
   headedView: "HEADED_VIEW",

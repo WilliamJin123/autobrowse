@@ -20,6 +20,7 @@ import {
   deviceOf,
   type Engine,
   EngineMissing,
+  type FenceHops,
   familyOf,
   hasAppBinary,
   installedBinary,
@@ -180,8 +181,10 @@ export interface BrowserOptions {
   headless?: boolean;
   /** The local build (`--engine`, else `BROWSER_ENGINE`; `browser/engines`). One per process. Required: a test defaulting to real Chrome races its code-sign clones. */
   engine: Engine;
-  /** The nav fence will hold this session (explore with `allowHosts`): Chromium only (`refusalOf`). */
+  /** The nav fence will hold this session (explore with `allowHosts`). */
   fenced?: boolean;
+  /** A fenced run off Chromium (`FENCE_HOPS`): "block" refuses it (`refusalOf`), "blank" runs it. */
+  fenceHops?: FenceHops;
   browserbase?: { apiKey: string; projectId: string; http: HttpClient } | null;
   /** `BROWSER=cdp`: the endpoint to attach to (`http://127.0.0.1:9222` or a `ws://` URL). */
   cdpUrl?: string | null;
@@ -301,7 +304,7 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
     film: !!opts.film,
     proxied: !!exit,
     passkeys: stored.length,
-    fenced: !!opts.fenced,
+    ...(opts.fenced ? { fenced: opts.fenceHops ?? "blank" } : {}),
   });
   if (refused) throw new Error(refused);
   let context: BrowserContext;

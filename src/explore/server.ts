@@ -43,6 +43,7 @@ import { dialogsOf, watchDialogs } from "../browser/dialogs.js";
 import { fetchFile } from "../browser/download.js";
 import { watchDownloads } from "../browser/downloads.js";
 import { collectWhenIdle, holdCollect } from "../browser/driver-memory.js";
+import type { FenceHops } from "../browser/engines.js";
 import { extrasOf } from "../browser/extras.js";
 import { handsLog } from "../browser/film.js";
 import {
@@ -340,6 +341,8 @@ export interface ExploreOptions {
   lookOnly?: boolean;
   /** Hosts the top frame may load (`browser/nav-fence`); any other navigation fails unsent. Absent: any. */
   allowHosts?: HostRule;
+  /** This session's hop mode off Chromium (`--fence-hops`); absent: the browser's (`FENCE_HOPS`). */
+  fenceHops?: FenceHops;
   /**
    * Compiled workflows the `flow` command may run on this page: by name, the plan with its saved
    * defaults under what the command gives, the key vault a key-minting flow keeps into. Absent: refused.
@@ -567,7 +570,8 @@ export async function startExplore(opts: ExploreOptions): Promise<Explorer> {
           resolve({ fp, finish });
         }),
     });
-    const runner = flowRunner(opts.allowHosts ? { ...opts.browser, fenced: true } : opts.browser, {
+    const fenced = { ...opts.browser, fenced: true, fenceHops: hopsOf(opts) };
+    const runner = flowRunner(opts.allowHosts ? fenced : opts.browser, {
       pace: opts.pace ?? null,
       network: { maxRows: MAX_ROWS, maxBodyBytes: MAX_BODY_BYTES, on: exploreNetworkOn() },
       ...(login
@@ -603,6 +607,9 @@ interface LegLogin {
   stop: string | null;
 }
 
+const hopsOf = (opts: ExploreOptions): FenceHops =>
+  opts.fenceHops ?? opts.browser.fenceHops ?? "blank";
+
 async function serve(
   opts: ExploreOptions,
   fp: FlowPage,
@@ -632,6 +639,8 @@ async function serve(
   });
   /** The active page: it moves when a popup opens (OAuth) and comes back after; re-read per command. */
   let page: Page = fp.page;
+  /** Outside pages that loaded past the fence, then were blanked (`browser/nav-fence`). */
+  let landings = 0;
   // Popups share the context: one watcher sees every tab's dialogs.
   const dialogs = dialogsOf(fp.page) ?? watchDialogs(fp.page.context());
   const downloads = watchDownloads(fp.page.context(), join(shotsDir, "downloads"));
@@ -2243,7 +2252,21 @@ async function serve(
   const act = async (given: Command, wait: boolean): Promise<unknown> => {
     if (opts.lookOnly && !LOOK_ONLY.has(given.cmd))
       throw new Error(`${given.cmd}: refused, this session is look-only (explore --look-only)`);
-    return fence.answer(given.cmd, await actRaw(given, wait), originOf(fp.page.url()));
+    const seen = landings;
+    const raw = await actRaw(given, wait);
+    // a hop's outside page loaded mid-command: what it read may hold that page's text
+    if (landings !== seen) {
+      // the error names the page's URL: wait out the blank
+      const allow = opts.allowHosts;
+      if (allow)
+        await fp.page
+          .waitForURL((u) => urlAllowed(u.href, allow), { timeout: 3000 })
+          .catch(() => undefined);
+      throw new Error(
+        `${given.cmd}: the page left this session's sites mid-command and was blanked; its answer is dropped`,
+      );
+    }
+    return fence.answer(given.cmd, raw, originOf(fp.page.url()));
   };
   const actRaw = async (given: Command, wait: boolean): Promise<unknown> => {
     // ⌘⇧O closed this browser; the person's Chrome has the profile now
@@ -3164,7 +3187,23 @@ async function serve(
     };
     writeFileSync(infoFile, JSON.stringify(info), { mode: 0o600 });
   }
-  if (opts.allowHosts) await fenceNavigations(page.context(), opts.allowHosts);
+  if (opts.allowHosts) {
+    const held = await fenceNavigations(page.context(), opts.allowHosts, {
+      hops: hopsOf(opts),
+      onLanded: (url) => {
+        landings++;
+        journal({
+          kind: "note",
+          text: `left this session's sites: ${URL.canParse(url) ? new URL(url).hostname : url} loaded, then blanked`,
+        });
+      },
+    });
+    console.error(
+      held === "cdp"
+        ? "nav fence: every top-frame request off the sites stops unsent"
+        : "nav fence: by route (no CDP); a redirect hop that gets past it is blanked, its answer dropped",
+    );
+  }
   page.context().on("close", () => finish());
   // A page load is a person (or a popup) still at work.
   page.context().on("page", (p) => {

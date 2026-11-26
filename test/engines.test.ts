@@ -234,7 +234,7 @@ describe("refusalOf", () => {
       film: true,
       proxied: true,
       passkeys: 2,
-      fenced: true,
+      fenced: "block",
     } as const;
     for (const e of ["chrome", "chromium", "edge", "brave", "opera-gx"] as const)
       expect(why(e, all)).toBeNull();
@@ -244,7 +244,9 @@ describe("refusalOf", () => {
   });
   it("refuses each guard Firefox and WebKit lack, one line each", () => {
     expect(why("firefox", { tier: "cdp" })).toMatch(/BROWSER=cdp drives Chromium only/);
-    expect(why("firefox", { fenced: true })).toMatch(/cannot stop a redirect hop outside Chromium/);
+    expect(why("firefox", { fenced: "block" })).toMatch(
+      /cannot hold every redirect hop outside Chromium/,
+    );
     expect(why("webkit", { film: true })).toMatch(/a film needs Chromium/);
     expect(why("firefox", { window: true })).toMatch(/no focus guard/);
     expect(why("webkit", { proxied: true })).toMatch(/WebKit cannot keep WebRTC on the proxy/);
@@ -253,10 +255,11 @@ describe("refusalOf", () => {
   });
   it("lets what a family can do through", () => {
     expect(why("firefox", { proxied: true })).toBeNull();
+    expect(why("webkit", { fenced: "blank" })).toBeNull();
     expect(why("webkit", { window: true, platform: "linux" })).toBeNull();
   });
   it("names the remote tier before any other guard", () => {
-    expect(why("webkit", { tier: "browserbase", fenced: true, film: true })).toMatch(
+    expect(why("webkit", { tier: "browserbase", fenced: "block", film: true })).toMatch(
       /BROWSER=browserbase/,
     );
   });

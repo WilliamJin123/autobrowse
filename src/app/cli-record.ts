@@ -2,12 +2,12 @@
 import { spawn } from "node:child_process";
 import { existsSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import type { StepRecord } from "../agent/explorer.js";
 import { runJson } from "../agent/run-json.js";
 import { urlWithoutQuery } from "../auth/guard.js";
 import { type SecretValues, sessionHosts } from "../auth/signup.js";
-import { ENGINES, engineOf } from "../browser/engines.js";
+import { ENGINES, engineOf, FENCE_HOPS, type FenceHops } from "../browser/engines.js";
 import { windowPlace } from "../browser/window-bounds.js";
 import type { Command as ExploreCommand } from "../explore/commands.js";
 import { DEFAULT_IDLE_MINUTES, pidAlive } from "../explore/lease.js";
@@ -462,6 +462,12 @@ export function registerRecordCommands(
       "--allow-domains <domains...>",
       "fence the top frame to the site's own hosts, the --url domain and these; any other navigation fails unsent",
     )
+    .addOption(
+      new Option(
+        "--fence-hops <mode>",
+        "off Chromium: block = refuse the run; blank = a redirect hop's outside page loads, is blanked, its answer dropped (default: FENCE_HOPS)",
+      ).choices(FENCE_HOPS),
+    )
     .action(
       async (
         site: string,
@@ -478,6 +484,7 @@ export function registerRecordCommands(
           signIn: boolean;
           os: boolean;
           allowDomains?: string[];
+          fenceHops?: FenceHops;
         },
       ) => {
         let secrets: AgentRun["secrets"] = null;
@@ -508,6 +515,7 @@ export function registerRecordCommands(
           desktop: o.os,
           ...(o.json ? { json: o.json } : {}),
           ...(o.allowDomains ? { allowDomains: o.allowDomains } : {}),
+          ...(o.fenceHops ? { fenceHops: o.fenceHops } : {}),
         });
       },
     );
@@ -998,6 +1006,8 @@ interface AgentRun {
   json?: string;
   /** Set: the top frame is fenced to the site's hosts, the start URL's domain and these (`sessionHosts`). */
   allowDomains?: readonly string[];
+  /** Off Chromium: refuse the fenced run, or blank a redirect hop's page (`FENCE_HOPS`). */
+  fenceHops?: FenceHops;
 }
 
 /** One agent session: explore server up, agent to the goal, journal saved as a recording. */
@@ -1017,6 +1027,7 @@ async function runAgent(settings: Settings, r: AgentRun): Promise<{ achieved: bo
       ...(r.secrets ? { secrets: r.secrets.values, secretHosts: r.secrets.hosts } : {}),
       ...(r.signIn === false ? { signIn: false } : {}),
       ...(r.allowDomains ? { allowHosts: sessionHosts(r.site, r.url, r.allowDomains) } : {}),
+      ...(r.fenceHops ? { fenceHops: r.fenceHops } : {}),
     },
   );
   console.log(`agent on ${r.site}; pause: autobrowse cmd '{"cmd":"pause"}' --port ${ex.port}`);

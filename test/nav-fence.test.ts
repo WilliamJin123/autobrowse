@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium } from "playwright";
+import { chromium, firefox } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionHosts } from "../src/auth/signup.js";
 import { fenceNavigations, urlAllowed } from "../src/browser/nav-fence.js";
@@ -121,11 +121,9 @@ describe("fenceNavigations", () => {
       const context = await browser.newContext();
       const page = await context.newPage();
       const refused: string[] = [];
-      await fenceNavigations(
-        context,
-        (h) => h === "127.0.0.1",
-        (u) => refused.push(u),
-      );
+      await fenceNavigations(context, (h) => h === "127.0.0.1", {
+        onRefused: (u) => refused.push(u),
+      });
       await page.goto(`http://127.0.0.1:${p}/`);
       await page.frameLocator("iframe").locator("p").waitFor();
       expect(hits).toContain("localhost GET /frame");
@@ -148,6 +146,69 @@ describe("fenceNavigations", () => {
       await new Promise<void>((r) => server.close(() => r()));
     }
   }, 30_000);
+});
+
+// Off Chromium: no CDP, so a redirect hop loads; "blank" fences by route and blanks it.
+describe("fenceNavigations without CDP", () => {
+  it.skipIf(!existsSync(firefox.executablePath()))(
+    "block throws; blank stops a direct or script navigation unsent and blanks a hop's page",
+    async () => {
+      const hits: string[] = [];
+      const server = createServer((req, res) => {
+        hits.push(`${req.headers.host?.split(":")[0]}${req.url}`);
+        if (req.url === "/hop") {
+          res.writeHead(302, { location: `${away}/leak?hop` });
+          return res.end();
+        }
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(
+          req.url === "/js"
+            ? `<script>location = '${away}/leak?js'</script>`
+            : req.url === "/meta"
+              ? `<meta http-equiv="refresh" content="0;url=${away}/leak?meta">`
+              : "<p>x</p>",
+        );
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const p = (server.address() as AddressInfo).port;
+      const home = `http://127.0.0.1:${p}`;
+      const away = `http://localhost:${p}`;
+      const browser = await firefox.launch({ headless: true });
+      const leaks = () => hits.filter((h) => h.startsWith("localhost/leak"));
+      const allow = (h: string) => h === "127.0.0.1";
+      try {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        await expect(fenceNavigations(context, allow)).rejects.toThrow(/needs Chromium/);
+        const refused: string[] = [];
+        const landed: string[] = [];
+        await expect(
+          fenceNavigations(context, allow, {
+            hops: "blank",
+            onRefused: (u) => refused.push(u),
+            onLanded: (u) => landed.push(u),
+          }),
+        ).resolves.toBe("route");
+        await expect(page.goto(`${away}/leak?direct`)).rejects.toThrow();
+        for (const path of ["/js", "/meta"]) {
+          // the refused script hop leaves the load unfinished
+          await page.goto(`${home}${path}`, { waitUntil: "commit" });
+          await page.waitForTimeout(500);
+        }
+        expect(leaks()).toEqual([]);
+        expect(refused.map((u) => new URL(u).search)).toEqual(["?direct", "?js", "?meta"]);
+        // the hop is sent (no fence sees it), then its page is blanked
+        await page.goto(`${home}/hop`).catch(() => undefined);
+        await expect.poll(() => page.url()).toBe("about:blank");
+        expect(leaks()).toEqual(["localhost/leak?hop"]);
+        expect(landed).toEqual([`${away}/leak?hop`]);
+      } finally {
+        await browser.close();
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    },
+    30_000,
+  );
 });
 
 describe("sessionHosts", () => {

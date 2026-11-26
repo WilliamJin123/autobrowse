@@ -11,11 +11,15 @@
  * request leaves; the popup is then blanked.
  * Own CDP `Fetch` on Document requests only: Playwright's `route` would turn
  * the HTTP cache off for the whole context, which sites can see.
- * Firefox and WebKit have no CDP, and `context.route` never sees a redirect hop (measured 11-26):
- * the session refuses a fenced run there (`engines.ts` `refusalOf`); this throws if one gets here.
+ * Firefox and WebKit have no CDP. `context.route` misses a redirect hop on Firefox; WebKit's
+ * route stops it (both measured 11-26). `FENCE_HOPS=block`: the session refuses a fenced run
+ * there (`refusalOf`); this throws if one gets here. `blank`: the route stops every other
+ * top-frame request; a hop's outside page loads, is blanked, and `onLanded` hears it (explore
+ * drops that command's answer).
  */
 import type { BrowserContext, CDPSession, Page } from "playwright";
 import { NetRefused } from "../reach/net-guard.js";
+import type { FenceHops } from "./engines.js";
 
 export type HostRule = (host: string) => boolean;
 
@@ -42,12 +46,23 @@ export function outsideSession(url: string): NetRefused {
   return new NetRefused(url, `${host} is outside this session's sites`);
 }
 
-/** Fences every page of the context, now and later. `onRefused` hears each blocked URL. */
+export interface FenceOptions {
+  /** No CDP: "block" throws; "blank" fences by route. Default "block". */
+  hops?: FenceHops;
+  /** Each URL stopped unsent. */
+  onRefused?: (url: string) => void;
+  /** Each outside page that loaded (a redirect hop off Chromium, a popup's first request), then blanked. */
+  onLanded?: (url: string) => void;
+}
+
+/** Fences every page of the context, now and later. Says which fence holds. */
 export async function fenceNavigations(
   context: BrowserContext,
   allow: HostRule,
-  onRefused?: (url: string) => void,
-): Promise<void> {
+  o: FenceOptions = {},
+): Promise<"cdp" | "route"> {
+  const { onRefused } = o;
+  const watch = blankOutside(allow, o.onLanded);
   const first = context.pages()[0];
   if (
     first &&
@@ -55,10 +70,15 @@ export async function fenceNavigations(
       (c) => c.detach().then(() => true),
       () => false,
     ))
-  )
-    throw new Error("the nav fence needs Chromium: this browser cannot stop a redirect hop");
+  ) {
+    if (o.hops !== "blank")
+      throw new Error("the nav fence needs Chromium: this browser cannot stop a redirect hop");
+    await fenceByRoute(context, allow, onRefused);
+    for (const p of context.pages()) watch(p);
+    context.on("page", watch);
+    return "route";
+  }
   const whole = await fenceBrowser(context, allow, onRefused).catch(() => false);
-  const watch = blankOutside(allow, onRefused);
   const each = whole
     ? async (p: Page) => watch(p)
     : async (p: Page) => {
@@ -67,14 +87,34 @@ export async function fenceNavigations(
       };
   await Promise.all(context.pages().map(each));
   context.on("page", (p) => void each(p).catch(() => undefined));
+  return "cdp";
 }
 
-/** The answer of a load that got past a fence (a page already open) is kept from the agent. */
-function blankOutside(allow: HostRule, onRefused?: (url: string) => void) {
+/** No CDP: each top-frame request off the sites fails unsent; Firefox never routes a redirect hop. */
+async function fenceByRoute(
+  context: BrowserContext,
+  allow: HostRule,
+  onRefused?: (url: string) => void,
+): Promise<void> {
+  await context.route("**/*", (route, req) => {
+    let top = false;
+    try {
+      top = req.isNavigationRequest() && req.frame().parentFrame() === null;
+    } catch {
+      // a worker's request has no frame
+    }
+    if (!top || urlAllowed(req.url(), allow)) return route.fallback();
+    onRefused?.(req.url());
+    return route.abort("blockedbyclient");
+  });
+}
+
+/** The answer of a load that got past a fence (a page already open, a hop off Chromium) is kept from the agent. */
+function blankOutside(allow: HostRule, onLanded?: (url: string) => void) {
   return (page: Page): void => {
     const blank = () => {
       if (!urlAllowed(page.url(), allow)) {
-        onRefused?.(page.url());
+        onLanded?.(page.url());
         void page.goto("about:blank").catch(() => undefined);
       }
     };

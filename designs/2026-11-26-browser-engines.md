@@ -37,7 +37,7 @@ Spikes in the scratchpad (`engines/spike.mjs`, `ps.mjs`, `redirect.mjs`, `redire
 - Headless Firefox and WebKit send a normal UA (`Firefox/155.0`, `Version/26.6 Safari/605.1.15`). They need no UA fix.
 - Process trees. Firefox: one root `firefox -no-remote -headless -profile <dir> -juggler-pipe`; its `plugin-container` children do not name the profile; lock file `.parentlock`, with no pid in it. WebKit: a root `bash pw_run.sh … --user-data-dir=<dir>` and its child `Playwright.app … --user-data-dir=<dir>`; no lock file; its pages run in XPC services (`webkit-N/com.apple.WebKit.{Networking,GPU,WebContent}.xpc`) whose parent is launchd (pid 1).
 - Opera GX's first `goto` aborted once (`net::ERR_ABORTED`) and passed on the next launch: a race with its start page.
-- Redirects under `context.route`: on firefox, webkit and chromium the route sees the first request only. A server-side 302 hop to an outside host is never routed. A 302 that the route fulfils itself is not routed again either. So `context.route` cannot fence a redirect hop on any engine; only CDP `Fetch` can.
+- Redirects under `context.route`: on firefox and chromium the route sees the first request only. A server-side 302 hop to an outside host is never routed. A 302 that the route fulfils itself is not routed again either. WebKit's route stopped a plain 302 hop in a second run (scratchpad `engines/fencetrace.mts`). So only CDP `Fetch` holds every hop.
 - Edge and Brave are not installed on this Mac. They have unit tests only.
 
 ## Options
@@ -95,7 +95,7 @@ One row per engine: family, label, the binaries to look for, a Playwright channe
 | Headed window on a Mac (relay launch, focus guard, app hider) | yes | refused | refused |
 | Live view | CDP screencast and page script (select menu, cursor, copy out) | `page.screencast` frames; no select menu, cursor or copy out | same as firefox; `ios` taps |
 | ⌘⇧O (move to a window) | yes | off: no focus guard | off: no focus guard |
-| Nav fence (fenced run) | CDP `Fetch` | refused | refused |
+| Nav fence (fenced run) | CDP `Fetch`: every hop unsent | `FENCE_HOPS=blank` (default): route; a 302 hop's page loads, is blanked, its answer dropped. `block`: refused | `blank`: route, which also stopped the 302 hop. `block`: refused |
 | WebRTC behind an exit | `--webrtc-ip-handling-policy=disable_non_proxied_udp` | pref `media.peerconnection.ice.proxy_only` | refused |
 | Passkeys (virtual authenticator) | yes | refused when the account has passkeys, or when the read fails | same as firefox |
 | Film | yes | refused | refused |
@@ -107,9 +107,13 @@ One row per engine: family, label, the binaries to look for, a Playwright channe
 
 Rules behind the table:
 
-- **Fail closed.** A guard the session needs and the engine lacks refuses the session before launch (`refusalOf`), with one line: the engine, the guard, what to do. Order: tier, fence, film, window, WebRTC, passkeys.
+- **Fail closed.** A guard the session needs and the engine lacks refuses the session before launch (`refusalOf`), with one line: the engine, the guard, what to do. Order: tier, fence (`FENCE_HOPS=block` only), film, window, WebRTC, passkeys.
 - **Headed windows** for Firefox and WebKit are refused on a Mac. They have no relay and no focus guard, so they would take the front. William: "it never forces itself into focus." `--headed` goes to the live view (the default, `HEADED_VIEW=live`). `--window`, a film and `record` are refused, so `record --engine` takes Chromium engines only on a Mac. Off a Mac, a headed window is allowed: no focus rule applies there.
-- **Nav fence.** The fence needs CDP `Fetch` to stop a redirect hop (measured above). A fenced run off Chromium is refused. `nav-fence.ts` also throws "the nav fence needs Chromium" if a caller skips the refusal.
+- **Nav fence.** Only CDP `Fetch` stops every redirect hop (measured above). Off Chromium, `FENCE_HOPS` picks (per run: `agent --fence-hops`):
+  - `blank` (default): `context.route` fails each top-frame request off the sites unsent: an `open`, a link, `location=`, a meta refresh. A 302 hop it misses loads; the fence blanks the page. The command that was running drops its answer, and the journal notes the host. The outside server still gets that one request.
+  - `block`: the session refuses the run. `nav-fence.ts` also throws "the nav fence needs Chromium" if a caller skips the refusal.
+  - The session logs which fence holds: "nav fence: by route (no CDP); …".
+  - `context.route` turns the HTTP cache off for that context; on Chromium the fence stays on CDP to keep it.
 - **Passkeys.** The session reads the account's passkeys before launch. Off Chromium, a failed read refuses the session: an unknown count could hide a passkey.
 - **Live view fallback.** A failed `newCDPSession` picks `page.screencast.start({ onFrame, size })`. The first frame is a JPEG screenshot, because a static page sends no frame. The page script needs a binding in an isolated world. Playwright has no public isolated world, and a binding in the main world is visible to the page. So the select menu, the cursor shape and copy to the Mac clipboard are off. The keyboard still changes a select.
 - **iOS.** WebKit with the device's viewport, UA, DPR, touch and `isMobile`. The live view keeps the device's screen and ignores the viewer's size. A left click in the viewer lands as one `touchscreen.tap` on release. It is emulation, not Safari on iOS.
@@ -169,7 +173,6 @@ Proof run, 11-26 (scratchpad `engines/liveproof.mts`: `openSession` with `--live
 
 ## Open decisions (William)
 
-- **Fenced runs on Firefox and WebKit.** Today they are refused: `context.route` misses redirect hops. A proxy-level fence (an exit that drops outside hosts) would let them run. Default: refuse.
 - **Real Safari and iOS Safari.** A second driver (WebdriverIO with `safaridriver`, Appium XCUITest on the Simulator). Costs a second API and loses request interception. Recommendation: wait until a site works in Safari only.
 
 ## Log
@@ -178,3 +181,4 @@ Proof run, 11-26 (scratchpad `engines/liveproof.mts`: `openSession` with `--live
 - 2026-11-26: goldfish review: the site map (`BROWSER_ENGINE_SITES`) cut; chromium keeps the base folder; the innermost root and exact flag tokens; the holder rule for engines with no lock; fenced runs refused off Chromium after the redirect spike (route misses redirect hops on firefox, webkit and chromium); memory-guard row; a failed passkey read refuses; iOS tap; ⌘⇧O Chromium only; authbridge on Chrome folders only, no engine fit check; one fingerprint per binary; `BROWSER_CHANNEL` warns; Camoufox in Non-goals. Open: fenced runs on Firefox and WebKit.
 - 2026-11-26: live proof on opera-gx, firefox, webkit and ios passed (Tests). Edge and Brave stay unit-tested only.
 - 2026-11-26: `BrowserOptions.engine` is required; the `"chrome"` fallback is gone. 24 test files still passed the removed `channel: "chromium"`, so they ran real Chrome, and parallel launches raced its code-sign clones ("Library missing"). `pnpm typecheck` skips `test/`, so only a typecheck that includes the tests catches a stale option.
+- 2026-11-26: fenced runs off Chromium decided. William: "redirect is fine, but maybe maximize optionality". `FENCE_HOPS=blank|block`, default blank; `agent --fence-hops` per run. Live proof through explore (scratchpad `engines/fenceexplore.mts`): firefox blank: direct, link, script and meta refresh stopped unsent, the 302 hop blanked, its answer dropped, no outside text in any answer; webkit blank: nothing left the sites; firefox block: refused. Test: `test/nav-fence.test.ts` (Firefox).
