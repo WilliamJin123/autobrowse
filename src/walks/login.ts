@@ -8,7 +8,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { CodeKind } from "../auth/codes.js";
-import type { SiteLogin } from "../auth/login.js";
+import { passwordOf, type SiteLogin } from "../auth/login.js";
 import { lookAt } from "../browser/screens.js";
 import { shows } from "./build.js";
 import { walkFlow } from "./flow.js";
@@ -57,7 +57,9 @@ export function walkLogin(
           secrets: async (key) => {
             const field = key.slice(key.lastIndexOf(".") + 1);
             if (field === "username") return ctx.cred.username;
-            if (field === "password") return ctx.cred.password ?? null;
+            // held as a secret: the host guard, the audit row and the hold rule see it
+            if (field === "password")
+              return ctx.cred.password ? passwordOf(spec.site, ctx.cred) : null;
             if (!kind) return null;
             const code = await ctx.code(kind, undefined, asked);
             // A retry (a wrong-code screen sends a new one) waits for a text after this one.

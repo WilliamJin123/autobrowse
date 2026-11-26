@@ -7,6 +7,7 @@ import type { SignInContext } from "../src/auth/login.js";
 import { addSiteLogins, builtInLogin, SITE_LOGINS } from "../src/auth/sites.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import type { Hints } from "../src/browser/locate.js";
+import { holdsSecret } from "../src/browser/secrets.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { walkLogin, walkLogins } from "../src/walks/login.js";
 import { saveWalk, type WalkOp, type WalkSpec } from "../src/walks/spec.js";
@@ -127,7 +128,7 @@ describe("a sign-in walk as a SiteLogin", () => {
     const asked: string[] = [];
     const ctx = {
       fp,
-      cred: { site: "uw", username: "user-a", password: "pw-a" },
+      cred: { site: "uw", username: "user-a", password: "pw-a-1" },
       code: async (kind: string) => {
         asked.push(kind);
         return "123456";
@@ -139,7 +140,9 @@ describe("a sign-in walk as a SiteLogin", () => {
       },
     } as unknown as SignInContext;
     await login.signIn(ctx);
-    expect(typed).toEqual(["User=user-a", "Password=pw-a", "Passcode=123456"]);
+    expect(typed).toEqual(["User=user-a", "Password=pw-a-1", "Passcode=123456"]);
+    // the password is held, so the host guard and the audit see its fill
+    expect(holdsSecret("pw-a-1")).toBe(true);
     expect(asked).toEqual(["lock sms", "sms"]);
     expect(await login.loggedIn(fp)).toBe(true);
   });
