@@ -114,7 +114,7 @@ const schema = z.object({
    */
   browserKeepMinutes: z.coerce.number().min(0).default(10),
   /** What a headed browser is on a Mac: Chrome's own window, or headless Chrome in the live view (designs/2026-11-25-live-view.md). */
-  headedView: z.enum(["window", "live"]).default("window"),
+  headedView: z.enum(["window", "live"]).default("live"),
   /** The live view's stream scale over CSS px; the page's DPR stays the fingerprint's. */
   liveViewScale: z.coerce.number().min(0.5).max(3).default(1.2),
   /** At most this many browsers kept open at once (~300 MB each). */

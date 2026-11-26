@@ -231,12 +231,16 @@ export interface Session {
 /** The live view's session cookies outlive the hand-off to a window by this long. */
 const LIVE_COOKIE_MS = 3_600_000;
 
-/** Headless in the live view: `--live`, or headed while `HEADED_VIEW=live`. Local Chrome on a Mac only. */
+/**
+ * Headless in the live view: `--live`, or headed while `HEADED_VIEW=live` (the default). A film
+ * and a placed window (`--window`) need a real window. Local Chrome on a Mac only.
+ */
 export function isLive(
-  o: Pick<BrowserOptions, "tier" | "headless" | "headedView" | "live">,
+  o: Pick<BrowserOptions, "tier" | "headless" | "headedView" | "live" | "film" | "window">,
 ): boolean {
   if (o.tier !== "local" || process.platform !== "darwin") return false;
-  return o.live === true || (o.headless === false && o.headedView === "live");
+  if (o.live === true) return true;
+  return o.headless === false && o.headedView === "live" && !o.film && !o.window;
 }
 
 /** ⌘⇧O: the person's own Chrome on the profile, the tabs reopened; no automation attached. */

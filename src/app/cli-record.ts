@@ -83,7 +83,7 @@ export function registerRecordCommands(
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
     .option(
       "--live",
-      "headless, shown in the live view app on this Mac: no Chrome window, never takes the front (HEADED_VIEW=live does this for every headed session)",
+      "headless, shown in the live view app on this Mac: no Chrome window, never takes the front (the default for --headed while HEADED_VIEW=live)",
     )
     .option(
       "--window <place>",
@@ -398,7 +398,8 @@ export function registerRecordCommands(
     .option("--terminal", "also record a shell session in this terminal after the browser closes")
     .action(async (name: string, o: { site: string; url?: string; terminal?: boolean }) => {
       const { recordChore } = await import("../recorder/index.js");
-      const opts = browserOptions(settings, headed); // a person records: they need to see it
+      // a person records: Chrome's own window, the observer's journal reads it
+      const opts = { ...browserOptions(settings, headed), headedView: "window" as const };
       if (opts.tier !== "local") throw new Error("record needs BROWSER=local");
       const dir = await recordChore({
         name,

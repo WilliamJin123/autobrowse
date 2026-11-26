@@ -359,8 +359,9 @@ a row; it is work.
   /api/settings {headless}`): every browser opened from then on follows it;
   `BROWSER_HEADLESS` is only its value at boot. `explore`, `agent`, `repair`
   and `login` take `--headed` when you want to watch one; `record` is always
-  headed. `explore --live` (or `HEADED_VIEW=live` for every headed browser)
-  runs Chrome headless and shows it in a background Mac app: it never takes
+  headed. On a Mac a headed browser runs Chrome headless and shows it in a
+  background Mac app (`HEADED_VIEW=live`, the default; `window` for Chrome's
+  own window; a film, `--window` and `record` always get one): it never takes
   the front, a person step asks with a toast, ⌘⇧O hands the profile to a
   plain Chrome window. `LIVE_VIEW_SCALE` sets the stream's sharpness
   (default 1.2). Design: `designs/2026-11-25-live-view.md`.

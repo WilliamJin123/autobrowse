@@ -11,9 +11,27 @@ import {
   streamSize,
   toastHtml,
 } from "../src/browser/live-view.js";
+import { isLive } from "../src/browser/session.js";
 import type { HostEvent, OverlayHost } from "../src/explore/overlay-host.js";
 
 const SCREEN = { width: 1512, height: 982 };
+
+describe.runIf(process.platform === "darwin")("what shows in the live view", () => {
+  const local = { tier: "local" as const, headedView: "live" as const };
+  it("takes a headed browser, never a headless one", () => {
+    expect(isLive({ ...local, headless: false })).toBe(true);
+    expect(isLive({ ...local, headless: true })).toBe(false);
+    expect(isLive({ ...local, headless: true, live: true })).toBe(true);
+  });
+  it("leaves Chrome's window to a film, a placed window and HEADED_VIEW=window", () => {
+    expect(isLive({ ...local, headless: false, film: {} as never })).toBe(false);
+    expect(isLive({ ...local, headless: false, window: {} as never })).toBe(false);
+    expect(isLive({ ...local, headless: false, headedView: "window" })).toBe(false);
+    expect(isLive({ tier: "browserbase" as never, headless: false, headedView: "live" })).toBe(
+      false,
+    );
+  });
+});
 
 describe("live view sizes", () => {
   it("keeps the viewport inside the screen, less menu bar and Chrome's toolbar", () => {
