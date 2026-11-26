@@ -17,6 +17,7 @@ import {
   type Message,
   messageSource,
   OWN_FAILURE_HOLD_MS,
+  passwordOf,
   resolveLogin,
   SIGN_IN_HOLD_MS,
   type SignInContext,
@@ -349,18 +350,21 @@ describe("loginProvider", () => {
     expect(ran).toEqual(["here as u2", "here as u2", "here as u"]);
   });
   it.each([
-    ["password rejected", SIGN_IN_HOLD_MS, /sign-in refused/],
-    ["still on the login page", OWN_FAILURE_HOLD_MS, /on our side/],
+    ["password rejected", false, SIGN_IN_HOLD_MS, /sign-in refused/],
+    ["still on the login page", false, OWN_FAILURE_HOLD_MS, /on our side/],
+    ["still on the login page", true, SIGN_IN_HOLD_MS, /sign-in refused/],
   ] as const)(
-    "a failed sign-in (%s) holds the credential: the next call types no password till the hold ends",
-    async (why, ms, note) => {
+    "a failed sign-in (%s, typed a secret: %s) holds the credential: the next call types no password till the hold ends",
+    async (why, types, ms, note) => {
       let tries = 0;
       const refusing: SiteLogin = {
         site: "s",
         home: "https://site.test/",
         loggedIn: async () => true,
-        async signIn() {
+        async signIn(c) {
           tries++;
+          if (types)
+            await c.fp.act({ kind: "fill", value: passwordOf("s", c.cred) }, { role: "textbox" });
           throw new LoginFailed("s", why);
         },
       };
@@ -377,7 +381,7 @@ describe("loginProvider", () => {
       let t = Date.parse("2026-10-29T00:00:00Z");
       const notes: string[] = [];
       const login = loginProvider([refusing], {
-        credentials: memoryCredentials({ s: { username: "u", password: "p" } }),
+        credentials: memoryCredentials({ s: { username: "u", password: "pass-1" } }),
         codes: totpSource(),
         holds,
         notify: async (n) => {

@@ -16,7 +16,7 @@ import type { FlowPage } from "../browser/flow.js";
 import type { Hints } from "../browser/locate.js";
 import { pageState, untilLoaded } from "../browser/page-state.js";
 import { type Screen, type Walk, walk } from "../browser/screens.js";
-import { secret } from "../browser/secrets.js";
+import { holdsSecret, secret } from "../browser/secrets.js";
 import { NeedsHuman, wallOf } from "../browser/session.js";
 import { safeUrls } from "../clients/http.js";
 import { type CodeKind, type CodeSource, inboxLock } from "./codes.js";
@@ -236,12 +236,12 @@ export interface FormLoginSpec {
   trust?: Hints;
 }
 
-/** What a site says when it turns the account away; any other failure is ours (a page we misread). */
+/** What a site says when it turns the account away, typed or not (`typedSecret` decides the rest). */
 const SITE_REFUSAL =
   /password rejected|code rejected|code was refused|code was wrong|too many failed attempts|refused this browser|unknown account/i;
 
 export class LoginFailed extends Error {
-  /** The site turned the account away (`SITE_REFUSAL`); false: our flow misread the page. */
+  /** The site said it turned the account away (`SITE_REFUSAL`). */
   readonly refused: boolean;
   constructor(site: string, reason: string, refused = SITE_REFUSAL.test(reason)) {
     super(safeUrls(`${site}: ${reason}`));
@@ -746,8 +746,22 @@ export interface LoginOptions {
 
 /** No automatic sign-in on a credential this long after one was refused: repeated refusals flag an account. */
 export const SIGN_IN_HOLD_MS = 12 * 60 * 60 * 1000;
-/** After our own failure (a page the flow misread): a short pause, so a broken flow cannot loop on the account. */
+/** After our own failure (no secret typed, no refusal said): a short pause, so a broken flow cannot loop on the account. */
 export const OWN_FAILURE_HOLD_MS = 30 * 60 * 1000;
+
+/** The page that notes each typed secret (a password, a code): a failed sign-in that typed none is ours. */
+function typedSecret(fp: FlowPage, typed: () => void): FlowPage {
+  return {
+    ...fp,
+    get page() {
+      return fp.page;
+    },
+    async act(op, hints, o) {
+      if (op.kind === "fill" && holdsSecret(op.value)) typed();
+      return fp.act(op, hints, o);
+    },
+  };
+}
 
 /** Refused sign-ins by credential name: until when, and the refusal's words. */
 export interface SignInHolds {
@@ -1025,6 +1039,10 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
       );
     // One account, several ways in: each method in turn until one signs in.
     let first: unknown = null;
+    let typed = false;
+    const watched = typedSecret(fp, () => {
+      typed = true;
+    });
     for (const method of methodsOf(cred)) {
       // A method via a provider takes the generic provider path when the
       // site's own spec does not know that provider (or there is no spec at all).
@@ -1035,7 +1053,7 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
           : (known ?? (method.password ? pageLogin(name, method) : null));
       if (!login) continue;
       const ctx = signInContext({
-        fp,
+        fp: watched,
         site: name,
         cred: method,
         since,
@@ -1059,7 +1077,8 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
     if (first) {
       if (opts.holds) {
         const error = (first as Error).message.slice(0, 300);
-        const refused = (first as LoginFailed).refused;
+        // a typed password or code the site then kept out: its refusal, whatever our flow read
+        const refused = (first as LoginFailed).refused || typed;
         const ms = refused ? SIGN_IN_HOLD_MS : OWN_FAILURE_HOLD_MS;
         opts.holds.set(name, { until: since.getTime() + ms, error });
         await opts

@@ -51,6 +51,26 @@ describe("instagram sign-in", () => {
     expect(INSTAGRAM_LOGIN_URL.test("https://www.instagram.com/oauth/authorize?x")).toBe(false);
   });
 
+  it("a password box with no username box tries the fill (a loud locator error), never skips it", async () => {
+    const { fp, acts } = fakePage({
+      text: ["Password Log in"],
+      present: (h) => h.name === "/^password$/i",
+      url: () => "https://www.instagram.com/accounts/login/",
+    });
+    await signInToInstagram(ctx(fp, [])).catch(() => undefined);
+    expect(acts.map(line)[0]).toBe("fill /(phone|mobile) number, username,? or email/i");
+  });
+
+  it("no form at all on the login page fails, never walks on", async () => {
+    const { fp, acts } = fakePage({
+      text: ["Something else"],
+      present: () => false,
+      url: () => "https://www.instagram.com/accounts/login/?next=x",
+    });
+    await expect(signInToInstagram(ctx(fp, []))).rejects.toThrow(/no sign-in form/);
+    expect(acts).toEqual([]);
+  });
+
   it("username, password, the authenticator code, then declines the save prompt", async () => {
     let url = "https://www.instagram.com/accounts/login/?next=%2Foauth";
     const { fp, acts } = fakePage({

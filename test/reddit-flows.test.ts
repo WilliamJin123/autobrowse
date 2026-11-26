@@ -127,6 +127,7 @@ function redditPage(o: {
     async signIn() {
       return "no-login";
     },
+    newIp: async () => false,
     human(reason) {
       throw new NeedsHuman(reason);
     },
@@ -621,7 +622,12 @@ describe("reddit/submit", () => {
     expect(p.acts.map(line)).toContain("click checkbox:send replies to my inbox");
     for (const sendreplies of [true, undefined]) {
       const q = submitPage();
-      await redditSubmit.run(q.fp, { sr: "startups", title: "T", kind: "self", sendreplies });
+      await redditSubmit.run(q.fp, {
+        sr: "startups",
+        title: "T",
+        kind: "self",
+        ...(sendreplies === undefined ? {} : { sendreplies }),
+      });
       expect(q.acts.some((a) => a.hints.role === "checkbox")).toBe(false);
     }
   });

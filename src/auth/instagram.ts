@@ -35,7 +35,8 @@ export async function signInToInstagram(ctx: SignInContext): Promise<void> {
       { goal: "submit the sign-in form" },
     );
     await fp.wait(SETTLE_MS);
-  }
+  } else if (/instagram\.com\/accounts\/login\/?(\?|$)/.test(fp.url()))
+    throw new LoginFailed(site, `no sign-in form on ${fp.url()}`);
   let text = await fp.text();
   if (
     /password was incorrect|incorrect password|user not found|couldn.t find your account/i.test(
