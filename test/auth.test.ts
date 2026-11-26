@@ -353,6 +353,7 @@ describe("loginProvider", () => {
     ["password rejected", false, SIGN_IN_HOLD_MS, /sign-in refused/],
     ["still on the login page", false, OWN_FAILURE_HOLD_MS, /on our side/],
     ["still on the login page", true, SIGN_IN_HOLD_MS, /sign-in refused/],
+    ["still on the login page", "missed", OWN_FAILURE_HOLD_MS, /on our side/],
   ] as const)(
     "a failed sign-in (%s, typed a secret: %s) holds the credential: the next call types no password till the hold ends",
     async (why, types, ms, note) => {
@@ -364,7 +365,9 @@ describe("loginProvider", () => {
         async signIn(c) {
           tries++;
           if (types)
-            await c.fp.act({ kind: "fill", value: passwordOf("s", c.cred) }, { role: "textbox" });
+            await c.fp
+              .act({ kind: "fill", value: passwordOf("s", c.cred) }, { role: "textbox" })
+              .catch(() => undefined);
           throw new LoginFailed("s", why);
         },
       };
@@ -389,7 +392,15 @@ describe("loginProvider", () => {
         },
         now: () => new Date(t),
       });
-      const page = () => fakePage({ text: [], present: () => true }).fp;
+      const page = () => {
+        const { fp } = fakePage({ text: [], present: () => true });
+        // a locate miss throws before anything is typed
+        if (types === "missed")
+          fp.act = async () => {
+            throw new Error("textbox not visible after 15 s");
+          };
+        return fp;
+      };
       await expect(login(page(), "s")).rejects.toThrow(why);
       t += ms - 1;
       await expect(login(page(), "s")).rejects.toThrow(/no sign-in till/);

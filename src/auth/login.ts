@@ -757,8 +757,10 @@ function typedSecret(fp: FlowPage, typed: () => void): FlowPage {
       return fp.page;
     },
     async act(op, hints, o) {
+      const done = await fp.act(op, hints, o);
+      // after the fill: a fill that throws typed nothing (a locate miss)
       if (op.kind === "fill" && holdsSecret(op.value)) typed();
-      return fp.act(op, hints, o);
+      return done;
     },
   };
 }
