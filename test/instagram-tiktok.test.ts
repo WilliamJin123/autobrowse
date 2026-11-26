@@ -68,7 +68,7 @@ describe("instagram sign-in", () => {
     });
     await signInToInstagram(ctx(fp, ["totp"]));
     expect(acts.map(line)).toEqual([
-      "fill /phone number, username,? or email/i",
+      "fill /(phone|mobile) number, username,? or email/i",
       "fill /^password$/i",
       "click /^log in$/i",
       "fill /security code|confirmation code|^code$/i",

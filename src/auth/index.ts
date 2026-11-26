@@ -42,6 +42,7 @@ export {
   type LoginProvider,
   landAfterOauth,
   loginProvider,
+  OWN_FAILURE_HOLD_MS,
   oauthLogin,
   passwordDomains,
   passwordOf,

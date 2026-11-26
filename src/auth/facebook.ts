@@ -23,7 +23,8 @@ export async function signInToFacebook(ctx: SignInContext): Promise<void> {
     name: "/email( address)? or phone( number)?|^email$/i",
   } as const;
   const password = { role: "textbox", name: "/^password$/i" } as const;
-  if (await fp.has(email, RENDER_MS)) {
+  // a password box with no email box: the label moved; the fill fails loudly, never a skip
+  if ((await fp.has(email, RENDER_MS)) || (await fp.has(password))) {
     await fp.act({ kind: "fill", value: cred.username }, email, { goal: "type the email" });
     await fp.act({ kind: "fill", value: passwordOf(site, cred) }, password, {
       goal: "type the password",

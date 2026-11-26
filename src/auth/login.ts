@@ -236,10 +236,17 @@ export interface FormLoginSpec {
   trust?: Hints;
 }
 
+/** What a site says when it turns the account away; any other failure is ours (a page we misread). */
+const SITE_REFUSAL =
+  /password rejected|code rejected|code was refused|code was wrong|too many failed attempts|refused this browser|unknown account/i;
+
 export class LoginFailed extends Error {
-  constructor(site: string, reason: string) {
+  /** The site turned the account away (`SITE_REFUSAL`); false: our flow misread the page. */
+  readonly refused: boolean;
+  constructor(site: string, reason: string, refused = SITE_REFUSAL.test(reason)) {
     super(safeUrls(`${site}: ${reason}`));
     this.name = "LoginFailed";
+    this.refused = refused;
   }
 }
 
@@ -739,6 +746,8 @@ export interface LoginOptions {
 
 /** No automatic sign-in on a credential this long after one was refused: repeated refusals flag an account. */
 export const SIGN_IN_HOLD_MS = 12 * 60 * 60 * 1000;
+/** After our own failure (a page the flow misread): a short pause, so a broken flow cannot loop on the account. */
+export const OWN_FAILURE_HOLD_MS = 30 * 60 * 1000;
 
 /** Refused sign-ins by credential name: until when, and the refusal's words. */
 export interface SignInHolds {
@@ -1011,7 +1020,7 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
     const hold = opts.holds?.get(name);
     if (hold && hold.until > since.getTime())
       throw new NeedsHuman(
-        `${name}: no sign-in till ${new Date(hold.until).toISOString()}, the last one was refused (${hold.error}); sign in by hand`,
+        `${name}: no sign-in till ${new Date(hold.until).toISOString()}, the last one failed (${hold.error}); sign in by hand`,
         "login",
       );
     // One account, several ways in: each method in turn until one signs in.
@@ -1050,9 +1059,15 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
     if (first) {
       if (opts.holds) {
         const error = (first as Error).message.slice(0, 300);
-        opts.holds.set(name, { until: since.getTime() + SIGN_IN_HOLD_MS, error });
+        const refused = (first as LoginFailed).refused;
+        const ms = refused ? SIGN_IN_HOLD_MS : OWN_FAILURE_HOLD_MS;
+        opts.holds.set(name, { until: since.getTime() + ms, error });
         await opts
-          .notify?.(`${name}: sign-in refused, no more tries for 12 h: ${error}`)
+          .notify?.(
+            refused
+              ? `${name}: sign-in refused, no more tries for 12 h: ${error}`
+              : `${name}: sign-in failed on our side (a flow bug, not a refusal), no tries for 30 min: ${error}`,
+          )
           .catch(() => undefined);
       }
       throw first;

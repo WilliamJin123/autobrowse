@@ -18,9 +18,13 @@ export async function signInToInstagram(ctx: SignInContext): Promise<void> {
   const { fp, cred, code } = ctx;
   const site = "instagram";
   await fp.wait(SETTLE_MS);
-  const username = { role: "textbox", name: "/phone number, username,? or email/i" } as const;
+  const username = {
+    role: "textbox",
+    name: "/(phone|mobile) number, username,? or email/i",
+  } as const;
   const password = { role: "textbox", name: "/^password$/i" } as const;
-  if (await fp.has(username, RENDER_MS)) {
+  // a password box with no username box: the label moved; the fill fails loudly, never a skip
+  if ((await fp.has(username, RENDER_MS)) || (await fp.has(password))) {
     await fp.act({ kind: "fill", value: cred.username }, username, { goal: "type the username" });
     await fp.act({ kind: "fill", value: passwordOf(site, cred) }, password, {
       goal: "type the password",
