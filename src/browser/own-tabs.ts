@@ -89,6 +89,24 @@ export async function reapTabs(
   return closed;
 }
 
+/**
+ * A background tab beside `from`, matched by target id: another read opening a tab at the
+ * same moment never hands us its page. A context without CDP gets a plain tab, `from` kept in front.
+ */
+export async function backgroundPage(context: BrowserContext, from: Page): Promise<Page> {
+  let cdp: CDPSession | null = null;
+  try {
+    cdp = await context.newCDPSession(from);
+    return (await backgroundTab(context, cdp, 16_000, { sameWindow: true })).page;
+  } catch {
+    const page = await context.newPage();
+    await from.bringToFront().catch(() => undefined);
+    return page;
+  } finally {
+    await cdp?.detach().catch(() => undefined);
+  }
+}
+
 /** A blank background tab, as a Playwright page; in a window of its own unless `sameWindow`. */
 export async function backgroundTab(
   context: BrowserContext,

@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { GUARD_JS, guardFocus } from "../src/browser/focus-guard.js";
+import {
+  GUARD_JS,
+  guardFocus,
+  MARK_MS,
+  onActivated,
+  onWaiting,
+} from "../src/browser/focus-guard.js";
 
 const fakeSpawn = () => {
   const calls: Array<{ cmd: string; args: readonly string[] }> = [];
@@ -15,31 +21,66 @@ const fakeSpawn = () => {
   return { calls, child, spawn };
 };
 
-it("a launch guard: any new Chrome, from before the launch until a grace after it", () => {
-  vi.useFakeTimers();
+it("one Chrome by pid, stopped at once on release", () => {
+  const f = fakeSpawn();
+  const g = guardFocus({ spawn: f.spawn, platform: "darwin", pid: 4242, markFile: "/m" });
+  expect(f.calls).toEqual([
+    { cmd: "osascript", args: ["-l", "JavaScript", "-e", GUARD_JS, "4242", "/m"] },
+  ]);
+  g.release();
+  g.release();
+  expect(f.child.kill).toHaveBeenCalledTimes(1);
+});
+
+it("no pid: no guard", () => {
+  const f = fakeSpawn();
+  guardFocus({ spawn: f.spawn, platform: "darwin", pid: 0 }).mark();
+  expect(f.calls).toEqual([]);
+});
+
+it("a script fault is logged; a clean exit or a release is not", () => {
+  const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
   try {
     const f = fakeSpawn();
-    const g = guardFocus({ spawn: f.spawn, platform: "darwin", capMs: 20_000, markFile: "/m" });
-    expect(f.calls).toEqual([
-      { cmd: "osascript", args: ["-l", "JavaScript", "-e", GUARD_JS, "0", "20000", "/m"] },
-    ]);
-    g.release(3_000);
-    g.release(3_000);
-    vi.advanceTimersByTime(2_999);
-    expect(f.child.kill).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(f.child.kill).toHaveBeenCalledTimes(1);
+    guardFocus({ spawn: f.spawn, platform: "darwin", pid: 9, markFile: "/m" });
+    f.child.emit("exit", 0);
+    expect(err).not.toHaveBeenCalled();
+    f.child.emit("exit", 1);
+    expect(err).toHaveBeenCalledWith("autobrowse: focus guard stopped (exit 1)");
+    const g2 = fakeSpawn();
+    guardFocus({ spawn: g2.spawn, platform: "darwin", pid: 9, markFile: "/m" }).release();
+    g2.child.emit("exit", 143);
+    expect(err).toHaveBeenCalledTimes(1);
   } finally {
-    vi.useRealTimers();
+    err.mockRestore();
   }
 });
 
-it("a session guard: one Chrome by pid, no cap, stopped at once on release", () => {
-  const f = fakeSpawn();
-  const g = guardFocus({ spawn: f.spawn, platform: "darwin", pid: 4242 });
-  expect(f.calls[0]?.args.slice(-3, -1)).toEqual(["4242", "0"]);
-  g.release();
-  expect(f.child.kill).toHaveBeenCalledTimes(1);
+const act = { ours: true, theirs: false, otherAutobrowse: false, person: false, marked: false };
+it.each([
+  ["our Chrome, no input", {}, "restore"],
+  ["our Chrome, a site tab with input", { person: true, marked: true }, "restore"],
+  ["our Chrome, input and no mark yet", { person: true }, "wait"],
+  ["our Chrome while it is theirs", { theirs: true, person: true }, "ignore"],
+  ["another app", { ours: false }, "follow"],
+  ["another autobrowse Chrome", { ours: false, otherAutobrowse: true }, "ignore"],
+] as const)("onActivated: %s → %s", (_, s, want) => {
+  expect(onActivated({ ...act, ...s })).toBe(want);
+});
+
+const wait = { stillOurs: true, marked: false, waitedMs: 0, markMs: MARK_MS };
+it.each([
+  ["a mark comes in", { marked: true }, "restore"],
+  ["no mark yet", { waitedMs: MARK_MS - 1 }, "wait"],
+  ["no mark in time: the person's switch", { waitedMs: MARK_MS }, "drop"],
+  ["the front moved on", { stillOurs: false, marked: true }, "drop"],
+] as const)("onWaiting: %s → %s", (_, s, want) => {
+  expect(onWaiting({ ...wait, ...s })).toBe(want);
+});
+
+it("the script carries the rules it runs", () => {
+  expect(GUARD_JS).toContain(onActivated.toString());
+  expect(GUARD_JS).toContain(onWaiting.toString());
 });
 
 it("the script compiles as JavaScript", () => {
@@ -48,7 +89,7 @@ it("the script compiles as JavaScript", () => {
 
 it("does nothing off a Mac", () => {
   const f = fakeSpawn();
-  guardFocus({ spawn: f.spawn, platform: "linux" }).release();
+  guardFocus({ spawn: f.spawn, platform: "linux", pid: 1 }).release();
   expect(f.calls).toEqual([]);
 });
 
@@ -72,5 +113,5 @@ it("a mark touches the file the script reads; release removes it", () => {
 });
 
 it("off a Mac, mark is a no-op too", () => {
-  expect(() => guardFocus({ platform: "linux" }).mark()).not.toThrow();
+  expect(() => guardFocus({ platform: "linux", pid: 1 }).mark()).not.toThrow();
 });

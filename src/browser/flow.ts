@@ -92,7 +92,6 @@ import {
 } from "./flow-api.js";
 import {
   ACT_TIMEOUT_MS,
-  backgroundPage,
   closeStrayTabs,
   doOp,
   keptTabs,
@@ -107,6 +106,7 @@ import {
   settle,
   solveRow,
 } from "./flow-steps.js";
+import { backgroundPage } from "./own-tabs.js";
 
 export { chooseOption, closeStrayTabs, openReadTab, seedOf } from "./flow-steps.js";
 

@@ -262,9 +262,14 @@ export async function openSession(site: string, opts: BrowserOptions): Promise<S
     );
     guard = guardMemory(context, profileDir);
     if (opts.headless === false && process.platform === "darwin") {
-      const f = guardFocus({ pid: await browserPid(context) });
+      const pid = await browserPid(context);
+      if (!pid) console.error("autobrowse: no browser pid; the focus guard is off");
+      const f = guardFocus({ pid });
       focus = f;
-      unmark = await markNewTargets(context, () => f.mark()).catch(() => null);
+      unmark = await markNewTargets(context, () => f.mark()).catch((err: unknown) => {
+        console.error(`autobrowse: no new-tab marks: ${err instanceof Error ? err.message : err}`);
+        return null;
+      });
     }
     // `navigator.webdriver` is already false (LOCAL_ARGS). No init-script shim: an own
     // `webdriver` property on navigator, reading undefined, is itself a tell.
@@ -390,7 +395,8 @@ async function openOwn(own: OwnBrowser): Promise<Session> {
 function appHider(profileDir: string): (off: boolean) => Promise<void> {
   let hidden = false;
   return async (off) => {
-    if (off === hidden) return;
+    // hide every time: a popup shows a hidden Chrome again
+    if (!off && !hidden) return;
     try {
       const [pid] = treeOf(await listProcs(), profileDir);
       if (!pid) return;
@@ -508,7 +514,7 @@ async function launchLocal(
       : {}),
     ...(tz ? { env: { ...process.env, TZ: tz } } : {}),
   });
-  // headed on a Mac: launched in the background (`browser/background-launch`), else guarded
+  // headed on a Mac: launched in the background (`browser/background-launch`); a failed relay costs one steal
   const launch = async (o: ReturnType<typeof base>) => {
     if (o.headless || process.platform !== "darwin") return plainLaunch(o);
     const real = await realBrowser(opts.channel);
@@ -523,12 +529,9 @@ async function launchLocal(
         `autobrowse: background launch failed, launching in front: ${err instanceof Error ? err.message.split("\n")[0] : err}`,
       );
     }
-    const focus = guardFocus();
-    try {
-      return await plainLaunch(o);
-    } finally {
-      focus.release();
-    }
+    // a Chrome the failed relay left would hold the profile; the pid guard starts after launch
+    await reapOrphans(expandHome(opts.profilesDir)).catch(() => []);
+    return plainLaunch(o);
   };
   const plainLaunch = async (o: ReturnType<typeof base>) => {
     if (opts.channel !== "chromium") {

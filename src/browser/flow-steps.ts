@@ -1,4 +1,4 @@
-import type { BrowserContext, CDPSession, FileChooser, Locator, Page } from "playwright";
+import type { BrowserContext, FileChooser, Locator, Page } from "playwright";
 import { checkUrl, landedOk } from "../reach/net-guard.js";
 import type { CaptchaSolve, FlowRunRow } from "../runs/flows.js";
 import { markReached } from "./attempt.js";
@@ -14,7 +14,7 @@ import {
 import { type Hands, instantHands, pickOption } from "./human/index.js";
 import { inPage } from "./in-page.js";
 import { type Hints, locate, textOf } from "./locate.js";
-import { backgroundTab } from "./own-tabs.js";
+import { backgroundPage } from "./own-tabs.js";
 import { scrollAndSettle } from "./page-scroll.js";
 import { looksLikeWall } from "./session.js";
 
@@ -168,24 +168,6 @@ export async function closeStrayTabs(context: BrowserContext, main: Page): Promi
   const strays = context.pages().filter((p) => p !== main && !keptTabs.has(p) && !p.isClosed());
   await Promise.all(strays.map((p) => p.close().catch(() => undefined)));
   return strays.length;
-}
-
-/**
- * A background tab beside `from`, matched by target id: another read opening a tab at the
- * same moment never hands us its page. A context without CDP gets a plain tab, `from` kept in front.
- */
-export async function backgroundPage(context: BrowserContext, from: Page): Promise<Page> {
-  let cdp: CDPSession | null = null;
-  try {
-    cdp = await context.newCDPSession(from);
-    return (await backgroundTab(context, cdp, SETTLE_MS * 4, { sameWindow: true })).page;
-  } catch {
-    const page = await context.newPage();
-    await from.bringToFront().catch(() => undefined);
-    return page;
-  } finally {
-    await cdp?.detach().catch(() => undefined);
-  }
 }
 
 /**

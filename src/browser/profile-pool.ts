@@ -10,6 +10,7 @@
  * Design: designs/2026-11-09-opencli-audit.md (U15).
  */
 import type { Page } from "playwright";
+import { backgroundPage } from "./own-tabs.js";
 import type { SessionPark } from "./park.js";
 import type { Session } from "./session.js";
 
@@ -126,7 +127,7 @@ export interface PoolOptions {
   park?: SessionPark | undefined;
   readers?: number;
   queue?: number;
-  /** Opens a background tab in the shared browser; tests swap it. */
+  /** Opens a tab in the shared browser; default: a background tab that never takes the front. */
   newTab?: (s: Session) => Promise<Page>;
   /** The last user's clean-up before the browser parks (stray tabs, routes). */
   tidy?: (s: Session, o: { keepTabs: boolean }) => Promise<void>;
@@ -164,7 +165,9 @@ export class ProfilePool {
     try {
       if (live) {
         // Only a read gets here with a live browser: a write waits for an idle profile.
-        const page = await (this.o.newTab ?? ((s) => s.context.newPage()))(live.session);
+        const page = await (this.o.newTab ?? ((s) => backgroundPage(s.context, s.page)))(
+          live.session,
+        );
         poolTabs.add(page);
         live.users++;
         lease = { session: live.session, owner: false, page, reused: false };
