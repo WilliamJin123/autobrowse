@@ -185,7 +185,7 @@ import { type Capture, captureFor } from "../runs/capture.js";
 import { machine, type RunLog, type RunOutcome, runLog } from "../runs/log.js";
 import { missCause, targetOf } from "../runs/success.js";
 import { accountIn, compiledDeps, platformOf } from "../workflows/compiled-deps.js";
-import { LOGIN_WORKFLOWS, loginName, PAGE_LOGIN } from "../workflows/logins.js";
+import { loginName, loginWorkflows, PAGE_LOGIN } from "../workflows/logins.js";
 import {
   findable,
   find as findTools,
@@ -1764,7 +1764,7 @@ async function serve(
    */
   const shown = async (t: Tool) => {
     const saved = await (opts.workflows?.plan(t.name, {}) ?? Promise.resolve({})).catch(() => ({}));
-    const login = t.name.endsWith("-login") && LOGIN_WORKFLOWS.has(t.name);
+    const login = t.name.endsWith("-login") && loginWorkflows().has(t.name);
     const takes = t.fields.some((f) => f.name === "account");
     const platform = login
       ? loginPlatform(t.name, {})
@@ -1804,7 +1804,7 @@ async function serve(
     given: Record<string, unknown>,
   ): Promise<{ account?: string }> => {
     if (accountIn(given)) return {};
-    const login = name.endsWith("-login") && LOGIN_WORKFLOWS.has(name);
+    const login = name.endsWith("-login") && loginWorkflows().has(name);
     const platform = login ? loginPlatform(name, given) : site ? platformOf(site) : null;
     if (!platform) return {};
     const accounts = await accountsOf(platform);

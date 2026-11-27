@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { BROWSER_FLOWS } from "./engine/browser-service.js";
 import { SITES } from "./sites/index.js";
 import { accessOf } from "./sites/types.js";
-import { LOGIN_WORKFLOWS } from "./workflows/logins.js";
+import { loginWorkflows } from "./workflows/logins.js";
 import { SHIPPED_DIR } from "./workflows/roots.js";
 
 export const CATALOG_FILE = join(import.meta.dirname, "..", "catalog.json");
@@ -36,7 +36,7 @@ export function catalogNow(): CatalogFile {
       ...readdirSync(SHIPPED_DIR, { withFileTypes: true })
         .filter((d) => d.isDirectory() && existsSync(join(SHIPPED_DIR, d.name, "index.ts")))
         .map((d) => d.name),
-      ...LOGIN_WORKFLOWS.keys(),
+      ...loginWorkflows().keys(),
     ]),
   };
 }

@@ -9,7 +9,7 @@ import {
   withLegs,
   workflowCatalog,
 } from "../src/workflows/legs.js";
-import { LOGIN_WORKFLOWS, loginFlow, loginName, loginWorkflow } from "../src/workflows/logins.js";
+import { loginFlow, loginName, loginWorkflow, loginWorkflows } from "../src/workflows/logins.js";
 import { sitesTree, toolkitFor, toolsOf } from "../src/workflows/toolkit.js";
 
 const runner = (answer: string, loggedIn = false) => {
@@ -52,13 +52,13 @@ const run = async (w: ReturnType<typeof loginWorkflow>, browser: FlowRunner, pla
 
 describe("a site's sign-in is a workflow", () => {
   it("every site login is in the catalog as <site>-login, and no leg has that name", () => {
-    expect(LOGIN_WORKFLOWS.size).toBe(SITE_LOGINS.length + 1); // + page-login
+    expect(loginWorkflows().size).toBe(SITE_LOGINS.length + 1); // + page-login
     for (const l of SITE_LOGINS) {
-      expect(LOGIN_WORKFLOWS.has(loginName(l.site))).toBe(true);
+      expect(loginWorkflows().has(loginName(l.site))).toBe(true);
       expect(LEG_WORKFLOWS.has(loginName(l.site))).toBe(false);
     }
     expect(builtinWorkflow("perplexity-login")?.site).toBe("perplexity");
-    const w = LOGIN_WORKFLOWS.get("perplexity-login");
+    const w = loginWorkflows().get("perplexity-login");
     expect(w?.description).toMatch(/google button/);
     expect(w?.steps[0]).toMatchObject({ name: "sign-in", irreversible: true });
   });

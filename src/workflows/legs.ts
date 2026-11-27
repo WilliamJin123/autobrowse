@@ -9,7 +9,7 @@ import { FLOW_INPUTS } from "../browser/flows/inputs.gen.js";
 import { legName } from "../engine/leg.js";
 import { done, type Workflow } from "../engine/workflow.js";
 import type { CompiledCatalog } from "./compiled.js";
-import { LOGIN_WORKFLOWS, type LoginWorkflow } from "./logins.js";
+import { type LoginWorkflow, loginWorkflows } from "./logins.js";
 
 export interface LegDeps {
   browser: FlowRunner;
@@ -67,14 +67,14 @@ export const LEG_WORKFLOWS: ReadonlyMap<string, LegWorkflow> = new Map(
 
 /** A workflow built into the binary: a leg, or a site's sign-in (`<site>-login`). */
 export const builtinWorkflow = (name: string): LegWorkflow | LoginWorkflow | undefined =>
-  LEG_WORKFLOWS.get(name) ?? LOGIN_WORKFLOWS.get(name);
+  LEG_WORKFLOWS.get(name) ?? loginWorkflows().get(name);
 
 /** The catalog's workflows, then every leg and sign-in none of them shadows by name. */
 export function withLegs<W extends { name: string }>(
   workflows: readonly W[],
 ): (W | LegWorkflow | LoginWorkflow)[] {
   const taken = new Set(workflows.map((w) => w.name));
-  const builtin = [...LEG_WORKFLOWS.values(), ...LOGIN_WORKFLOWS.values()];
+  const builtin = [...LEG_WORKFLOWS.values(), ...loginWorkflows().values()];
   return [...workflows, ...builtin.filter((w) => !taken.has(w.name))];
 }
 

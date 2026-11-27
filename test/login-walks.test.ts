@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { CodeKind } from "../src/auth/codes.js";
 import { LoginFailed, passwordDomains, type SignInContext } from "../src/auth/login.js";
 import { isProvider, providerOf, registerProvider } from "../src/auth/providers.js";
-import { SITE_LOGINS, WALK_APPS } from "../src/auth/sites.js";
+import { builtInLogin, SITE_LOGINS, WALK_APPS } from "../src/auth/sites.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { repoWalkLogins } from "../src/walks/login.js";
 import { LOGIN_WALK_FILES } from "../src/walks/logins/index.js";
@@ -63,13 +63,14 @@ function ctxFor(
 }
 
 describe("repo sign-in walks", () => {
-  it("each file parses as a login walk, and its site has no built-in login left", () => {
+  it("each file parses as a login walk; its login is the site's one built-in", () => {
     expect(logins.map((l) => l.site)).toEqual(
       LOGIN_WALK_FILES.flatMap((f) => [f.site, ...(WALK_APPS[f.site] ?? []).map((a) => a.site)]),
     );
     for (const f of LOGIN_WALK_FILES) {
       expect(f.name).toBe("login");
-      expect(SITE_LOGINS.some((l) => l.site === f.site)).toBe(false);
+      expect(SITE_LOGINS.filter((l) => l.site === f.site)).toHaveLength(1);
+      expect(builtInLogin(f.site)?.home).toBe(logins.find((l) => l.site === f.site)?.home);
     }
   });
 });

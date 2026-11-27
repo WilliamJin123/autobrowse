@@ -99,8 +99,21 @@ export const pageLoginWorkflow: LoginWorkflow = {
   ],
 };
 
-/** Every site login as a workflow, by name, and the page's own. */
-export const LOGIN_WORKFLOWS: ReadonlyMap<string, LoginWorkflow> = new Map([
-  ...SITE_LOGINS.map((l) => [loginName(l.site), loginWorkflow(l)] as const),
-  [PAGE_LOGIN, pageLoginWorkflow] as const,
-]);
+let built: { count: number; map: ReadonlyMap<string, LoginWorkflow> } | null = null;
+
+/**
+ * Every site login as a workflow, by name, and the page's own. Read at use:
+ * the repo walks join `SITE_LOGINS` at boot, after this module loads.
+ */
+export function loginWorkflows(): ReadonlyMap<string, LoginWorkflow> {
+  // SITE_LOGINS only grows: its length marks a stale map
+  if (built?.count !== SITE_LOGINS.length)
+    built = {
+      count: SITE_LOGINS.length,
+      map: new Map([
+        ...SITE_LOGINS.map((l) => [loginName(l.site), loginWorkflow(l)] as const),
+        [PAGE_LOGIN, pageLoginWorkflow] as const,
+      ]),
+    };
+  return built.map;
+}

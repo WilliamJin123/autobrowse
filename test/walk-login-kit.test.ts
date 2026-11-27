@@ -12,6 +12,7 @@ import {
   type SignInHealAsk,
 } from "../src/auth/login.js";
 import { CODES_PER_TRY, enterCode, signInState } from "../src/auth/sign-in-kit.js";
+import { WALK_APPS } from "../src/auth/sites.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { walkFlow } from "../src/walks/flow.js";
@@ -416,7 +417,10 @@ describe("the walk schema's login rules", () => {
 describe("repo sign-in walks", () => {
   it("every file in the index loads through the schema as a SiteLogin", () => {
     const logins = repoWalkLogins();
-    expect(logins.map((l) => l.site)).toEqual(LOGIN_WALK_FILES.map((f) => f.site));
+    // each walk, then the apps that sign in with it (gmail on google)
+    expect(logins.map((l) => l.site)).toEqual(
+      LOGIN_WALK_FILES.flatMap((f) => [f.site, ...(WALK_APPS[f.site] ?? []).map((a) => a.site)]),
+    );
   });
 
   it("a file the schema refuses, or one not named login, throws", () => {

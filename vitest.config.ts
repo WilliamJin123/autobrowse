@@ -31,6 +31,8 @@ export default defineConfig({
   test: {
     // dist/ holds tsc copies of src tests: same tests twice
     exclude: [...configDefaults.exclude, "dist/**"],
+    // the repo's sign-in walks in SITE_LOGINS, as every entry point loads them
+    setupFiles: ["test/boot-logins.ts"],
     env: {
       AUTOBROWSE_STATS: "off",
       AUTOBROWSE_RESUME: "off",
