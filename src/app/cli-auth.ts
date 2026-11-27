@@ -61,13 +61,14 @@ import {
 
 /** `william@wrenautomation.com` → `w***@wrenautomation.com`: whose, without the address in a log. */
 const maskAddress = (u: string) => u.replace(/^(.)[^@]*@/, "$1***@");
-const SITES = SITE_LOGINS.map((s) => s.site);
-const KNOWN = `one of ${SITES.join(", ")}, <site>@<label> for a second account, or an address (will@a.com) for its own Google account`;
+/** Read at use: the repo's sign-in walks and data logins join `SITE_LOGINS` at boot, after import. */
+const knownSites = () =>
+  `one of ${SITE_LOGINS.map((s) => s.site).join(", ")}, <site>@<label> for a second account, or an address (will@a.com) for its own Google account`;
 
 /** A site name (or `site@account`) as a login, or a clear error. */
 function loginNamed(site: string) {
   const login = resolveLogin(SITE_LOGINS, site);
-  if (!login) throw new Error(`unknown site ${site}; ${KNOWN}`);
+  if (!login) throw new Error(`unknown site ${site}; ${knownSites()}`);
   return login;
 }
 
@@ -78,7 +79,7 @@ async function loginOrVia(settings: Settings, site: string) {
   const cred = await credentialsFor(settings).get(site);
   if (cred?.via) return viaLogin(site, cred);
   throw new Error(
-    `unknown site ${site}; ${KNOWN}, or store a provider sign-in first: \`autobrowse creds via ${site} google --url <its login page>\``,
+    `unknown site ${site}; ${knownSites()}, or store a provider sign-in first: \`autobrowse creds via ${site} google --url <its login page>\``,
   );
 }
 
@@ -1032,7 +1033,7 @@ export function registerAuthCommands(
   program
     .command("login [site]")
     .description(
-      `Sign in to a site with the stored credential (headless). With --headed and no credential, a person logs in and closes the window. Sites: ${KNOWN}, or any site stored with \`creds via\``,
+      `Sign in to a site with the stored credential (headless). With --headed and no credential, a person logs in and closes the window. Sites: ${knownSites()}, or any site stored with \`creds via\``,
     )
     .option("--headed", "show the browser")
     .option(

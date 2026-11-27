@@ -53,7 +53,7 @@ export function walkLogin(
   );
   return {
     site: o.site ?? spec.site,
-    home: spec.start,
+    home: spec.home ?? spec.start,
     // setup's prompt
     ask: `Your ${spec.site} login (username, password${totp ? ", authenticator key if set" : ""})`,
     ...(credential ? { credential } : {}),

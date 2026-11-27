@@ -3,7 +3,7 @@
  * login under the authorize URL: `signInHere` runs there in place, so the
  * `next` survives. Code: the authenticator when the page names it, else the
  * code Instagram emails on an unfamiliar login. Mapped from the public pages
- * 2026-09-21; unverified until a credential exists.
+ * 2026-09-21; unproven live.
  */
 
 import type { WalkSpecInput } from "../spec.js";
@@ -21,12 +21,14 @@ export default {
   name: "login",
   goal: "signed in to Instagram",
   start: "https://www.instagram.com/accounts/login/",
+  home: "https://www.instagram.com/",
   signInHere: "/instagram\\.com\\/accounts\\/login|instagram\\.com\\/challenge/",
   screens: [
     {
       name: "signed-in",
-      looks: "any Instagram page past the login, with no sign-in form",
-      at: "/^https:\\/\\/(www\\.)?instagram\\.com\\/(?!accounts\\/(login|onetap)|challenge)/",
+      looks:
+        "any Instagram page past the login, with no sign-in form; the notifications prompt is left up",
+      at: "/^https:\\/\\/(www\\.)?instagram\\.com\\/(?!accounts\\/|challenge)/",
       hides: [PASSWORD],
       goal: true,
     },
@@ -46,7 +48,8 @@ export default {
       name: "person-check",
       looks: "a selfie, captcha or suspicious-login check with no code box",
       says: "/suspicious|confirm it.s you|video selfie|captcha/i",
-      hides: [CODE],
+      // a Send button first: the code may still come
+      hides: [CODE, SEND],
       person: { why: "Instagram wants a check only a person can pass" },
     },
     {

@@ -147,6 +147,38 @@ describe("instagram walk", () => {
     expect(asked).toEqual(["email"]);
   });
 
+  it("a suspicious-login page with a Send button sends the code; no person is paged", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN_URL, has: FORM, on: { "click button:Log in": "challenge" } },
+        challenge: {
+          url: "https://www.instagram.com/challenge/action/3/",
+          text: "We noticed suspicious activity. Confirm it's you with a code.",
+          has: ["button:Send Security Code"],
+          on: { "click button:Send Security Code": "emailed" },
+        },
+        emailed: {
+          url: "https://www.instagram.com/challenge/action/3/",
+          text: "Enter the security code we emailed. We noticed suspicious activity.",
+          has: ["textbox:Security code", "button:Confirm"],
+          on: { "click button:Confirm": "home" },
+        },
+        home: { url: "https://www.instagram.com/", has: [] },
+      },
+      "login",
+    );
+    await loginOf("instagram").signInHere?.run(ctxFor(s.fp, ["email"]).ctx);
+    expect(s.acts.slice(3)).toEqual([
+      "click Send Security Code",
+      "fill Security code=123456",
+      "click Confirm",
+    ]);
+  });
+
+  it("checks a session on the feed, not the login page", () => {
+    expect(loginOf("instagram").home).toBe("https://www.instagram.com/");
+  });
+
   it("a rejected password is refused with case password", async () => {
     const s = siteOf(
       {

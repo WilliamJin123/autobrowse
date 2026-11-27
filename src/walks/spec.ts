@@ -312,6 +312,8 @@ export const walkSpecSchema = z
       .default([]),
     /** A click on it creates, sends or pays: running it takes a yes. */
     irreversible: z.boolean().default(false),
+    /** Login walks: a signed-in page, opened to check a session; default `start`. */
+    home: z.string().url().optional(),
     /** Login walks: the site's sign-in pages; on one, the walk runs in place (no open), so a `next` in its URL survives. */
     signInHere: patternSchema.optional(),
     screens: z.array(screenSpecSchema).min(1),
@@ -336,6 +338,8 @@ export const walkSpecSchema = z
           at(`a ${op.kind} op runs only in a walk named ${LOGIN_WALK}`, "ops", j);
       });
     });
+    if (w.home && !login)
+      ctx.addIssue({ code: "custom", path: ["home"], message: "home is for a login walk" });
     if (w.signInHere && !login)
       ctx.addIssue({
         code: "custom",
