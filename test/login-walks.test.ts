@@ -1383,6 +1383,33 @@ describe("aws walk", () => {
     expect(s.opened).toEqual(["https://console.aws.amazon.com/"]);
   });
 
+  it("waits on a form that renders late; a form that never renders fails the try", async () => {
+    const s = siteOf(
+      {
+        loading: { url: SIGN_IN, has: [] },
+        form: { url: SIGN_IN, has: IAM_FORM, on: { "click button:Sign in": "console" } },
+        console: { url: CONSOLE, has: [] },
+      },
+      "loading",
+    );
+    const has = s.fp.has;
+    const waits: number[] = [];
+    s.fp.has = async (h, ms) => {
+      if (h.role === "textbox" && !h.name && ms) {
+        waits.push(ms);
+        s.go("form");
+      }
+      return has(h, ms);
+    };
+    await loginOf("aws").signIn(ctxFor(s.fp, [], { username: "acme/w" }).ctx);
+    expect(waits).toEqual([45_000]);
+    expect(s.acts[0]).toBe("fill Account ID or alias=acme");
+    const never = siteOf({ loading: { url: SIGN_IN, has: [] } }, "loading");
+    await expect(
+      loginOf("aws").signIn(ctxFor(never.fp, [], { username: "acme/w" }).ctx),
+    ).rejects.toMatchObject({ refused: false, message: expect.stringMatching(/sign-in form/) });
+  });
+
   it("the root user: the root button, the email, Next, the password", async () => {
     const s = siteOf(
       {

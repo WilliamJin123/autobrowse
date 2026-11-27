@@ -490,8 +490,9 @@ async function walkSpec(
               ...(op.hints?.text ? { text: await fill(op.hints.text, op.goal) } : {}),
               ...(op.hints?.name ? { name: await fill(op.hints.name, op.goal) } : {}),
             };
+        // a sign-in's slow page fails the try (its hold retries); elsewhere a person looks
         if (!(await fp.has(h as Hints, op.ms ?? SEE_MS)))
-          fp.human(`${op.goal}: not on ${fp.url()}`);
+          (deps.fail ?? fp.human)(`${op.goal}: not on ${fp.url()}`);
         return;
       }
       case "pick": {
