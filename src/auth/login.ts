@@ -10,8 +10,9 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { Credential, CredentialStore, SecretAudit } from "credvault";
+import { banHit } from "../browser/ban-signals.js";
 import type { FlowPage } from "../browser/flow.js";
 import type { Hints } from "../browser/locate.js";
 import { pageState, untilLoaded } from "../browser/page-state.js";
@@ -741,6 +742,8 @@ export interface LoginOptions {
   audit?: SecretAudit;
   /** Refused sign-ins, so the next call does not type the password again (`fileSignInHolds`). */
   holds?: SignInHolds;
+  /** Where a "signed in after all" page is shot: the page our flow misread. */
+  shots?: string;
   now?: () => Date;
 }
 
@@ -748,6 +751,35 @@ export interface LoginOptions {
 export const SIGN_IN_HOLD_MS = 12 * 60 * 60 * 1000;
 /** After our own failure (no secret typed, no refusal said): a short pause, so a broken flow cannot loop on the account. */
 export const OWN_FAILURE_HOLD_MS = 30 * 60 * 1000;
+
+/**
+ * After a failure past a typed secret: signed in anyway (our flow misread the next page)?
+ * The site's home with its own check; a wall, a ban page or any error is no.
+ */
+async function signedInAnyway(fp: FlowPage, login: SiteLogin): Promise<boolean> {
+  if (!/^https?:/.test(login.home)) return false;
+  try {
+    await fp.open(login.home, { allowWall: true });
+    const text = (await fp.text()).slice(0, 4000);
+    if (banHit(login.site, fp.url(), text) || wallOf(fp.url(), text)) return false;
+    return await login.loggedIn(fp);
+  } catch {
+    return false;
+  }
+}
+
+/** The misread page, before the check leaves it; null when it cannot be shot. */
+async function shotOf(fp: FlowPage, dir: string | undefined, name: string, at: Date) {
+  if (!dir) return null;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, `${name.replace(/[^a-z0-9@._-]/gi, "_")}-${at.getTime()}.png`);
+    await fp.page.screenshot({ path });
+    return path;
+  } catch {
+    return null;
+  }
+}
 
 /** The page that notes each typed secret (a password, a code): a failed sign-in that typed none is ours. */
 function typedSecret(fp: FlowPage, typed: () => void): FlowPage {
@@ -1041,6 +1073,7 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
       );
     // One account, several ways in: each method in turn until one signs in.
     let first: unknown = null;
+    let failedIn: SiteLogin | null = null;
     let typed = false;
     const watched = typedSecret(fp, () => {
       typed = true;
@@ -1073,7 +1106,23 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
       } catch (err) {
         // Only a refused sign-in moves on; a page that needs a person stops here.
         if (!(err instanceof LoginFailed)) throw err;
+        if (!first) failedIn = login;
         first ??= err;
+      }
+    }
+    // a typed secret and no refusal said: the password may have worked and our flow misread what came next
+    if (first && typed && !(first as LoginFailed).refused && known && failedIn === known) {
+      const misread = fp.url();
+      const shot = await shotOf(fp, opts.shots, name, now());
+      if (await signedInAnyway(fp, known)) {
+        opts.holds?.clear(name);
+        const error = (first as Error).message.slice(0, 300);
+        await opts
+          .notify?.(
+            `${name}: flow bug after a good password: signed in, but the flow read ${misread} as a failure (${error})${shot ? `; shot ${shot}` : ""}`,
+          )
+          .catch(() => undefined);
+        return "signed-in";
       }
     }
     if (first) {

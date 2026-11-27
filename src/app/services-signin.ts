@@ -283,6 +283,7 @@ export function loginFor(
     codes: codesFor(settings, gmail, http),
     audit: auditFor(settings),
     holds: fileSignInHolds(expandHome(settings.signInHoldsFile)),
+    shots: join(expandHome(settings.artifactsDir), "sign-in-misread"),
     ...(notify ? { notify } : {}),
   });
 }
