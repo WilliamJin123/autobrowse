@@ -14,6 +14,7 @@ import costco from "./costco.js";
 import discord from "./discord.js";
 import facebook from "./facebook.js";
 import github from "./github.js";
+import google from "./google.js";
 import hubspot from "./hubspot.js";
 import instagram from "./instagram.js";
 import instantly from "./instantly.js";
@@ -30,6 +31,8 @@ import twilio from "./twilio.js";
 import x from "./x.js";
 
 export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [
+  // first: a lookup by credential name finds google before its apps
+  google,
   cloudflare,
   instagram,
   facebook,

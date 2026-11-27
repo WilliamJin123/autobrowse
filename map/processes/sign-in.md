@@ -24,13 +24,13 @@ If flows signed in themselves, every flow would carry every site's quirks and ev
 2. `loginProvider` resolves the spec (`resolveLogin`), lists methods (`methodsOf`: password first, then each `via`) — `src/auth/login.ts:558-652,429,654`
 3. `signInContext` binds the credential, the code sources and the phone notifier — `src/auth/login.ts:504`; codes: `src/auth/codes.ts:68-142`, inbox lock `:177`
 4. The page is bound to the spec's origins (`boundPage`, `passwordDomains`) so a fill of the password on any other host is refused and recorded — `src/auth/guard.ts:88`, `src/auth/login.ts:423`
-5. `spec.signIn(ctx)`: `formLogin` for a form, a walk built from its spec (`src/auth/login.ts:212`), `oauthLogin` presses the provider button and hands to `providerOf(via).signIn` (`:272`, `providerOf` in `src/auth/providers.ts`), a walk for a branching site (`googleWalk`, `src/auth/google.ts`; `walk()`, `src/browser/screens.ts:418`)
+5. `spec.signIn(ctx)`: `formLogin` for a form, a walk built from its spec (`src/auth/login.ts:212`), `oauthLogin` presses the provider button and hands to `providerOf(via).signIn` (`:272`, `providerOf` in `src/auth/providers.ts`), a repo walk for a branching site (`src/walks/logins/*.ts`, run by `src/walks/flow.ts`; `walk()` in `src/browser/screens.ts`)
 6. A method that throws `LoginFailed` yields to the next; none left → `no-credential` — `src/auth/login.ts:184,585-636`
 7. The runner retries the open; a wall still there is a person's (`NeedsHuman`) — `src/browser/flow.ts:512-533`
 
 ## If you change this
 
-- **Hits:** every spec in `src/auth/sites.ts`, `src/auth/google.ts`, `src/app/services-state.ts:269` (`loginFor`), compiled workflows and site browser legs (they meet walls through the same hook), `autobrowse login`, `accounts check`, `test/google.test.ts`, `test/site-fakes.ts`.
+- **Hits:** every spec in `src/auth/sites.ts`, the repo walks (`src/walks/logins/*.ts`), `src/app/services-state.ts:269` (`loginFor`), compiled workflows and site browser legs (they meet walls through the same hook), `autobrowse login`, `accounts check`, `test/login-walks.test.ts`, `test/site-fakes.ts`.
 - **Does not hit:** API legs (tokens, never a wall), the engine.
 
 ## Surfaces

@@ -241,6 +241,8 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
     submit: hintsSchema,
     send: hintsSchema.optional(),
     hint: z.string().optional(),
+    /** A box that asks which phone to text first (ours from the inbox), and its button. */
+    phone: z.object({ field: hintsSchema, submit: hintsSchema }).optional(),
   }),
   /**
    * Login walks only: our stored passkey answers; the ceremony completes on the click.

@@ -29,7 +29,7 @@ Codes come from sources the site never sees (TOTP from the vault, an inbox, a ph
 
 ## If you change this
 
-- **Hits:** every `signIn` in `src/auth/sites.ts`, `src/auth/google.ts`, the repo walks (`src/walks/logins/*.ts`, run by `src/walks/flow.ts`), `src/auth/enroll.ts`, `src/app/services-state.ts:222-286`, `test/google.test.ts` (`ctxOf`).
+- **Hits:** every `signIn` in `src/auth/sites.ts`, the repo walks (`src/walks/logins/*.ts`, run by `src/walks/flow.ts`), `src/auth/enroll.ts`, `src/app/services-state.ts:222-286`, `test/login-walks.test.ts` (`ctxOf`).
 - **Does not hit:** the runner, site APIs.
 
 ## Surfaces

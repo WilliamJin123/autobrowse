@@ -17,6 +17,7 @@ import {
   throughProvider,
 } from "../auth/login.js";
 import {
+  type CodeBox,
   enterCode,
   fillVars,
   pickAccount,
@@ -406,6 +407,7 @@ async function walkSpec(
           submit: op.submit as Hints,
           send: op.send as Hints | undefined,
           hint: op.hint,
+          phone: op.phone as CodeBox["phone"],
         });
       }
       case "passkey": {

@@ -1068,10 +1068,12 @@ describe("resolveLogin", () => {
     });
     const { SITE_LOGINS } = await import("../src/auth/sites.js");
     const { repoWalkLogins } = await import("../src/walks/login.js");
-    for (const app of ["gmail", "drive", "calendar", "docs", "sheets"])
-      expect(credentialFor(SITE_LOGINS, app)).toBe("google");
-    expect(credentialFor(SITE_LOGINS, "gmail@will")).toBe("google@will");
     const walks = [...SITE_LOGINS, ...repoWalkLogins()];
+    for (const app of ["gmail", "drive", "calendar", "docs", "sheets"])
+      expect(credentialFor(walks, app)).toBe("google");
+    // the admin console runs on the Workspace admin account
+    expect(credentialFor(walks, "google-admin")).toBe("google@admin");
+    expect(credentialFor(walks, "gmail@will")).toBe("google@will");
     expect(credentialFor(walks, "outlook@work")).toBe("microsoft@work");
   });
 });

@@ -16,7 +16,7 @@ import {
   type SiteLogin,
 } from "../auth/login.js";
 import { failSignIn, signInState } from "../auth/sign-in-kit.js";
-import { ACCOUNT_CHORES, WALK_APPS } from "../auth/sites.js";
+import { ACCOUNT_CHORES, WALK_APPS, type WalkApp } from "../auth/sites.js";
 import { NeedsHuman } from "../browser/session.js";
 import { onScreen, walkFlow } from "./flow.js";
 import { logHealTries, withHeal } from "./login-heal.js";
@@ -160,16 +160,29 @@ export function repoWalkLogins(
     if (spec.name !== "login")
       throw new Error(`${spec.site}/walk-${spec.name}: a repo sign-in walk is named login`);
     const heal = walksDir ? { healDir: walksDir } : {};
+    const chores = ACCOUNT_CHORES[spec.site];
     // an app on the walk's credential: the provider's products stay the provider's
     const apps = (WALK_APPS[spec.site] ?? []).map((app): SiteLogin => {
-      const { properties: _, ...login } = walkLogin(spec, {
+      const { properties: _, ...login } = walkLogin(appSpec(file, app), {
         ...heal,
         site: app.site,
-        credential: spec.site,
+        credential: app.credential ?? spec.site,
       });
-      return { ...login, ask: app.ask };
+      return { ...login, ask: app.ask, ...chores };
     });
-    return [{ ...walkLogin(spec, heal), ...ACCOUNT_CHORES[spec.site] }, ...apps];
+    return [{ ...walkLogin(spec, heal), ...chores }, ...apps];
+  });
+}
+
+/** The walk as one app signs in with it: the app's pages, its refusals, its signed-in page as the goal. */
+function appSpec(file: WalkSpecInput, app: WalkApp): WalkSpec {
+  if (!app.signedIn && !app.screens && !app.start && !app.home) return walkSpecSchema.parse(file);
+  const screens = app.signedIn ? file.screens.filter((s) => !s.goal) : file.screens;
+  return walkSpecSchema.parse({
+    ...file,
+    ...(app.start ? { start: app.start } : {}),
+    ...(app.home ? { home: app.home } : {}),
+    screens: [...(app.signedIn ? [app.signedIn] : []), ...(app.screens ?? []), ...screens],
   });
 }
 

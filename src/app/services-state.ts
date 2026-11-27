@@ -503,7 +503,7 @@ export const loginsDirFor = (settings: Settings): string => join(stateDirFor(set
 /** Add the repo's sign-in walks, then the owner's data logins, installed mods' and sign-in walks, to `SITE_LOGINS`; every entry point, after `boot()`. */
 export const loadDataLogins = (settings: Settings): void => {
   // first: a repo sign-in walk beats the state dir's data login or cut walk for its site
-  addSiteLogins(repoWalkLogins(undefined, walksDirFor(settings)));
+  addSiteLogins(repoWalkLogins(undefined, walksDirFor(settings)), { builtIn: true });
   registerDataLogins(loginsDirFor(settings), modsDirFor(settings));
   addSiteLogins(walkLogins(walksDirFor(settings)));
 };

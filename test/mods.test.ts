@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileCredentials } from "credvault";
-import { describe, expect, it } from "vitest";
-import { SITE_LOGINS } from "../src/auth/sites.js";
+import { beforeAll, describe, expect, it } from "vitest";
+import { addSiteLogins, SITE_LOGINS } from "../src/auth/sites.js";
 import { memoryFixes } from "../src/browser/fixes.js";
 import { memoryScreens } from "../src/browser/screens.js";
 import {
@@ -22,6 +22,7 @@ import {
 } from "../src/mods/login.js";
 import { modScreens, modWorkflowRoots, withModFixes, withModScreens } from "../src/mods/mod.js";
 import { packMod, scrubFrom } from "../src/mods/pack.js";
+import { repoWalkLogins } from "../src/walks/login.js";
 import { listWalks, loadWalk, saveWalk, type WalkSpec } from "../src/walks/spec.js";
 
 // Synthetic only: a fake owner with a planted fake secret in a temp dir.
@@ -378,6 +379,9 @@ const login = (o: Partial<DataLogin> = {}): DataLogin =>
   });
 
 describe("logins as data", () => {
+  // as at boot: the repo's sign-in walks are the built-ins
+  beforeAll(() => addSiteLogins(repoWalkLogins(), { builtIn: true }));
+
   it("pack --login scrubs it and lists its credential; add accepts it", async () => {
     const o = await owner();
     const p = packMod({

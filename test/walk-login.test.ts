@@ -9,7 +9,7 @@ import type { FlowPage } from "../src/browser/flow.js";
 import type { Hints } from "../src/browser/locate.js";
 import { holdsSecret } from "../src/browser/secrets.js";
 import { NeedsHuman } from "../src/browser/session.js";
-import { walkLogin, walkLogins } from "../src/walks/login.js";
+import { repoWalkLogins, walkLogin, walkLogins } from "../src/walks/login.js";
 import { saveWalk, type WalkOp, type WalkSpec } from "../src/walks/spec.js";
 
 const PAGES: Record<string, { url: string; landmarks: string[]; go?: Record<string, string> }> = {
@@ -200,6 +200,7 @@ describe("a sign-in walk as a SiteLogin", () => {
   });
 
   it("never takes the place of a built-in login (gmail keeps its own)", () => {
+    addSiteLogins(repoWalkLogins(), { builtIn: true });
     const before = SITE_LOGINS.length;
     addSiteLogins([walkLogin({ ...spec, site: "gmail" })]);
     expect(SITE_LOGINS.length).toBe(before);

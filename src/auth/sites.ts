@@ -1,23 +1,18 @@
 /**
- * Login pages we know. Locators are visible labels, so a redesign fails
- * loudly and the repairer gets a chance. Every one is UNVERIFIED against
- * the live page until its first run; the memory layer keeps what worked.
- * Verified: cloudflare via Google (2026-09-19). Public login forms read
- * live on 2026-09-21 (headless explore): github, microsoft (first page), linkedin.
+ * What sign-in walk files (src/walks/logins/) cannot hold: account chores
+ * (authenticator, password change, passkey, recovery codes) and the apps a
+ * walk signs in to on its credential (`WALK_APPS`). Locators are visible
+ * labels, so a redesign fails loudly and the repairer gets a chance.
  */
 
 import type { FlowPage } from "../browser/flow.js";
 // registers GitHub as an identity provider
 import "./github.js";
-import { signInToGoogle } from "./google.js";
-import {
-  LoginFailed,
-  type PasskeySetupSpec,
-  type PasswordChangeSpec,
-  type SiteLogin,
-  type TotpSetupSpec,
-} from "./login.js";
+// registers Google as an identity provider
+import "./google.js";
+import type { PasskeySetupSpec, PasswordChangeSpec, SiteLogin, TotpSetupSpec } from "./login.js";
 import "./microsoft.js";
+import type { WalkSpecInput } from "../walks/spec.js";
 
 /** Where any Google account turns on an authenticator app. Mapped 2026-09-19 in explore mode. */
 const GOOGLE_TOTP_SETUP: TotpSetupSpec = {
@@ -51,125 +46,6 @@ const GOOGLE_PASSKEY_SETUP: PasskeySetupSpec = {
   create: { role: "button", name: "/create a passkey|create passkey/i" },
   confirmations: [{ role: "button", name: "/^continue passkey enrollment$/i" }],
   done: /passkey created|you can now use your passkey|passkeys? you created|created (a )?passkey/i,
-};
-
-/** Google re-asks for the password on security pages; answer on the spot. */
-const GOOGLE_SIGN_IN_HERE = {
-  at: /^https:\/\/accounts\.google\.com\//,
-  run: signInToGoogle,
-  // A re-verify inside a consent ends on the scope grant, still on accounts.google.com.
-  past: /^https:\/\/accounts\.google\.com\/signin\/oauth\//,
-};
-
-/** A Google Account page, not its signed-out `/intro/` twin. */
-const GOOGLE_SIGNED_IN = /^https:\/\/myaccount\.google\.com\/(?!intro(\/|\?|$))/;
-
-/** The personal Google account: what "Sign in with Google" buttons use. */
-const google: SiteLogin = {
-  site: "google",
-  home: "https://myaccount.google.com/",
-  origins: ["google.com"],
-  // Products off google.com: their pages take google's tools and sign-in (WA-1036). Add one when a run meets it.
-  properties: ["youtube.com", "blogger.com", "withgoogle.com", "google.dev"],
-  ask: 'Your Google account: the one behind every "Sign in with Google" button',
-  loggedIn: async (fp) => GOOGLE_SIGNED_IN.test(fp.url()),
-  async signIn(ctx) {
-    await ctx.fp.open(
-      "https://accounts.google.com/ServiceLogin?continue=https://myaccount.google.com/",
-      { allowWall: true },
-    );
-    await signInToGoogle(ctx);
-    if (!(await ctx.fp.waitForUrl(GOOGLE_SIGNED_IN, 30_000)))
-      throw new LoginFailed("google", `still on ${ctx.fp.url()} after Google sign-in`);
-  },
-  signInHere: GOOGLE_SIGN_IN_HERE,
-  totpSetup: GOOGLE_TOTP_SETUP,
-  passwordChange: GOOGLE_PASSWORD_CHANGE,
-  passkeySetup: GOOGLE_PASSKEY_SETUP,
-};
-
-/**
- * The Workspace admin console: its own credential, a Workspace admin of
- * the domains (a personal Gmail signs in fine and then gets "Sign in with
- * an administrator account").
- */
-/**
- * A Google app (Gmail, Drive, …) is not a login of its own: it signs in
- * with the Google account, `google` (or `google@<label>` for `gmail@<label>`).
- * Signed in = the app's own page loads without a detour to accounts.google.com.
- */
-function googleApp(site: string, home: string, signedIn: RegExp): SiteLogin {
-  return {
-    ...google,
-    site,
-    home,
-    credential: "google",
-    // google's products are google's: a YouTube page lists google-login, not gmail-login
-    properties: [],
-    ask: `Your Google account: ${site} signs in with it`,
-    loggedIn: async (fp) => signedIn.test(fp.url()),
-    async signIn(ctx) {
-      await google.signIn(ctx);
-      await ctx.fp.open(home, { allowWall: true });
-      if (!(await ctx.fp.waitForUrl(signedIn, 30_000)))
-        throw new LoginFailed(site, `still on ${ctx.fp.url()} after Google sign-in`);
-    },
-  };
-}
-
-const GOOGLE_APPS: readonly SiteLogin[] = [
-  googleApp("gmail", "https://mail.google.com/mail/u/0/", /^https:\/\/mail\.google\.com\/mail\//),
-  googleApp(
-    "drive",
-    "https://drive.google.com/drive/my-drive",
-    /^https:\/\/drive\.google\.com\/drive\//,
-  ),
-  googleApp(
-    "calendar",
-    "https://calendar.google.com/calendar/r",
-    /^https:\/\/calendar\.google\.com\/calendar\//,
-  ),
-  googleApp(
-    "docs",
-    "https://docs.google.com/document/u/0/",
-    /^https:\/\/docs\.google\.com\/document\//,
-  ),
-  googleApp(
-    "sheets",
-    "https://docs.google.com/spreadsheets/u/0/",
-    /^https:\/\/docs\.google\.com\/spreadsheets\//,
-  ),
-];
-
-const googleAdmin: SiteLogin = {
-  site: "google-admin",
-  // The Workspace admin is a Google account with the `admin` role (`creds role google admin <account>`).
-  credential: "google@admin",
-  home: "https://admin.google.com/",
-  ask: "A Google Workspace admin (admin.google.com) for the mail domains; a personal Gmail is refused there",
-  loggedIn: async (fp) =>
-    /admin\.google\.com/.test(fp.url()) &&
-    !/accounts\.google\.com/.test(fp.url()) &&
-    !(await fp.has({ text: "/administrator account/i" })),
-  async signIn(ctx) {
-    await ctx.fp.open(
-      "https://accounts.google.com/ServiceLogin?continue=https://admin.google.com/",
-      { allowWall: true },
-    );
-    await signInToGoogle(ctx);
-    if (!(await ctx.fp.waitForUrl(/admin\.google\.com/, 30_000)))
-      throw new LoginFailed("google-admin", `still on ${ctx.fp.url()} after Google sign-in`);
-    await ctx.fp.wait(1_500);
-    if (await ctx.fp.has({ text: "/administrator account/i" }))
-      throw new LoginFailed(
-        "google-admin",
-        `${ctx.cred.username} is not a Workspace admin; give the admin account the role: autobrowse creds role google admin <account>`,
-      );
-  },
-  signInHere: GOOGLE_SIGN_IN_HERE,
-  totpSetup: GOOGLE_TOTP_SETUP,
-  passwordChange: GOOGLE_PASSWORD_CHANGE,
-  passkeySetup: GOOGLE_PASSKEY_SETUP,
 };
 
 /**
@@ -218,6 +94,11 @@ export const ACCOUNT_CHORES: Readonly<
     Pick<SiteLogin, "reauth" | "totpSetup" | "passwordChange" | "passkeySetup" | "recoveryCodes">
   >
 > = {
+  google: {
+    totpSetup: GOOGLE_TOTP_SETUP,
+    passwordChange: GOOGLE_PASSWORD_CHANGE,
+    passkeySetup: GOOGLE_PASSKEY_SETUP,
+  },
   npm: {
     passkeySetup: NPM_PASSKEY_SETUP,
     // Five 64-hex codes, behind the key (mapped 2026-09-22).
@@ -236,11 +117,39 @@ export const ACCOUNT_CHORES: Readonly<
   },
 };
 
+/** One app a repo walk signs in to: its own site name, prompt and, when not the walk's, pages. */
+export interface WalkApp {
+  site: string;
+  ask: string;
+  /** Its stored credential; default the walk's site. */
+  credential?: string;
+  /** Where its sign-in opens and its signed-in page; default the walk's. */
+  start?: string;
+  home?: string;
+  /** Its signed-in page: replaces the walk's goals, so a sign-in ends there. */
+  signedIn?: WalkScreen;
+  /** Its own refusals, before the walk's screens. */
+  screens?: readonly WalkScreen[];
+}
+type WalkScreen = WalkSpecInput["screens"][number];
+
+/** A Google app (Gmail, Drive, …): the `google` account, ending on the app's own page. */
+const googleApp = (site: string, home: string, signedIn: string): WalkApp => ({
+  site,
+  ask: `Your Google account: ${site} signs in with it`,
+  start: `https://accounts.google.com/ServiceLogin?continue=${home}`,
+  home,
+  signedIn: { name: site, looks: `${site}, signed in`, at: signedIn, goal: true },
+});
+
+/** admin.google.com refuses a personal Gmail after its sign-in. */
+const NOT_ADMIN = { text: "/administrator account/i" };
+
 /**
- * Apps a repo walk signs in to with its own credential: the walk's site → each app
- * and its setup prompt. `repoWalkLogins` adds one login per app, after the walk's.
+ * Apps a repo walk signs in to with its own credential: the walk's site → each app.
+ * `repoWalkLogins` adds one login per app, after the walk's.
  */
-export const WALK_APPS: Readonly<Record<string, readonly { site: string; ask: string }[]>> = {
+export const WALK_APPS: Readonly<Record<string, readonly WalkApp[]>> = {
   // personal at outlook.live.com, work at outlook.office.com; one sign-in host
   microsoft: [
     {
@@ -248,28 +157,81 @@ export const WALK_APPS: Readonly<Record<string, readonly { site: string; ask: st
       ask: "The Microsoft account whose mailbox Outlook shows (personal or work)",
     },
   ],
+  google: [
+    googleApp(
+      "gmail",
+      "https://mail.google.com/mail/u/0/",
+      "/^https:\\/\\/mail\\.google\\.com\\/mail\\//",
+    ),
+    googleApp(
+      "drive",
+      "https://drive.google.com/drive/my-drive",
+      "/^https:\\/\\/drive\\.google\\.com\\/drive\\//",
+    ),
+    googleApp(
+      "calendar",
+      "https://calendar.google.com/calendar/r",
+      "/^https:\\/\\/calendar\\.google\\.com\\/calendar\\//",
+    ),
+    googleApp(
+      "docs",
+      "https://docs.google.com/document/u/0/",
+      "/^https:\\/\\/docs\\.google\\.com\\/document\\//",
+    ),
+    googleApp(
+      "sheets",
+      "https://docs.google.com/spreadsheets/u/0/",
+      "/^https:\\/\\/docs\\.google\\.com\\/spreadsheets\\//",
+    ),
+    {
+      site: "google-admin",
+      // a Google account with the `admin` role (`creds role google admin <account>`)
+      credential: "google@admin",
+      ask: "A Google Workspace admin (admin.google.com) for the mail domains; a personal Gmail is refused there",
+      start: "https://accounts.google.com/ServiceLogin?continue=https://admin.google.com/",
+      home: "https://admin.google.com/",
+      signedIn: {
+        name: "admin-console",
+        looks: "the Workspace admin console",
+        at: "/^https:\\/\\/admin\\.google\\.com\\//",
+        hides: [NOT_ADMIN],
+        goal: true,
+      },
+      screens: [
+        {
+          name: "not-admin",
+          looks: "admin.google.com asking to sign in with an administrator account",
+          at: "/^https:\\/\\/admin\\.google\\.com\\//",
+          shows: [NOT_ADMIN],
+          refused: {
+            says: "not a Workspace admin; give the admin account the role: autobrowse creds role google admin <account>",
+            case: "account",
+          },
+        },
+      ],
+    },
+  ],
 };
 
-export const SITE_LOGINS: readonly SiteLogin[] = [
-  google,
-  // After google: a lookup by credential name finds google itself first.
-  ...GOOGLE_APPS,
-  googleAdmin,
-];
+/** Every login; filled at boot (`addSiteLogins`): the repo's walks first, then data logins. */
+export const SITE_LOGINS: readonly SiteLogin[] = [];
 
-const BUILT_IN = new Set(SITE_LOGINS);
+/** The repo's own logins (its sign-in walks): no mod or owner login replaces one. */
+const BUILT_IN = new Set<SiteLogin>();
 
 /** A built-in login for this site or credential name, if any (not one added from data). */
 export const builtInLogin = (name: string): SiteLogin | undefined =>
   SITE_LOGINS.find((l) => BUILT_IN.has(l) && (l.site === name || l.credential === name));
 
 /**
- * Logins from data (src/mods/login.ts), added at start after every
- * built-in. One whose site or credential name is already taken is skipped:
- * a built-in, then the first added, wins.
+ * Add logins at start: the repo's walks (`builtIn`), then data logins
+ * (src/mods/login.ts). One whose site or credential name is already taken
+ * is skipped: a built-in, then the first added, wins.
  */
-export function addSiteLogins(more: readonly SiteLogin[]): void {
+export function addSiteLogins(more: readonly SiteLogin[], o: { builtIn?: boolean } = {}): void {
   for (const l of more)
-    if (!SITE_LOGINS.some((s) => s.site === l.site || (s.credential ?? s.site) === l.site))
+    if (!SITE_LOGINS.some((s) => s.site === l.site || (s.credential ?? s.site) === l.site)) {
       (SITE_LOGINS as SiteLogin[]).push(l);
+      if (o.builtIn) BUILT_IN.add(l);
+    }
 }

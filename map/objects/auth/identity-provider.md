@@ -18,8 +18,8 @@ A sign-in reused by every site that shows its button: `IdentityProvider` in `src
 ## Shape
 
 - `PROVIDERS`, `IdentityProvider { site, host, buttons, signIn }`, `registerProvider`, `providerOf` — `src/auth/providers.ts`
-- Google: `googleWalk(ctx)` (17 screens, second step by passkey → TOTP → SMS → Tap Yes) and `signInToGoogle` — `src/auth/google.ts`
-- GitHub, Microsoft: `src/auth/github.ts`, `src/auth/microsoft.ts` register only; `walkInPlace` (`src/auth/providers.ts`) runs the repo walk (`src/walks/logins/{github,microsoft}.ts`) in place on the page the button opened
+- Google, GitHub, Microsoft: `src/auth/{google,github,microsoft}.ts` register only; `walkInPlace` (`src/auth/providers.ts`) runs the repo walk (`src/walks/logins/{google,github,microsoft}.ts`) in place on the page the button opened. `signInToGoogle` is that walk for a direct caller
+- Google's walk: second step by passkey → TOTP → SMS → Tap Yes; its apps (gmail, drive, calendar, docs, sheets, google-admin) come from `WALK_APPS.google` in `src/auth/sites.ts`
 
 ## Connected to
 
@@ -29,7 +29,7 @@ A sign-in reused by every site that shows its button: `IdentityProvider` in `src
 
 ## If you change this
 
-- **Hits:** `src/auth/login.ts:288-360` (`oauthLogin`, `landAfterOauth`), `src/auth/sites.ts`, `src/browser/flows/*-oauth-consent.ts`, `src/sites/wire.ts:71` (`consentProviderOf`), `test/google.test.ts`.
+- **Hits:** `src/auth/login.ts:288-360` (`oauthLogin`, `landAfterOauth`), `src/auth/sites.ts`, `src/browser/flows/*-oauth-consent.ts`, `src/sites/wire.ts:71` (`consentProviderOf`), `test/login-walks.test.ts`.
 - **Does not hit:** `src/auth/identities.ts`; site API tokens.
 
 ## Surfaces

@@ -13,7 +13,7 @@ export {
 } from "./codes.js";
 export { enrollTotpFlow, readSecretFromPage, seedIn, seedOnPage, storeSeed } from "./enroll.js";
 export { signInToGithub } from "./github.js";
-export { googleWalk, signInToGoogle } from "./google.js";
+export { signInToGoogle } from "./google.js";
 export {
   boundPage,
   boundRunner,
