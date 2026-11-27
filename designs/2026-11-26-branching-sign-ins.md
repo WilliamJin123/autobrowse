@@ -89,6 +89,8 @@ All five keep one runtime (`walk()`) and one hook: the artifact runs as a `SiteL
   - `password { field, submit }`: types `passwordOf`; a form that comes back after it fails; the previous password once on a rejected screen.
   - `code { kinds, field, submit, send? }`: asks under `ctx.serial`, each ask after the last code.
   - `passkey`, `push { waitMs }`, `provider { name }` (hands off to `providerOf(name).signIn`).
+  - `second-step { order }`: Google's choice of passkey, totp, a masked phone by its last digits, or push, from the credential and the page (`google.ts:110-166`). Microsoft's push and Cloudflare's saved-profile chooser get the same treatment: decision code lives in a kit op; the data file names it.
+- Google, Microsoft and Cloudflare convert too (William, 11-26), last, after the form sites prove the kit.
 - Example, Instagram:
 
 ```json
@@ -157,7 +159,7 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 - **A moved control:** fixes and the repairer, as today. Sign-in acts key their fixes under `<site>/login`, so one fix serves every caller.
 - **A known screen with a new look:** learned rows, as today. A row maps the look to the screen; the screen stays.
 - **A page no screen acts on:** an agent session from the failure page, goal "finish this sign-in screen". The agent never holds a secret; where one goes it names a kit op. The result is one screen in `walks/<site>/login-heal.json` (state dir), marked `from: heal`.
-- **Trial:** a heal screen with no secret op runs as a trial. One sign-in that passes through it makes it kept; a failure drops it. A heal screen with a secret op waits for a session to commit it to the repo file (`walks promote`). Reason: a bad try sets a 12 h hold and can lock the account.
+- **Trial:** every heal screen runs as a trial, a secret op included (William, 11-26). One sign-in that passes through it makes it kept; a failure drops it. A session may later commit a kept screen to the repo file (`walks promote`). A bad try sets a 12 h hold; the session check (771eacb) lifts a false one.
 - **Overlay load:** per screen, after the repo file. A screen that fails the schema (a repo screen it names was renamed) drops alone with a warning; the rest load. Trial counts go to an append-only log, so two accounts of one site never overwrite each other.
 - **Reader fix (all walks):** screens with a secret op leave the reader's `known` list (`screens.ts:393`). A secret then goes only on a page a recognizer matched.
 
@@ -180,7 +182,8 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 
 - A data file can hide a typo a type would catch. Mitigation: the schema, parity and fixtures.
 - A kit screen can match a site's own page (a "Not now" that is the flow's own). Mitigation: file order puts site screens first; kit screens act only on exact names.
-- A failed trial screen sets a hold that blocks the next try. Mitigation: no secret on a trial screen; one heal per hold.
+- A failed trial screen that typed a secret sets a 12 h hold. Mitigation: one heal per hold; the origin guard and the audit row; the session check lifts a hold when the account is signed in.
+- Google's walk has 19 screens and two 180 s waits. It goes last.
 - `walkLogin` has no live run. Mitigation: Instagram alone first, behind steps 1 to 3.
 - A resumed try runs a `once` password screen again (`handled` is fresh per try, `flow.ts:518`). `formWalk` does the same today; out of scope.
 - The walk name changes from `sign-in` to `login`, so learned rows under the old name stop matching. They come back on use.
@@ -192,10 +195,11 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 ## Open: William's decisions
 
 1. The option. Recommended: A. The alternative with the least risk: E.
-2. May a heal screen that types a secret run before a session commits it? Recommended: no. Screens with no secret run as trials; screens with a secret wait for a commit.
-3. Does "across the board" include the Google, Microsoft and Cloudflare walks? Recommended: not now. They stay code walks; data sign-ins reach them through `provider`. Google's second-step choice is decision code (`google.ts:110`), and rule 3 keeps the handoff.
+2. Decided 11-26: a heal screen that types a secret runs as a trial before any commit.
+3. Decided 11-26: Google, Microsoft and Cloudflare are in scope.
 
 ## Decision log
 
 - 2026-11-26: Doc written. Option A recommended.
 - 2026-11-26: goldfish review: 43 findings (critic 15, reader 15, zoom-out 13), 30 applied, 6 rejected; open: decisions 1 to 3. Added option E, the heal trigger, the reader fix, fixes for moved controls, the loader and overlay rules, an Instagram example; moved the outline `walk` op to its own task; decision 2 now keeps secrets off trial screens.
+- 2026-11-26: William: Google, Microsoft and Cloudflare in scope ("shoudl be in scope"); a secret on a trial screen is fine ("typing a secret befor ea commit is fine"). Added the `second-step` kit op. Open: decision 1.
