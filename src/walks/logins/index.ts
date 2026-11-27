@@ -6,9 +6,28 @@
  */
 
 import type { WalkSpecInput } from "../spec.js";
+import apple from "./apple.js";
+import costco from "./costco.js";
+import discord from "./discord.js";
 import facebook from "./facebook.js";
 import instagram from "./instagram.js";
+import instantly from "./instantly.js";
+import intuit from "./intuit.js";
+import npm from "./npm.js";
+import reddit from "./reddit.js";
 import tiktok from "./tiktok.js";
 import x from "./x.js";
 
-export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [instagram, facebook, x, tiktok];
+export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [
+  instagram,
+  facebook,
+  x,
+  tiktok,
+  instantly,
+  intuit,
+  npm,
+  apple,
+  discord,
+  reddit,
+  costco,
+];

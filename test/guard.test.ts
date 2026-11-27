@@ -10,9 +10,18 @@ import {
 import { describe, expect, it } from "vitest";
 import { noCodes } from "../src/auth/codes.js";
 import { boundRunner, guardedPage, registrable, SecretLeak } from "../src/auth/guard.js";
-import { passwordDomains, SITE_LOGINS, signInContext, siteAllowsHost } from "../src/auth/index.js";
+import {
+  SITE_LOGINS as BUILT_IN,
+  passwordDomains,
+  signInContext,
+  siteAllowsHost,
+} from "../src/auth/index.js";
 import { defineFlow, type FlowRunner } from "../src/browser/flow.js";
+import { repoWalkLogins } from "../src/walks/login.js";
 import { fakePage } from "./auth-fakes.js";
+
+// built-ins and the repo's walk files, as at boot
+const SITE_LOGINS = [...BUILT_IN, ...repoWalkLogins()];
 
 const cred = { username: "u", password: "hunter2!", recoveryCodes: [], passkeys: [] };
 

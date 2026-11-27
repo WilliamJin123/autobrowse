@@ -1,8 +1,8 @@
 import type { Credential, CredentialStore } from "credvault";
 import { describe, expect, it } from "vitest";
 import { codesOn, sealRecoveryCodesFlow } from "../src/auth/recovery.js";
-import { SITE_LOGINS } from "../src/auth/sites.js";
 import { loadedCount } from "../src/browser/webauthn.js";
+import { repoWalkLogins } from "../src/walks/login.js";
 import { fakePage } from "./auth-fakes.js";
 
 const CODE = (n: number) => n.toString(16).padStart(64, "0");
@@ -26,7 +26,7 @@ describe("recovery codes", () => {
   });
 
   it("unlocks npm's page with the key, seals the codes, prints only the count", async () => {
-    const npm = SITE_LOGINS.find((l) => l.site === "npm");
+    const npm = repoWalkLogins().find((l) => l.site === "npm");
     if (!npm) throw new Error("no npm login");
     const { held, store } = memoryStore({
       username: "william_jin",

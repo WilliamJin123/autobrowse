@@ -16,6 +16,7 @@ import {
   type SiteLogin,
 } from "../auth/login.js";
 import { failSignIn, signInState } from "../auth/sign-in-kit.js";
+import { ACCOUNT_CHORES } from "../auth/sites.js";
 import { NeedsHuman } from "../browser/session.js";
 import { onScreen, walkFlow } from "./flow.js";
 import { logHealTries, withHeal } from "./login-heal.js";
@@ -134,7 +135,10 @@ export function repoWalkLogins(
     const spec = walkSpecSchema.parse(file);
     if (spec.name !== "login")
       throw new Error(`${spec.site}/walk-${spec.name}: a repo sign-in walk is named login`);
-    return walkLogin(spec, walksDir ? { healDir: walksDir } : {});
+    return {
+      ...walkLogin(spec, walksDir ? { healDir: walksDir } : {}),
+      ...ACCOUNT_CHORES[spec.site],
+    };
   });
 }
 

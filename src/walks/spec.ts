@@ -175,7 +175,8 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
     url: z.string().min(1).optional(),
     as: z.string().regex(AS),
   }),
-  z.object({ kind: z.literal("captcha"), goal: z.string() }),
+  /** `box`: the captcha's frame; in a sign-in a person solves it until the box is gone. */
+  z.object({ kind: z.literal("captcha"), goal: z.string(), box: hintsSchema.optional() }),
   /** Login walks only: the credential's username into `field`. */
   z.object({ kind: z.literal("username"), goal: z.string(), field: hintsSchema }),
   /**

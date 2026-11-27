@@ -15,6 +15,7 @@ import {
   retypePrevious,
   type SignInState,
   signInWithPasskey,
+  solveCaptcha,
   typePassword,
 } from "../auth/sign-in-kit.js";
 import type { SecretValues } from "../auth/signup.js";
@@ -381,9 +382,13 @@ async function walkSpec(
           hint: op.hint,
         });
       }
-      case "passkey":
-        signIn(op);
+      case "passkey": {
+        const { ctx } = signIn(op);
+        // no key of ours: the ceremony would hang; a person answers with theirs
+        if (!ctx.cred.passkeys.length)
+          return personStep(ctx, `${spec.site}: the site asks for a security key; none is stored`);
         return signInWithPasskey(fp, op.start as Hints);
+      }
       case "click":
         gate(op);
         return fp.act({ kind: "click" }, await hintsFor(op), {
@@ -541,6 +546,9 @@ async function walkSpec(
         return fp.open(url, wall);
       }
       case "captcha": {
+        // a sign-in pauses for a person; elsewhere a person's step ends the run
+        if (deps.signIn)
+          return solveCaptcha(deps.signIn.state, deps.signIn.ctx, op.box as Hints | undefined);
         const c = await fp.captcha();
         if (!c.solved) fp.human(`${op.goal}: ${c.reason ?? "not solved"}`);
         return;

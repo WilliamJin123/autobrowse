@@ -13,7 +13,6 @@ import { signInToGoogle } from "./google.js";
 import { LINKEDIN_LOGIN_URL, signInToLinkedin } from "./linkedin.js";
 import {
   addressOf,
-  formLogin,
   LoginFailed,
   oauthLogin,
   type PasskeySetupSpec,
@@ -353,28 +352,6 @@ const googleAdmin: SiteLogin = {
   passkeySetup: GOOGLE_PASSKEY_SETUP,
 };
 
-const instantly: SiteLogin = {
-  site: "instantly",
-  home: "https://app.instantly.ai/",
-  ask: "Your Instantly login (app.instantly.ai), for warmup",
-  loggedIn: async (fp) => /app\.instantly\.ai\/app/.test(fp.url()),
-  signIn: formLogin("instantly", {
-    start: "https://app.instantly.ai/auth/login",
-    username: { role: "textbox", name: "Email" },
-    password: { role: "textbox", name: "Password" },
-    submit: { role: "button", name: "/^(log|sign) ?in$/i" },
-    code: {
-      kind: "email",
-      asks: /verification code|check your email/i,
-      field: { role: "textbox", name: "/code/i" },
-      submit: { role: "button", name: "/verify/i" },
-      hint: "instantly",
-    },
-    rejected: /invalid email or password/i,
-    success: /app\.instantly\.ai\/app/,
-  }),
-};
-
 /**
  * AWS console sign-in, the page behind `aws login` and `aws sso`: an IAM user
  * (`username` = `<account id or alias>/<iam user>`) or the root user
@@ -575,32 +552,6 @@ const hubspot: SiteLogin = {
   }),
 };
 
-/**
- * Intuit (the developer portal behind QuickBooks apps): email and password on
- * one page, an emailed code when Intuit is unsure of the browser (2026-10-09).
- */
-const intuit: SiteLogin = {
-  site: "intuit",
-  home: "https://developer.intuit.com/app/developer/dashboard",
-  loggedIn: async (fp) => /developer\.intuit\.com\/(app|appdetail|dashboard)/.test(fp.url()),
-  signIn: formLogin("intuit", {
-    start:
-      "https://accounts.intuit.com/app/sign-in?app_group=ExternalDeveloperPortal&asset_alias=Intuit.devx.devx",
-    username: { role: "textbox", name: "Email or user ID" },
-    password: { role: "textbox", name: "Password" },
-    submit: { role: "button", name: "Sign in" },
-    code: {
-      kind: "email",
-      asks: /verification code|enter the code|we sent|check your email/i,
-      field: { role: "textbox", name: "/code/i" },
-      submit: { role: "button", name: "/continue|verify|confirm/i" },
-      hint: "intuit",
-    },
-    rejected: /incorrect|doesn't match|try again/i,
-    success: /developer\.intuit\.com\//,
-  }),
-};
-
 const SENTRY_HOME = /https:\/\/[a-z0-9-]+\.sentry\.io\//;
 const sentry: SiteLogin = {
   site: "sentry",
@@ -735,152 +686,6 @@ const NPM_PASSKEY_SETUP: PasskeySetupSpec = {
 /** npm's key prompt, at sign-in and before sensitive pages ("Click the button below when you are ready to authenticate"). */
 const NPM_USE_KEY = { role: "button", name: "Use security key" } as const;
 
-const npm: SiteLogin = {
-  site: "npm",
-  passkeySetup: NPM_PASSKEY_SETUP,
-  // Five 64-hex codes, behind the key (mapped 2026-09-22).
-  recoveryCodes: {
-    url: (cred) => `https://www.npmjs.com/settings/${cred.username}/recovery-codes`,
-    unlock: NPM_USE_KEY,
-    codes: /\b[0-9a-f]{64}\b/i,
-  },
-  home: "https://www.npmjs.com/",
-  ask: "Your npm account (npmjs.com): username, password, authenticator key if set",
-  loggedIn: async (fp) =>
-    /npmjs\.com/.test(fp.url()) && !(await fp.has({ role: "link", name: "Sign In" })),
-  signIn: formLogin("npm", {
-    start: "https://www.npmjs.com/login",
-    username: { role: "textbox", name: "Username" },
-    password: { role: "textbox", name: "Password" },
-    submit: { role: "button", name: "Sign In" },
-    passkey: { asks: /security key|ready to authenticate/i, start: NPM_USE_KEY },
-    code: [
-      {
-        kind: "email",
-        asks: /sent a one-time password to your email/i,
-        field: { role: "textbox", name: "One-Time Password" },
-        submit: { role: "button", name: "Login" },
-        hint: "npm",
-      },
-      // No `asks`: the sign-in page's own banner can say "2FA" (10-26: the bypass-token
-      // notice did), so only the code box showing means npm wants a code.
-      {
-        kind: "totp",
-        field: { role: "textbox", name: "/code|one-time password/i" },
-        submit: { role: "button", name: "/verify|submit|continue|login/i" },
-      },
-    ],
-    rejected: /incorrect username or password|invalid credentials/i,
-    success: /npmjs\.com\/(?!login)/,
-  }),
-};
-
-/**
- * Apple (App Store Connect, the developer account): one Apple ID widget in an
- * iframe; the address, Continue, then the password shows late on the same
- * form. 2FA is a code on William's own devices: a person's step. Hints from
- * the 10-28 explore journal. Verified live 2026-10-28 (William).
- */
-const APPLE_WIDGET = "iframe#aid-auth-widget-iFrame";
-const apple: SiteLogin = {
-  site: "apple",
-  home: "https://appstoreconnect.apple.com/apps",
-  ask: "William's Apple ID for App Store Connect and the developer account",
-  loggedIn: async (fp) =>
-    /^https:\/\/(appstoreconnect|developer)\.apple\.com\/(?!login)/.test(fp.url()) &&
-    !(await fp.has(
-      { frame: APPLE_WIDGET, role: "textbox", name: "/email|phone|apple id|apple account/i" },
-      500,
-    )),
-  signIn: formLogin("apple", {
-    start: "https://appstoreconnect.apple.com/login",
-    username: {
-      frame: APPLE_WIDGET,
-      role: "textbox",
-      name: "/email|phone|apple id|apple account/i",
-    },
-    next: { frame: APPLE_WIDGET, role: "button", name: "Continue" },
-    password: { frame: APPLE_WIDGET, role: "textbox", name: "Password" },
-    submit: { frame: APPLE_WIDGET, role: "button", name: "Sign In" },
-    person: {
-      asks: /verification code|two-factor authentication/i,
-      why: "Apple sent a code to William's devices; type it in the window",
-    },
-    trust: { role: "button", name: "Trust" },
-    rejected: /check the account information you entered/i,
-    success: /^https:\/\/(appstoreconnect|developer)\.apple\.com\/(?!login)/,
-  }),
-};
-
-/**
- * Discord: email (or phone) and password on one page, then hCaptcha when it
- * doubts the device, then the authenticator when 2FA is on. A new location
- * is confirmed by a link Discord emails: that wall is a person's.
- * UNVERIFIED until its first live run.
- */
-const DISCORD_SIGNED_IN = /discord\.com\/(app|channels|developers|oauth2)/;
-const discord: SiteLogin = {
-  site: "discord",
-  home: "https://discord.com/channels/@me",
-  ask: "Your Discord login (email, password, authenticator key if 2FA is on): the account that owns the server",
-  loggedIn: async (fp) =>
-    DISCORD_SIGNED_IN.test(fp.url()) && !(await fp.has({ role: "button", name: "/^log ?in$/i" })),
-  // Mapped 2026-10-02: a bot token reset opens "Multi-Factor Authentication" with this box.
-  reauth: {
-    field: { role: "textbox", name: "/enter your password/i" },
-    submit: { role: "button", name: "/^submit$/i" },
-  },
-  signIn: formLogin("discord", {
-    start: "https://discord.com/login",
-    username: { role: "textbox", name: "/email or phone/i" },
-    password: { role: "textbox", name: "/^password/i" },
-    submit: { role: "button", name: "/^log ?in$/i" },
-    captcha: { css: 'iframe[src*="hcaptcha"]' },
-    code: {
-      kind: "totp",
-      asks: /multi-factor|auth(entication)? code|two-factor/i,
-      field: { role: "textbox", name: "/code/i" },
-      submit: { role: "button", name: "/confirm|log ?in|verify/i" },
-    },
-    rejected: /login or password is invalid|invalid login/i,
-    success: DISCORD_SIGNED_IN,
-  }),
-};
-
-/**
- * Reddit: the account's own login (the handle, then the password). Mapped
- * 2026-09-29 in headless explore: /login/ is a "Log In" dialog, textbox
- * "Email or username", textbox "Password", button "Log In" (disabled until
- * both are filled). A new device may be asked for an emailed code: unverified.
- * The front page is public, so `home` is settings: signed out, it is a wall.
- * Headless, Reddit's bot check refuses the right password as "Invalid
- * username or password": sign in with `autobrowse login reddit@wren --headed`
- * (2026-09-29, first try); the session then serves headless legs.
- */
-const REDDIT_LOGIN_URL = /reddit\.com\/(login|account\/login)/;
-const reddit: SiteLogin = {
-  site: "reddit",
-  home: "https://www.reddit.com/settings/",
-  ask: "Your Reddit login (username, password)",
-  loggedIn: async (fp) =>
-    !REDDIT_LOGIN_URL.test(fp.url()) && !(await fp.has({ role: "link", name: "/^log in$/i" })),
-  signIn: formLogin("reddit", {
-    start: "https://www.reddit.com/login/",
-    username: { role: "textbox", name: "Email or username" },
-    password: { role: "textbox", name: "Password" },
-    submit: { role: "button", name: "/^log in$/i" },
-    code: {
-      kind: "email",
-      asks: /verification code|check your (email|inbox)|enter the code/i,
-      field: { role: "textbox", name: "/code/i" },
-      submit: { role: "button", name: "/continue|verify|log in/i" },
-      hint: "reddit",
-    },
-    rejected: /incorrect username or password|invalid username or password/i,
-    success: /reddit\.com\/(?!login|account\/login)/,
-  }),
-};
-
 /**
  * Perplexity: made with "Continue with Google" as william@ (2026-09-29), no
  * password. Its session dies with the browser, so the runner signs in each
@@ -907,25 +712,31 @@ const perplexity: SiteLogin = {
 };
 
 /**
- * Costco.com (grocery orders): one form on signin.costco.com, email and
- * password (ids from the 11-09 snapshot) and a "Keep me signed in" tick.
+ * Account chores of sites whose sign-in is a walk file (src/walks/logins/):
+ * not sign-in steps, so they stay code; `repoWalkLogins` merges them in.
  */
-const costco: SiteLogin = {
-  site: "costco",
-  home: "https://www.costco.com/",
-  ask: "William's Costco.com login, for grocery orders",
-  loggedIn: async (fp) =>
-    /^https:\/\/www\.costco\.com\//.test(fp.url()) &&
-    !(await fp.has({ role: "link", name: "/^sign in/i" }, 1_000)),
-  signIn: formLogin("costco", {
-    start: "https://www.costco.com/LogonForm",
-    username: { css: "#signInName" },
-    password: { css: "#password" },
-    submit: { css: "#next" },
-    keepSignedIn: { css: "#rememberMe" },
-    rejected: /incorrect|invalid|not recognized|doesn.t match/i,
-    success: /^https:\/\/www\.costco\.com\/(?!LogonForm)/,
-  }),
+export const ACCOUNT_CHORES: Readonly<
+  Record<
+    string,
+    Pick<SiteLogin, "reauth" | "totpSetup" | "passwordChange" | "passkeySetup" | "recoveryCodes">
+  >
+> = {
+  npm: {
+    passkeySetup: NPM_PASSKEY_SETUP,
+    // Five 64-hex codes, behind the key (mapped 2026-09-22).
+    recoveryCodes: {
+      url: (cred) => `https://www.npmjs.com/settings/${cred.username}/recovery-codes`,
+      unlock: NPM_USE_KEY,
+      codes: /\b[0-9a-f]{64}\b/i,
+    },
+  },
+  // Mapped 2026-10-02: a bot token reset opens "Multi-Factor Authentication" with this box.
+  discord: {
+    reauth: {
+      field: { role: "textbox", name: "/enter your password/i" },
+      submit: { role: "button", name: "/^submit$/i" },
+    },
+  },
 };
 
 export const SITE_LOGINS: readonly SiteLogin[] = [
@@ -934,22 +745,15 @@ export const SITE_LOGINS: readonly SiteLogin[] = [
   // After google: a lookup by credential name finds google itself first.
   ...GOOGLE_APPS,
   googleAdmin,
-  instantly,
   aws,
   anthropic,
   twilio,
   sentry,
   linkedin,
   outlook,
-  npm,
-  apple,
   github,
-  reddit,
   perplexity,
-  discord,
   hubspot,
-  intuit,
-  costco,
   learnLogin,
 ];
 

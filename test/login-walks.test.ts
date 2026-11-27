@@ -548,3 +548,336 @@ describe("tiktok walk", () => {
     );
   });
 });
+
+describe("one-page form walks", () => {
+  // site, start URL, the form's controls, its submit, the URL past it
+  const FORMS = [
+    [
+      "instantly",
+      "https://app.instantly.ai/auth/login",
+      ["textbox:Email", "textbox:Password", "button:Log in"],
+      "button:Log in",
+      "https://app.instantly.ai/app/campaigns",
+    ],
+    [
+      "intuit",
+      "https://accounts.intuit.com/app/sign-in",
+      ["textbox:Email or user ID", "textbox:Password", "button:Sign in"],
+      "button:Sign in",
+      "https://developer.intuit.com/app/developer/dashboard",
+    ],
+    [
+      "npm",
+      "https://www.npmjs.com/login",
+      ["textbox:Username", "textbox:Password", "button:Sign In"],
+      "button:Sign In",
+      "https://www.npmjs.com/",
+    ],
+    [
+      "discord",
+      "https://discord.com/login",
+      ["textbox:Email or Phone Number", "textbox:Password", "button:Log In"],
+      "button:Log In",
+      "https://discord.com/channels/@me",
+    ],
+    [
+      "reddit",
+      "https://www.reddit.com/login/",
+      ["textbox:Email or username", "textbox:Password", "button:Log In"],
+      "button:Log In",
+      "https://www.reddit.com/",
+    ],
+    [
+      "costco",
+      "https://www.costco.com/LogonForm",
+      ["css:#signInName", "css:#password", "css:#next"],
+      "css:#next",
+      "https://www.costco.com/",
+    ],
+  ] as const;
+
+  for (const [site, url, has, submit, home] of FORMS)
+    it(`${site}: opens the login, types both, lands signed in`, async () => {
+      const s = siteOf(
+        {
+          login: { url, has: [...has], on: { [`click ${submit}`]: "home" } },
+          home: { url: home, has: [] },
+        },
+        "login",
+      );
+      await loginOf(site).signIn(ctxFor(s.fp).ctx);
+      expect(s.opened).toHaveLength(1);
+      expect(s.acts.filter((a) => a.startsWith("fill"))).toEqual([
+        `fill ${has[0].slice(has[0].indexOf(":") + 1)}=wren`,
+        `fill ${has[1].slice(has[1].indexOf(":") + 1)}=pw-ig-1`,
+      ]);
+      expect(s.acts.at(-1)).toBe(`click ${submit.slice(submit.indexOf(":") + 1)}`);
+      expect(await loginOf(site).loggedIn(s.fp)).toBe(true);
+    });
+
+  it("costco ticks Keep me signed in before the submit", async () => {
+    const s = siteOf(
+      {
+        login: {
+          url: "https://www.costco.com/LogonForm",
+          has: ["css:#signInName", "css:#password", "css:#rememberMe", "css:#next"],
+          on: { "click css:#next": "home" },
+        },
+        home: { url: "https://www.costco.com/", has: [] },
+      },
+      "login",
+    );
+    await loginOf("costco").signIn(ctxFor(s.fp).ctx);
+    expect(s.acts.slice(-2)).toEqual(["script #rememberMe", "click #next"]);
+  });
+
+  it("signed out is not signed in: the login link or the form still shows", async () => {
+    const npm = siteOf({ home: { url: "https://www.npmjs.com/", has: ["link:Sign In"] } }, "home");
+    expect(await loginOf("npm").loggedIn(npm.fp)).toBe(false);
+    const reddit = siteOf(
+      { login: { url: "https://www.reddit.com/login/", has: ["textbox:Password"] } },
+      "login",
+    );
+    expect(await loginOf("reddit").loggedIn(reddit.fp)).toBe(false);
+  });
+
+  for (const [site, code, kind, says, submit] of [
+    [
+      "instantly",
+      "textbox:Code",
+      "email",
+      "Check your email for a verification code",
+      "button:Verify",
+    ],
+    ["intuit", "textbox:Verification code", "email", "Enter the code we sent", "button:Continue"],
+    [
+      "reddit",
+      "textbox:Verification code",
+      "email",
+      "Check your inbox for a code",
+      "button:Continue",
+    ],
+    [
+      "discord",
+      "textbox:6-digit authentication code",
+      "totp",
+      "Multi-Factor Authentication",
+      "button:Confirm",
+    ],
+  ] as const)
+    it(`${site}: takes the ${kind} code`, async () => {
+      const form = FORMS.find((f) => f[0] === site) as (typeof FORMS)[number];
+      const s = siteOf(
+        {
+          login: { url: form[1], has: [...form[2]], on: { [`click ${form[3]}`]: "code" } },
+          code: {
+            url: form[1],
+            text: says,
+            has: [code, submit],
+            on: { [`click ${submit}`]: "home" },
+          },
+          home: { url: form[4], has: [] },
+        },
+        "login",
+      );
+      const { ctx, asked } = ctxFor(s.fp, [kind]);
+      await loginOf(site).signIn(ctx);
+      expect(asked).toEqual([kind]);
+      expect(s.acts.slice(-2)).toEqual([
+        `fill ${code.slice(code.indexOf(":") + 1)}=123456`,
+        `click ${submit.slice(submit.indexOf(":") + 1)}`,
+      ]);
+    });
+
+  it("a rejected password is refused", async () => {
+    const s = siteOf(
+      {
+        login: {
+          url: "https://www.reddit.com/login/",
+          has: ["textbox:Email or username", "textbox:Password", "button:Log In"],
+          on: { "click button:Log In": "wrong" },
+        },
+        wrong: {
+          url: "https://www.reddit.com/login/",
+          has: ["textbox:Email or username", "textbox:Password", "button:Log In"],
+          text: "Invalid username or password.",
+        },
+      },
+      "login",
+    );
+    await expect(loginOf("reddit").signIn(ctxFor(s.fp).ctx)).rejects.toMatchObject({
+      refused: true,
+      case: "password",
+    });
+  });
+});
+
+describe("npm walk", () => {
+  const FORM = ["textbox:Username", "textbox:Password", "button:Sign In"];
+  const LOGIN = "https://www.npmjs.com/login";
+  const keySite = () =>
+    siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign In": "key" } },
+        key: {
+          url: "https://www.npmjs.com/login/webauthn",
+          text: "Click the button below when you are ready to authenticate",
+          has: ["button:Use security key"],
+          on: { "click button:Use security key": "home" },
+        },
+        home: { url: "https://www.npmjs.com/", has: [] },
+      },
+      "login",
+    );
+
+  it("our stored passkey answers the security key ask", async () => {
+    const s = keySite();
+    const { ctx } = ctxFor(s.fp);
+    (ctx.cred as { passkeys: unknown[] }).passkeys = [{ rpId: "npmjs.com" }];
+    await loginOf("npm").signIn(ctx);
+    expect(s.acts.at(-1)).toBe("click Use security key");
+  });
+
+  it("no stored passkey: a person answers, never a click that hangs", async () => {
+    const s = keySite();
+    await expect(loginOf("npm").signIn(ctxFor(s.fp).ctx)).rejects.toBeInstanceOf(NeedsHuman);
+    expect(s.acts).not.toContain("click Use security key");
+  });
+
+  it("the emailed one-time password, then the authenticator box alone takes a totp", async () => {
+    const emailed = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign In": "otp" } },
+        otp: {
+          url: "https://www.npmjs.com/login/otp",
+          text: "We sent a one-time password to your email",
+          has: ["textbox:One-Time Password", "button:Login"],
+          on: { "click button:Login": "home" },
+        },
+        home: { url: "https://www.npmjs.com/", has: [] },
+      },
+      "login",
+    );
+    const one = ctxFor(emailed.fp, ["email", "totp"]);
+    await loginOf("npm").signIn(one.ctx);
+    expect(one.asked).toEqual(["email"]);
+    const app = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign In": "otp" } },
+        otp: {
+          url: "https://www.npmjs.com/login/otp",
+          text: "Two-factor authentication",
+          has: ["textbox:Authentication code", "button:Verify"],
+          on: { "click button:Verify": "home" },
+        },
+        home: { url: "https://www.npmjs.com/", has: [] },
+      },
+      "login",
+    );
+    const two = ctxFor(app.fp, ["totp"]);
+    await loginOf("npm").signIn(two.ctx);
+    expect(two.asked).toEqual(["totp"]);
+  });
+
+  it("keeps its account chores: passkey setup and recovery codes", () => {
+    expect(loginOf("npm").passkeySetup).toBeDefined();
+    expect(loginOf("npm").recoveryCodes?.unlock).toEqual({
+      role: "button",
+      name: "Use security key",
+    });
+    expect(loginOf("discord").reauth?.submit).toEqual({ role: "button", name: "/^submit$/i" });
+  });
+});
+
+describe("apple walk", () => {
+  const LOGIN = "https://appstoreconnect.apple.com/login";
+  const USER = "textbox:Email or Phone Number";
+
+  it("the Apple ID, Continue, the password under it (never retyped), the person's code, Trust", async () => {
+    const s = siteOf(
+      {
+        user: { url: LOGIN, has: [USER, "button:Continue"], on: { "click button:Continue": "pw" } },
+        pw: {
+          url: LOGIN,
+          has: [USER, "textbox:Password", "button:Sign In"],
+          on: { "click button:Sign In": "trust" },
+        },
+        trust: {
+          url: LOGIN,
+          text: "Trust this browser?",
+          has: ["button:Trust", "button:Not Now"],
+          on: { "click button:Trust": "apps" },
+        },
+        apps: { url: "https://appstoreconnect.apple.com/apps", has: [] },
+      },
+      "user",
+    );
+    await loginOf("apple").signIn(ctxFor(s.fp).ctx);
+    expect(s.acts).toEqual([
+      "fill Email or Phone Number=wren",
+      "click Continue",
+      "fill Password=pw-ig-1",
+      "click Sign In",
+      "click Trust",
+    ]);
+  });
+
+  it("the code on William's devices is a person's", async () => {
+    const s = siteOf(
+      {
+        pw: {
+          url: LOGIN,
+          has: [USER, "textbox:Password", "button:Sign In"],
+          on: { "click button:Sign In": "code" },
+        },
+        code: {
+          url: LOGIN,
+          text: "Two-Factor Authentication: enter the verification code",
+          has: [],
+        },
+      },
+      "pw",
+    );
+    await expect(loginOf("apple").signIn(ctxFor(s.fp).ctx)).rejects.toBeInstanceOf(NeedsHuman);
+  });
+});
+
+describe("discord walk", () => {
+  const LOGIN = "https://discord.com/login";
+  const FORM = ["textbox:Email or Phone Number", "textbox:Password", "button:Log In"];
+
+  it("a captcha it cannot solve is a person's", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Log In": "captcha" } },
+        captcha: { url: LOGIN, has: ['css:iframe[src*="hcaptcha"]'] },
+      },
+      "login",
+    );
+    await expect(loginOf("discord").signIn(ctxFor(s.fp).ctx)).rejects.toBeInstanceOf(NeedsHuman);
+  });
+
+  it("a captcha the runner solves: the walk goes on to the code", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Log In": "captcha" } },
+        captcha: { url: LOGIN, has: ['css:iframe[src*="hcaptcha"]'] },
+        code: {
+          url: LOGIN,
+          text: "Multi-Factor Authentication",
+          has: ["textbox:6-digit authentication code", "button:Confirm"],
+          on: { "click button:Confirm": "home" },
+        },
+        home: { url: "https://discord.com/channels/@me", has: [] },
+      },
+      "login",
+    );
+    s.fp.captcha = async () => {
+      s.go("code");
+      return { solved: true, kind: "hcaptcha", vendor: null, reason: null } as never;
+    };
+    const { ctx, asked } = ctxFor(s.fp, ["totp"]);
+    await loginOf("discord").signIn(ctx);
+    expect(asked).toEqual(["totp"]);
+  });
+});

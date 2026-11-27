@@ -146,14 +146,18 @@ export async function enterCode(st: SignInState, ctx: SignInContext, box: CodeBo
   });
 }
 
-/** A captcha: solved here, else a person's, done when its box is gone. */
-export async function solveCaptcha(st: SignInState, ctx: SignInContext, box: Hints): Promise<void> {
+/** A captcha: solved here, else a person's, done when its box is gone (no box: when the page moves on). */
+export async function solveCaptcha(
+  st: SignInState,
+  ctx: SignInContext,
+  box?: Hints,
+): Promise<void> {
   const got = await ctx.fp.captcha();
   if (!got.solved)
     await personStep(
       ctx,
       `${st.site}: the sign-in captcha is a person's (${got.reason})`,
-      async () => !(await ctx.fp.has(box)),
+      box ? async () => !(await ctx.fp.has(box)) : undefined,
     );
 }
 

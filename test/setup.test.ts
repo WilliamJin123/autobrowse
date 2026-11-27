@@ -41,7 +41,6 @@ describe("setup", () => {
       "y",
       "admin@x.co", // cloudflare via google
       "", // google@admin skipped
-      "", // instantly skipped
       "", // aws skipped
       "", // anthropic skipped
       "", // twilio skipped
@@ -52,6 +51,13 @@ describe("setup", () => {
       "", // facebook skipped
       "", // x skipped
       "", // tiktok skipped
+      "", // instantly skipped
+      "", // intuit skipped
+      "", // npm skipped
+      "", // apple skipped
+      "", // discord skipped
+      "", // reddit skipped
+      "", // costco skipped
     ]);
     const out = await runSetup(io, store, LOGINS, {
       tier: 1,
@@ -61,27 +67,27 @@ describe("setup", () => {
     expect(out.stored).toEqual(["google", "cloudflare"]);
     expect(out.skipped).toEqual([
       "google@admin",
-      "instantly",
       "aws",
       "anthropic",
       "twilio",
       "sentry",
       "linkedin",
       "microsoft",
-      "npm",
-      "apple",
       "github",
-      "reddit",
       "perplexity",
-      "discord",
       "hubspot",
-      "intuit",
-      "costco",
       "outlook@uw",
       "instagram",
       "facebook",
       "x",
       "tiktok",
+      "instantly",
+      "intuit",
+      "npm",
+      "apple",
+      "discord",
+      "reddit",
+      "costco",
     ]);
     expect((await store.get("cloudflare"))?.via).toBe("google");
     expect(asked.filter((q) => q.startsWith("hidden")).length).toBe(2);
