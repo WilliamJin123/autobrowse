@@ -51,13 +51,14 @@ export function walkLogin(
   const totp = spec.screens.some((s) =>
     s.ops.some((op) => op.kind === "one-time-code" && op.kinds.includes("totp")),
   );
+  const origins = o.origins ?? spec.origins;
   return {
     site: o.site ?? spec.site,
     home: spec.home ?? spec.start,
     // setup's prompt
     ask: `Your ${spec.site} login (username, password${totp ? ", authenticator key if set" : ""})`,
     ...(credential ? { credential } : {}),
-    ...(o.origins ? { origins: o.origins } : {}),
+    ...(origins ? { origins } : {}),
     ...(o.healDir ? { heal: { spec, dir: o.healDir } } : {}),
     // Signed in: the page the sign-in landed on, by every check its goal names.
     loggedIn: async (fp) => !!goal && (await onScreen(fp, goal)),

@@ -4,13 +4,15 @@
  * button starts disabled and its grant request sometimes stalls: two tries,
  * a reload between, never a second sign-in.
  */
-import { TIKTOK_LOGIN_URL } from "../../auth/tiktok.js";
+import tiktokLogin from "../../walks/logins/tiktok.js";
+import { regexOf } from "../../walks/spec.js";
 import { consentFlow } from "./consent-walker.js";
 
 export const tiktokOauthConsent = consentFlow({
   site: "tiktok",
   home: "https://www.tiktok.com/foryou",
-  loginUrl: TIKTOK_LOGIN_URL,
+  // the sign-in walk's own pages
+  loginUrl: regexOf(tiktokLogin.signInHere),
   allow: { role: "button", name: "/^(authorize|continue|allow)$/i" },
   refused: /invalid|unauthorized|something went wrong|error|not registered/i,
   rounds: 2,

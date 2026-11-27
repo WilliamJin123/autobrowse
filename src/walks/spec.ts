@@ -312,6 +312,8 @@ export const walkSpecSchema = z
       .default([]),
     /** A click on it creates, sends or pays: running it takes a yes. */
     irreversible: z.boolean().default(false),
+    /** Login walks: domains the password may be typed on beside `start`'s (an SSO host, a sister domain). */
+    origins: z.array(z.string().min(1)).optional(),
     /** Login walks: a signed-in page, opened to check a session; default `start`. */
     home: z.string().url().optional(),
     /** Login walks: the site's sign-in pages; on one, the walk runs in place (no open), so a `next` in its URL survives. */
@@ -338,6 +340,8 @@ export const walkSpecSchema = z
           at(`a ${op.kind} op runs only in a walk named ${LOGIN_WALK}`, "ops", j);
       });
     });
+    if (w.origins && !login)
+      ctx.addIssue({ code: "custom", path: ["origins"], message: "origins is for a login walk" });
     if (w.home && !login)
       ctx.addIssue({ code: "custom", path: ["home"], message: "home is for a login walk" });
     if (w.signInHere && !login)

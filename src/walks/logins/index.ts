@@ -6,6 +6,9 @@
  */
 
 import type { WalkSpecInput } from "../spec.js";
+import facebook from "./facebook.js";
 import instagram from "./instagram.js";
+import tiktok from "./tiktok.js";
+import x from "./x.js";
 
-export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [instagram];
+export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [instagram, facebook, x, tiktok];

@@ -4,13 +4,15 @@
  * shows "Sensitive permissions requested" and keeps Authorize disabled until
  * the "I trust this app" box is ticked (mapped 2026-09-27 as wren_automation).
  */
-import { X_LOGIN_URL } from "../../auth/x.js";
+import xLogin from "../../walks/logins/x.js";
+import { regexOf } from "../../walks/spec.js";
 import { consentFlow } from "./consent-walker.js";
 
 export const xOauthConsent = consentFlow({
   site: "x",
   home: "https://x.com/home",
-  loginUrl: X_LOGIN_URL,
+  // the sign-in walk's own pages
+  loginUrl: regexOf(xLogin.signInHere),
   allow: { role: "button", name: "/^(authorize app|authorize|allow)$/i" },
   confirm: {
     unticked: { css: '[role=checkbox][aria-checked="false"]' },

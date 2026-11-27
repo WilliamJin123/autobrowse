@@ -2,10 +2,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CodeKind, SignInContext } from "../src/auth/login.js";
-import { passwordDomains } from "../src/auth/login.js";
-import { SITE_LOGINS } from "../src/auth/sites.js";
-import { signInToX, X_LOGIN_URL } from "../src/auth/x.js";
+import type { CodeKind } from "../src/auth/codes.js";
+import type { SignInContext } from "../src/auth/login.js";
 import { xOauthConsent } from "../src/browser/flows/x-oauth-consent.js";
 import type { Hints } from "../src/browser/locate.js";
 import { httpClient } from "../src/clients/http.js";
@@ -29,82 +27,6 @@ const ctx = (fp: SignInContext["fp"], kinds: CodeKind[]): SignInContext => ({
 });
 const line = (a: { op: { kind: string }; hints: Hints }) =>
   `${a.op.kind} ${a.hints.name ?? a.hints.text}`;
-
-describe("x sign-in", () => {
-  it("is a site login bound to x.com and twitter.com whose signInHere covers the flow", () => {
-    expect(SITE_LOGINS.find((l) => l.site === "x")?.signInHere?.at).toBe(X_LOGIN_URL);
-    expect(passwordDomains(SITE_LOGINS, "x", base)).toEqual(["x.com", "twitter.com"]);
-    expect(X_LOGIN_URL.test("https://x.com/i/flow/login?redirect_after_login=%2Fi%2Foauth2")).toBe(
-      true,
-    );
-    expect(X_LOGIN_URL.test("https://twitter.com/login")).toBe(true);
-    // The page X moved its login to in 2026-09.
-    expect(
-      X_LOGIN_URL.test("https://x.com/i/jf/onboarding/web?mode=login&redirect_after_login=%2F"),
-    ).toBe(true);
-    expect(X_LOGIN_URL.test("https://x.com/home")).toBe(false);
-    expect(X_LOGIN_URL.test("https://x.com/i/oauth2/authorize?x")).toBe(false);
-  });
-
-  it("username, Next, the handle again on an unusual login, password, then the texted code", async () => {
-    let url = "https://x.com/i/flow/login";
-    const { fp, acts } = fakePage({
-      text: [
-        "Phone, email, or username Next",
-        "Enter your phone number or username",
-        "Enter your password Log in",
-        "We texted you a verification code",
-        "Home",
-      ],
-      present: () => true,
-      url: () => url,
-      onAct: (n) => {
-        if (n === 8) url = "https://x.com/home";
-      },
-    });
-    await signInToX(ctx(fp, ["sms"]));
-    expect(acts.map(line)).toEqual([
-      "fill /phone, email,? (address,)? ?or username|^email or username$/i",
-      "click /^(next|continue)$/i",
-      "fill /phone number or username/i",
-      "click /^(next|continue)$/i",
-      "fill /^password( show password)?$/i",
-      "click /^(log in|continue)$/i",
-      "fill /verification code|^code$/i",
-      "click /^(next|continue)$/i",
-    ]);
-    expect(acts[6]?.op).toMatchObject({ kind: "fill", value: "123456" });
-  });
-
-  it("the 2026-09 page: Email or username, Continue, Password, Continue, no code", async () => {
-    let url = "https://x.com/i/jf/onboarding/web?mode=login";
-    const { fp, acts } = fakePage({
-      text: ["Email or username Continue", "Login Password Continue", "Home"],
-      present: (h) => !/phone number or username|code/i.test(String(h.name)),
-      url: () => url,
-      onAct: (n) => {
-        if (n === 4) url = "https://x.com/home";
-      },
-    });
-    await signInToX(ctx(fp, []));
-    expect(acts.map((a) => a.op.kind)).toEqual(["fill", "click", "fill", "click"]);
-    expect(acts[2]?.op).toMatchObject({ kind: "fill", value: "p" });
-  });
-
-  it("stops on a rejected password or a puzzle", async () => {
-    const rejected = fakePage({
-      text: ["Phone, email, or username", "Wrong password!"],
-      present: (h) => !/phone number or username/i.test(String(h.name)),
-    });
-    await expect(signInToX(ctx(rejected.fp, []))).rejects.toThrow(/password rejected/);
-    const puzzle = fakePage({
-      text: ["Phone, email, or username", "Solve this puzzle so we know you're a real person"],
-      present: (h) => !/phone number or username|code/i.test(String(h.name)),
-      url: "https://x.com/i/flow/login",
-    });
-    await expect(signInToX(ctx(puzzle.fp, ["sms"]))).rejects.toThrow(/check only a person/);
-  });
-});
 
 function fakeApi(answer: (u: URL, init?: RequestInit) => unknown) {
   const calls: Array<{ method: string; url: URL; headers: Headers; body: string | Uint8Array }> =

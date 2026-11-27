@@ -47,11 +47,11 @@ describe("setup", () => {
       "", // twilio skipped
       "", // sentry skipped
       "", // linkedin skipped
+      "", // microsoft skipped
+      "", // instagram skipped
       "", // facebook skipped
       "", // x skipped
       "", // tiktok skipped
-      "", // microsoft skipped
-      "", // instagram skipped
     ]);
     const out = await runSetup(io, store, LOGINS, {
       tier: 1,
@@ -67,9 +67,6 @@ describe("setup", () => {
       "twilio",
       "sentry",
       "linkedin",
-      "facebook",
-      "x",
-      "tiktok",
       "microsoft",
       "npm",
       "apple",
@@ -82,6 +79,9 @@ describe("setup", () => {
       "costco",
       "outlook@uw",
       "instagram",
+      "facebook",
+      "x",
+      "tiktok",
     ]);
     expect((await store.get("cloudflare"))?.via).toBe("google");
     expect(asked.filter((q) => q.startsWith("hidden")).length).toBe(2);

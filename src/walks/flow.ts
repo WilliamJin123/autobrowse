@@ -533,10 +533,12 @@ async function walkSpec(
         return;
       case "open": {
         const whole = /^\{([a-z][a-zA-Z0-9]*)\}$/.exec(op.url);
-        if (!whole) return fp.open(await fill(op.url, op.goal, true));
+        // a sign-in may open another of its own login pages
+        const wall = isLoginWalk(spec) ? { allowWall: true } : undefined;
+        if (!whole) return fp.open(await fill(op.url, op.goal, true), wall);
         const url = await fieldValue(whole[1] as string, op.goal);
         if (!/^https?:\/\//.test(url)) throw new Error(`${op.goal}: ${whole[1]} is not a URL`);
-        return fp.open(url);
+        return fp.open(url, wall);
       }
       case "captcha": {
         const c = await fp.captcha();

@@ -2,10 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { FACEBOOK_LOGIN_URL, signInToFacebook } from "../src/auth/facebook.js";
-import type { CodeKind, SignInContext } from "../src/auth/login.js";
-import { passwordDomains } from "../src/auth/login.js";
-import { SITE_LOGINS } from "../src/auth/sites.js";
+import type { CodeKind } from "../src/auth/codes.js";
+import type { SignInContext } from "../src/auth/login.js";
 import { facebookOauthConsent } from "../src/browser/flows/facebook-oauth-consent.js";
 import type { Hints } from "../src/browser/locate.js";
 import { httpClient } from "../src/clients/http.js";
@@ -31,70 +29,8 @@ const ctx = (fp: SignInContext["fp"], kinds: CodeKind[]): SignInContext => ({
   credFor: async () => base,
   as: () => ctx(fp, kinds),
 });
-const line = (a: { op: { kind: string }; hints: Hints }) =>
+const _line = (a: { op: { kind: string }; hints: Hints }) =>
   `${a.op.kind} ${a.hints.name ?? a.hints.text}`;
-
-describe("facebook sign-in", () => {
-  it("is a site login bound to Meta's hosts, whose signInHere covers the checkpoints", () => {
-    const login = SITE_LOGINS.find((l) => l.site === "facebook");
-    expect(login?.signInHere?.at).toBe(FACEBOOK_LOGIN_URL);
-    expect(passwordDomains(SITE_LOGINS, "facebook", base)).toEqual([
-      "facebook.com",
-      "meta.com",
-      "fb.com",
-    ]);
-    for (const u of [
-      "https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Fv23.0%2Fdialog%2Foauth",
-      "https://www.facebook.com/checkpoint/?next=x",
-      "https://www.facebook.com/two_step_verification/authentication/?next=x",
-    ])
-      expect(FACEBOOK_LOGIN_URL.test(u)).toBe(true);
-    expect(FACEBOOK_LOGIN_URL.test("https://www.facebook.com/")).toBe(false);
-    expect(FACEBOOK_LOGIN_URL.test("https://www.facebook.com/v23.0/dialog/oauth?x")).toBe(false);
-  });
-
-  it("email, password, the authenticator code, then declines the save prompt", async () => {
-    let url = "https://www.facebook.com/login/?next=x";
-    const { fp, acts } = fakePage({
-      text: [
-        "Email or phone number Password Log in",
-        "Enter the 6-digit code from your authentication app",
-        "Save browser?",
-      ],
-      present: () => true,
-      url: () => url,
-      onAct: (n) => {
-        if (n === 3) url = "https://www.facebook.com/two_step_verification/two_factor/?next=x";
-        if (n === 5) url = "https://www.facebook.com/v23.0/dialog/oauth?client_id=1";
-      },
-    });
-    await signInToFacebook(ctx(fp, ["totp"]));
-    expect(acts.map(line)).toEqual([
-      "fill /email( address)? or phone( number)?|^email$/i",
-      "fill /^password$/i",
-      "click /^log in$/i",
-      "fill /^code$|login code|6-digit|security code/i",
-      "click /^(continue|submit|next|confirm)$/i",
-      "click /^(don.t save|not now|skip)$/i",
-      "click /^(don.t save|not now|skip)$/i",
-    ]);
-    expect(acts[3]?.op).toMatchObject({ kind: "fill", value: "123456" });
-  });
-
-  it("stops on a rejected password or a check only a person can pass", async () => {
-    const rejected = fakePage({
-      text: ["Email or phone number", "The password you've entered is incorrect."],
-      present: () => true,
-    });
-    await expect(signInToFacebook(ctx(rejected.fp, []))).rejects.toThrow(/password rejected/);
-    const selfie = fakePage({
-      text: ["Email or phone number", "Confirm your identity: upload a photo of yourself"],
-      present: (h) => !/code/i.test(String(h.name)),
-      url: "https://www.facebook.com/checkpoint/1/",
-    });
-    await expect(signInToFacebook(ctx(selfie.fp, ["sms"]))).rejects.toThrow(/check only a person/);
-  });
-});
 
 describe("meta site", () => {
   it("is registered, its consent is a catalogued flow, and its spends routes are marked", () => {

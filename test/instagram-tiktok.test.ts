@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CodeKind, SignInContext } from "../src/auth/login.js";
-import { SITE_LOGINS } from "../src/auth/sites.js";
-import { signInToTiktok, TIKTOK_LOGIN_URL } from "../src/auth/tiktok.js";
+import type { CodeKind } from "../src/auth/codes.js";
+import type { SignInContext } from "../src/auth/login.js";
 import { countOf } from "../src/browser/flows/dialog-following.js";
 import { feedPostsOf, followedOfIg, mediaPostOf } from "../src/browser/flows/instagram-act.js";
 import { instagramOauthConsent } from "../src/browser/flows/instagram-oauth-consent.js";
@@ -35,65 +34,6 @@ const ctx = (fp: SignInContext["fp"], kinds: CodeKind[]): SignInContext => ({
 });
 const line = (a: { op: { kind: string }; hints: Hints }) =>
   `${a.op.kind} ${a.hints.name ?? a.hints.text}`;
-
-describe("tiktok sign-in", () => {
-  it("is a site login whose signInHere covers the login pages", () => {
-    const login = SITE_LOGINS.find((l) => l.site === "tiktok");
-    expect(login?.signInHere?.at).toBe(TIKTOK_LOGIN_URL);
-    expect(TIKTOK_LOGIN_URL.test("https://www.tiktok.com/login/phone-or-email/email")).toBe(true);
-    expect(TIKTOK_LOGIN_URL.test("https://www.tiktok.com/login?redirect_url=x")).toBe(true);
-    expect(TIKTOK_LOGIN_URL.test("https://www.tiktok.com/foryou")).toBe(false);
-    expect(TIKTOK_LOGIN_URL.test("https://www.tiktok.com/v2/auth/authorize/?x")).toBe(false);
-  });
-
-  it("goes to the email tab from the chooser, signs in, takes the emailed code", async () => {
-    let url = "https://www.tiktok.com/login?redirect_url=x";
-    let tab = "chooser";
-    const { fp, acts } = fakePage({
-      text: [
-        "Log in to TikTok Use phone / email / username",
-        "Log in with email or username",
-        "Email or username Password Log in",
-        "Enter the 6-digit code sent to your email",
-      ],
-      present: (h) => {
-        const n = String(h.name ?? h.text);
-        if (tab === "chooser") return /use phone|log in with email/i.test(n);
-        return true;
-      },
-      url: () => url,
-      onAct: (n) => {
-        if (n === 2) tab = "form";
-        if (n === 7) url = "https://www.tiktok.com/foryou";
-      },
-    });
-    await signInToTiktok(ctx(fp, ["email"]));
-    expect(acts.map(line)).toEqual([
-      "click /use phone \\/ email \\/ username/i",
-      "click /log in with email or username/i",
-      "fill /email or username/i",
-      "fill /^password$/i",
-      "click /^log in$/i",
-      "fill /6-digit code|verification code|enter code/i",
-      "click /^(next|confirm|submit|verify|continue)$/i",
-    ]);
-    expect(acts[5]?.op).toMatchObject({ kind: "fill", value: "123456" });
-  });
-
-  it("stops on a rejected password; the slider puzzle is a person's", async () => {
-    const rejected = fakePage({
-      text: ["Email or username Password", "Account or password doesn't match our records"],
-      present: () => true,
-    });
-    await expect(signInToTiktok(ctx(rejected.fp, []))).rejects.toThrow(/password rejected/);
-    const puzzle = fakePage({
-      text: ["Email or username Password", "Drag the slider to fit the puzzle"],
-      present: () => true,
-      url: "https://www.tiktok.com/login/phone-or-email/email",
-    });
-    await expect(signInToTiktok(ctx(puzzle.fp, []))).rejects.toThrow(/slider puzzle/);
-  });
-});
 
 describe("instagram and tiktok consents and OAuth shapes", () => {
   it("are registered sites whose consent legs are catalogued flows", () => {
