@@ -9,7 +9,7 @@ entity: src/auth/login.ts
 
 # Site login
 
-How one site is signed into and where its password may be typed: `SiteLogin` in `src/auth/login.ts`; the list is `SITE_LOGINS` in `src/auth/sites.ts:742`, which gains the owner's and installed mods' logins as data at start ([[mod]]).
+How one site is signed into and where its password may be typed: `SiteLogin` in `src/auth/login.ts`; the list is `SITE_LOGINS` in `src/auth/sites.ts:540`, which gains the owner's and installed mods' logins as data at start ([[mod]]).
 
 ## Why this shape
 
@@ -22,7 +22,7 @@ The runner meets a wall and calls one hook (`RunnerOptions.login`); the spec say
 - `pageLogin(site, cred)` — `src/auth/page-login.ts`: a site with a stored password and no spec. Finds the boxes the page shows (`signInFields`: autocomplete, then `isNameField`/`isPasswordField`), types the name and password, submits; a name box alone only on a sign-in address (two-page forms); two password boxes or `new-password` = a sign-up, refused; a TOTP box when the credential has a seed, else a person. One try (WA-1349). Explore's `page-login` workflow (`src/workflows/logins.ts`) runs it; a wall with no `<site>-login` offers it when the session's site has a stored account
 - `loginProvider(sites, opts)` = the runner's hook: resolves the site (a labelled site with no login on a provider's `signInHere.at` surface becomes the provider, label carried: `youtube@wren` → `google@wren`; bare stays unknown; `account` may be a stored name or role), picks methods, signs in, returns `signed-in | no-credential | unknown-site`; no spec but a password credential → `pageLogin` — `:880-960`
 - Wired: `loginFor` — `src/app/services-signin.ts:257`
-- As data: `logins/<site>.json` (owner's own, or a [[mod]]'s) built through `formLogin`/`oauthLogin` by `loginOf` — `src/mods/login.ts:86`; added after every built-in by `addSiteLogins`, a taken name skipped — `src/auth/sites.ts:771`
+- As data: `logins/<site>.json` (owner's own, or a [[mod]]'s) built through `formLogin`/`oauthLogin` by `loginOf` — `src/mods/login.ts:86`; added after every built-in by `addSiteLogins`, a taken name skipped — `src/auth/sites.ts:562`
 
 ## Connected to
 
