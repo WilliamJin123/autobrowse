@@ -363,9 +363,9 @@ async function walkSpec(
     switch (op.kind) {
       case "username": {
         const { ctx, state } = signIn(op);
-        await fp.act({ kind: "fill", value: ctx.cred.username }, op.field as Hints, {
-          goal: op.goal,
-        });
+        const value = op.part ? regexOf(op.part).exec(ctx.cred.username)?.[1] : ctx.cred.username;
+        if (!value) throw new LoginFailed(spec.site, `${op.goal}: the username has no ${op.part}`);
+        await fp.act({ kind: "fill", value }, op.field as Hints, { goal: op.goal });
         state.typedUsername = true;
         return;
       }
@@ -705,6 +705,7 @@ function methodGate(s: ScreenSpec, ctx: SignInContext): () => boolean {
     const c = ctx.cred;
     if (via?.kind === "provider" && (c.via ? c.via !== via.provider : !!c.password)) return false;
     if (password && c.via) return false;
+    if (s.forUsername && !regexOf(s.forUsername).test(c.username)) return false;
     return !s.needs || ctx.offers(s.needs);
   };
 }

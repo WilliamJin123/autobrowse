@@ -8,6 +8,7 @@
 import type { WalkSpecInput } from "../spec.js";
 import anthropic from "./anthropic.js";
 import apple from "./apple.js";
+import aws from "./aws.js";
 import costco from "./costco.js";
 import discord from "./discord.js";
 import facebook from "./facebook.js";
@@ -44,4 +45,5 @@ export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [
   sentry,
   hubspot,
   perplexity,
+  aws,
 ];

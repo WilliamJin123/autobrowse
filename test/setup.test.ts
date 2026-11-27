@@ -67,7 +67,6 @@ describe("setup", () => {
     expect(out.stored).toEqual(["google", "cloudflare"]);
     expect(out.skipped).toEqual([
       "google@admin",
-      "aws",
       "microsoft",
       "outlook@uw",
       "instagram",
@@ -88,6 +87,7 @@ describe("setup", () => {
       "sentry",
       "hubspot",
       "perplexity",
+      "aws",
     ]);
     expect((await store.get("cloudflare"))?.via).toBe("google");
     expect(asked.filter((q) => q.startsWith("hidden")).length).toBe(2);

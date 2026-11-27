@@ -182,6 +182,7 @@ function scrubWalk(w: WalkSpec, x: Scrubber): WalkSpec {
         ...(s.shows ? { shows: s.shows.map((h) => x.hints(h, where)) } : {}),
         ...(s.hides ? { hides: s.hides.map((h) => x.hints(h, where)) } : {}),
         ...(s.says ? { says: x.text(s.says, where) } : {}),
+        ...(s.forUsername ? { forUsername: x.text(s.forUsername, where) } : {}),
         ...(s.refused ? { refused: { ...s.refused, says: x.text(s.refused.says, where) } } : {}),
         ...(s.person ? { person: { why: x.text(s.person.why, where) } } : {}),
         ops: s.ops.map((o) => op(o, where)),

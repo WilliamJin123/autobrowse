@@ -1343,3 +1343,129 @@ describe("provider walks (Google-made accounts)", () => {
     expect(s.acts).toEqual(["click Sign In", "click Continue with Google"]);
   });
 });
+
+describe("aws walk", () => {
+  const SIGN_IN = "https://us-east-1.signin.aws.amazon.com/oauth?client_id=arn";
+  const CONSOLE = "https://us-east-1.console.aws.amazon.com/console/home";
+  const IAM_FORM = [
+    "textbox:Account ID or alias",
+    "textbox:IAM username",
+    "textbox:Password",
+    "button:Sign in",
+    "button:Sign in using root user email",
+  ];
+  const MFA = {
+    url: SIGN_IN,
+    has: ["textbox:MFA code", "button:Submit"],
+    on: { "click button:Submit": "console" },
+  };
+
+  it("an IAM user: the account and user from <account>/<user>, the password, the MFA code", async () => {
+    const s = siteOf(
+      {
+        form: { url: SIGN_IN, has: IAM_FORM, on: { "click button:Sign in": "mfa" } },
+        mfa: MFA,
+        console: { url: CONSOLE, has: [] },
+      },
+      "form",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["totp"], { username: "123456789012/william" });
+    await loginOf("aws").signIn(ctx);
+    expect(s.acts).toEqual([
+      "fill Account ID or alias=123456789012",
+      "fill IAM username=william",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+      "fill MFA code=123456",
+      "click Submit",
+    ]);
+    expect(asked).toEqual(["totp"]);
+    expect(s.opened).toEqual(["https://console.aws.amazon.com/"]);
+  });
+
+  it("the root user: the root button, the email, Next, the password", async () => {
+    const s = siteOf(
+      {
+        form: {
+          url: SIGN_IN,
+          has: IAM_FORM,
+          on: { "click button:Sign in using root user email": "email" },
+        },
+        email: {
+          url: SIGN_IN,
+          has: ["textbox:Root user email address", "button:Next"],
+          on: { "click button:Next": "password" },
+        },
+        password: {
+          url: SIGN_IN,
+          has: ["textbox:Password", "button:Sign in"],
+          on: { "click button:Sign in": "mfa" },
+        },
+        mfa: MFA,
+        console: { url: CONSOLE, has: [] },
+      },
+      "form",
+    );
+    await loginOf("aws").signIn(ctxFor(s.fp, ["totp"], { username: "ops@wren.test" }).ctx);
+    expect(s.acts.slice(0, 5)).toEqual([
+      "click Sign in using root user email",
+      "fill Root user email address=ops@wren.test",
+      "click Next",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+    ]);
+  });
+
+  it("`aws login`: Allow on the confirmation page ends the walk", async () => {
+    const CONFIRM = "https://signin.aws.amazon.com/v1/sessions/confirmation?x=1";
+    const s = siteOf(
+      {
+        form: { url: SIGN_IN, has: IAM_FORM, on: { "click button:Sign in": "allow" } },
+        allow: {
+          url: CONFIRM,
+          has: ["button:Allow access"],
+          on: { "click button:Allow access": "done" },
+        },
+        done: { url: CONFIRM, has: ["button:Copy verification code"] },
+      },
+      "form",
+    );
+    await loginOf("aws").signIn(ctxFor(s.fp, [], { username: "acme/william" }).ctx);
+    expect(s.acts.at(-1)).toBe("click Allow access");
+  });
+
+  it("refuses a wrong password, a wrong MFA code and a malformed username", async () => {
+    const wrong = siteOf(
+      {
+        form: { url: SIGN_IN, has: IAM_FORM, on: { "click button:Sign in": "wrong" } },
+        wrong: {
+          url: SIGN_IN,
+          has: IAM_FORM,
+          text: "Your authentication information is incorrect.",
+        },
+      },
+      "form",
+    );
+    await expect(
+      loginOf("aws").signIn(ctxFor(wrong.fp, [], { username: "acme/w" }).ctx),
+    ).rejects.toMatchObject({ refused: true, case: "password" });
+    const code = siteOf(
+      {
+        mfa: {
+          url: SIGN_IN,
+          has: ["textbox:MFA code", "button:Submit"],
+          on: { "click button:Submit": "bad" },
+        },
+        bad: { url: SIGN_IN, has: ["textbox:MFA code"], text: "The MFA code is not valid." },
+      },
+      "mfa",
+    );
+    await expect(
+      loginOf("aws").signIn(ctxFor(code.fp, ["totp"], { username: "acme/w" }).ctx),
+    ).rejects.toMatchObject({ refused: true, case: "code" });
+    const bad = siteOf({ form: { url: SIGN_IN, has: IAM_FORM } }, "form");
+    await expect(
+      loginOf("aws").signIn(ctxFor(bad.fp, [], { username: "william" }).ctx),
+    ).rejects.toMatchObject({ refused: true, case: "account" });
+  });
+});

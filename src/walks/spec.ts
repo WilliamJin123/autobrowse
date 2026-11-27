@@ -178,8 +178,16 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
   }),
   /** `box`: the captcha's frame; in a sign-in a person solves it until the box is gone. */
   z.object({ kind: z.literal("captcha"), goal: z.string(), box: hintsSchema.optional() }),
-  /** Login walks only: the credential's username into `field`. */
-  z.object({ kind: z.literal("username"), goal: z.string(), field: hintsSchema }),
+  /**
+   * Login walks only: the credential's username into `field`. `part`: a regex with one
+   * group; only the group goes in (AWS `<account>/<user>`), and no match fails the try.
+   */
+  z.object({
+    kind: z.literal("username"),
+    goal: z.string(),
+    field: hintsSchema,
+    part: patternSchema.optional(),
+  }),
   /**
    * Login walks only: the credential's password into `field` (a password box), then
    * `submit`. The form back after it with nothing known fails; never a retype.
@@ -287,6 +295,8 @@ export const screenSpecSchema = z.object({
   person: z.object({ why: z.string().min(1) }).optional(),
   /** Login walks: counts only when the credential can get this kind of code (a two-factor way to pick). */
   needs: z.enum(CODE_KINDS).optional(),
+  /** Login walks: counts only when the credential's username matches (AWS root email vs `<account>/<user>`). */
+  forUsername: patternSchema.optional(),
   /** Screens that must be done first: the second visit to a page, or a page two screens share. */
   after: z.array(z.string().regex(NAME)).optional(),
   /** Done at most once per walk (the default); false for a page that may come back (a next page). */
@@ -354,6 +364,7 @@ export const walkSpecSchema = z
         at(s.goal ? "a goal does nothing" : "it ends the step: no ops", "ops");
       if (s.refused && !login) at("refused is for a login walk", "refused");
       if (s.needs && !login) at("needs is for a login walk", "needs");
+      if (s.forUsername && !login) at("forUsername is for a login walk", "forUsername");
       // A login screen with nothing to check would match every page, a secret's page among them.
       if (login && !checksOf(s)) at("a login screen needs url, landmarks, at, shows or says");
       s.ops.forEach((op, j) => {
