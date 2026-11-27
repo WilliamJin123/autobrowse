@@ -109,6 +109,36 @@ const walkHintsSchema = hintsSchema.extend({
 });
 
 /** The outline's ops, plus what a walk adds: a page to open, a captcha, another walk. */
+/** One way through a second step (`second-step`). */
+const secondWaySchema = z.discriminatedUnion("way", [
+  z.object({ way: z.literal("passkey"), choice: hintsSchema }),
+  z.object({ way: z.literal("totp"), choice: hintsSchema }),
+  /** Before any password went in: the list offers the password. */
+  z.object({ way: z.literal("password"), choice: hintsSchema }),
+  z.object({
+    way: z.enum(["sms", "email"]),
+    choice: hintsSchema,
+    field: hintsSchema,
+    submit: hintsSchema,
+    hint: z.string().optional(),
+    /** A box that asks which phone to text first (ours from the inbox), and its button. */
+    phone: z.object({ field: hintsSchema, submit: hintsSchema }).optional(),
+  }),
+  z.object({
+    way: z.literal("push"),
+    /** Pressed first; none: the prompt is already on the phone. */
+    choice: hintsSchema.optional(),
+    /** What the note asks the person to do. */
+    ask: z.string().min(1),
+    /** One group from the page's text, added to the note (the number to tap). */
+    note: patternSchema.optional(),
+    /** The URL once the phone said yes. */
+    until: patternSchema,
+    waitMs: z.number().int().positive().optional(),
+  }),
+]);
+export type SecondWay = z.infer<typeof secondWaySchema>;
+
 export const walkOpSchema = z.discriminatedUnion("kind", [
   clickOp.extend({ hints: walkHintsSchema }),
   fillOp.extend({ value: walkValueSchema }),
@@ -212,8 +242,43 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
     send: hintsSchema.optional(),
     hint: z.string().optional(),
   }),
-  /** Login walks only: our stored passkey answers; the ceremony completes on the click. */
-  z.object({ kind: z.literal("passkey"), goal: z.string(), start: hintsSchema }),
+  /**
+   * Login walks only: our stored passkey answers; the ceremony completes on the click.
+   * `leaves`: the passkey page's URL; the key is tried once, and still on it after
+   * 20 s means the site refused our key: `other` (another way) is clicked instead.
+   */
+  z.object({
+    kind: z.literal("passkey"),
+    goal: z.string(),
+    start: hintsSchema,
+    leaves: patternSchema.optional(),
+    other: hintsSchema.optional(),
+  }),
+  /**
+   * Login walks only: a saved account. `tile` is clicked when it shows and names this
+   * account (`shows`: one group, the account the tile names, cut short with `…`); else
+   * `other`. `ride`: the tile opens the provider on its live session; there `pick` is
+   * clicked, and `stop` showing (a password box) fails the try: no secret is typed.
+   */
+  z.object({
+    kind: z.literal("pick-account"),
+    goal: z.string(),
+    tile: hintsSchema,
+    shows: patternSchema.optional(),
+    other: hintsSchema.optional(),
+    ride: z.object({ pick: hintsSchema, stop: hintsSchema, why: z.string().min(1) }).optional(),
+  }),
+  /**
+   * Login walks only: a list of second steps. The first way this credential can answer
+   * whose `choice` shows is taken. A code way sends and types the code under the inbox
+   * lock; push notifies the person and waits for `until`. The third list in a try is a
+   * person's step.
+   */
+  z.object({
+    kind: z.literal("second-step"),
+    goal: z.string(),
+    ways: z.array(secondWaySchema).min(1),
+  }),
   /**
    * Login walks only: the provider's button (`button`, else its own readings), its
    * sign-in in the popup or redirect, back on the site. Its screen counts only
@@ -260,9 +325,17 @@ export const LOGIN_OPS = new Set<WalkOp["kind"]>([
   "one-time-code",
   "passkey",
   "provider",
+  "pick-account",
+  "second-step",
 ]);
 /** Ops that type a secret: their screen runs only on a page its recognizer matched. */
 export const SECRET_OPS = new Set<WalkOp["kind"]>(["password", "one-time-code"]);
+/**
+ * The credential's values a login screen's hints may name: `{username}`, `{address}` (its
+ * codes inbox, else the username) and `{phoneTail}` (the texts phone's last two digits).
+ */
+export const SIGN_IN_VARS = ["username", "address", "phoneTail"] as const;
+const SIGN_IN_VAR = /\{(username|address|phoneTail)\}/;
 /** The name a walk must have for login ops: one per site. */
 export const LOGIN_WALK = "login";
 
@@ -344,8 +417,17 @@ export const walkSpecSchema = z
     origins: z.array(z.string().min(1)).optional(),
     /** Login walks: a signed-in page, opened to check a session; default `start`. */
     home: z.string().url().optional(),
-    /** Login walks: the site's sign-in pages; on one, the walk runs in place (no open), so a `next` in its URL survives. */
-    signInHere: patternSchema.optional(),
+    /**
+     * Login walks: the site's sign-in pages; on one, the walk runs in place (no open), so a
+     * `next` in its URL survives. `past`: a page there that is past the sign-in (a scope grant).
+     */
+    signInHere: z
+      .union([patternSchema, z.object({ at: patternSchema, past: patternSchema.optional() })])
+      .optional(),
+    /** Login walks: registrable domains of the site's other products; their pages take this login. */
+    properties: z.array(z.string().min(1)).optional(),
+    /** Screens passed before the walk gives up; default from the screens. */
+    maxSteps: z.number().int().positive().max(400).optional(),
     /** Login walks: what setup says when it asks for the credential; default from the screens. */
     ask: z.string().min(1).optional(),
     screens: z.array(screenSpecSchema).min(1),
@@ -362,6 +444,9 @@ export const walkSpecSchema = z
       if (ends > 1) at("one of goal, refused and person", "name");
       if (ends && s.ops.length)
         at(s.goal ? "a goal does nothing" : "it ends the step: no ops", "ops");
+      // a session check (`loggedIn`) has no credential to fill them from
+      if (s.goal && SIGN_IN_VAR.test(JSON.stringify([s.shows, s.hides, s.says])))
+        at("a goal's checks cannot name the credential", "name");
       if (s.refused && !login) at("refused is for a login walk", "refused");
       if (s.needs && !login) at("needs is for a login walk", "needs");
       if (s.forUsername && !login) at("forUsername is for a login walk", "forUsername");
@@ -374,6 +459,12 @@ export const walkSpecSchema = z
     });
     if (w.origins && !login)
       ctx.addIssue({ code: "custom", path: ["origins"], message: "origins is for a login walk" });
+    if (w.properties && !login)
+      ctx.addIssue({
+        code: "custom",
+        path: ["properties"],
+        message: "properties is for a login walk",
+      });
     if (w.home && !login)
       ctx.addIssue({ code: "custom", path: ["home"], message: "home is for a login walk" });
     if (w.ask && !login)

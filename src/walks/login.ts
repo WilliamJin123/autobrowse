@@ -16,7 +16,7 @@ import {
   type SiteLogin,
 } from "../auth/login.js";
 import { failSignIn, signInState } from "../auth/sign-in-kit.js";
-import { ACCOUNT_CHORES } from "../auth/sites.js";
+import { ACCOUNT_CHORES, WALK_APPS } from "../auth/sites.js";
 import { NeedsHuman } from "../browser/session.js";
 import { onScreen, walkFlow } from "./flow.js";
 import { logHealTries, withHeal } from "./login-heal.js";
@@ -60,6 +60,13 @@ export function walkLogin(
       ),
     ),
   ];
+  // the sign-in surface: a pattern, or `{at, past}` with a page there past the sign-in
+  const here =
+    spec.signInHere === undefined
+      ? null
+      : typeof spec.signInHere === "string"
+        ? { at: spec.signInHere, past: undefined }
+        : spec.signInHere;
   return {
     site: o.site ?? spec.site,
     home: spec.home ?? spec.start,
@@ -74,8 +81,15 @@ export function walkLogin(
     // Signed in: the page the sign-in landed on, by every check its goal names.
     loggedIn: async (fp) => !!goal && (await onScreen(fp, goal)),
     signIn: (ctx) => signIn(ctx, false),
-    ...(spec.signInHere
-      ? { signInHere: { at: regexOf(spec.signInHere), run: (ctx) => signIn(ctx, true) } }
+    ...(spec.properties ? { properties: spec.properties } : {}),
+    ...(here
+      ? {
+          signInHere: {
+            at: regexOf(here.at),
+            run: (ctx) => signIn(ctx, true),
+            ...(here.past ? { past: regexOf(here.past) } : {}),
+          },
+        }
       : {}),
   };
 
@@ -141,14 +155,21 @@ export function repoWalkLogins(
   files: readonly WalkSpecInput[] = LOGIN_WALK_FILES,
   walksDir?: string,
 ): SiteLogin[] {
-  return files.map((file) => {
+  return files.flatMap((file) => {
     const spec = walkSpecSchema.parse(file);
     if (spec.name !== "login")
       throw new Error(`${spec.site}/walk-${spec.name}: a repo sign-in walk is named login`);
-    return {
-      ...walkLogin(spec, walksDir ? { healDir: walksDir } : {}),
-      ...ACCOUNT_CHORES[spec.site],
-    };
+    const heal = walksDir ? { healDir: walksDir } : {};
+    // an app on the walk's credential: the provider's products stay the provider's
+    const apps = (WALK_APPS[spec.site] ?? []).map((app): SiteLogin => {
+      const { properties: _, ...login } = walkLogin(spec, {
+        ...heal,
+        site: app.site,
+        credential: spec.site,
+      });
+      return { ...login, ask: app.ask };
+    });
+    return [{ ...walkLogin(spec, heal), ...ACCOUNT_CHORES[spec.site] }, ...apps];
   });
 }
 

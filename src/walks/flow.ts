@@ -18,10 +18,14 @@ import {
 } from "../auth/login.js";
 import {
   enterCode,
+  fillVars,
+  pickAccount,
   retypePrevious,
   type SignInState,
-  signInWithPasskey,
+  secondStep,
+  signInVars,
   solveCaptcha,
+  tryPasskey,
   typePassword,
 } from "../auth/sign-in-kit.js";
 import type { SecretValues } from "../auth/signup.js";
@@ -213,13 +217,26 @@ const fileOrder = (screens: readonly ScreenSpec[]): ScreenSpec[] =>
 
 export const isLoginWalk = (spec: Pick<WalkSpec, "name">): boolean => spec.name === LOGIN_WALK;
 
-/** A data screen's checks as a code screen's: `at`, `shows`, `hides`, `says`. */
-const recognizer = (s: ScreenSpec): Pick<Screen, "at" | "shows" | "hides" | "says"> => ({
-  ...(s.at ? { at: regexOf(s.at) } : {}),
-  ...(s.shows?.length ? { shows: s.shows as Hints[] } : {}),
-  ...(s.hides?.length ? { hides: s.hides as Hints[] } : {}),
-  ...(s.says ? { says: regexOf(s.says) } : {}),
-});
+/** Matches nothing: a shown hint whose credential value is absent. */
+const NEVER: Hints = { css: ":not(*)" };
+
+/**
+ * A data screen's checks as a code screen's: `at`, `shows`, `hides`, `says`. A sign-in's
+ * `vars` fill `{username}` and the rest; a hint naming an absent one never matches.
+ */
+const recognizer = (
+  s: ScreenSpec,
+  vars: Readonly<Record<string, string>> = {},
+): Pick<Screen, "at" | "shows" | "hides" | "says"> => {
+  const shown = (s.shows ?? []).map((h) => fillVars(h as Hints, vars) ?? NEVER);
+  const hidden = (s.hides ?? []).flatMap((h) => fillVars(h as Hints, vars) ?? []);
+  return {
+    ...(s.at ? { at: regexOf(s.at) } : {}),
+    ...(shown.length ? { shows: shown } : {}),
+    ...(hidden.length ? { hides: hidden } : {}),
+    ...(s.says ? { says: regexOf(s.says) } : {}),
+  };
+};
 
 /** The page is this screen by every check it names; a screen that names none is no page. */
 export async function onScreen(fp: FlowPage, s: ScreenSpec): Promise<boolean> {
@@ -281,12 +298,15 @@ async function walkSpec(
   };
 
   const now = deps.now?.() ?? new Date();
+  // a sign-in's `{username}`, `{address}`, `{phoneTail}`: for its hints and its clicks
+  const vars = deps.signIn ? signInVars(deps.signIn.ctx) : {};
   /** Asked once per run: a field filled twice (a fill, then a click on it) is one answer. */
   const asked = new Map<string, string>();
   const fieldValue = async (key: string, goal: string): Promise<string> => {
     const f = fields.get(key);
     const given =
       input[key] ??
+      vars[key] ??
       asked.get(key) ??
       (f?.default !== undefined ? resolveDefault(f.default, now) : undefined) ??
       // A v1 walk ran on the example; a v2 one asks.
@@ -389,11 +409,26 @@ async function walkSpec(
         });
       }
       case "passkey": {
-        const { ctx } = signIn(op);
-        // no key of ours: the ceremony would hang; a person answers with theirs
-        if (!ctx.cred.passkeys.length)
-          return personStep(ctx, `${spec.site}: the site asks for a security key; none is stored`);
-        return signInWithPasskey(fp, op.start as Hints);
+        const { ctx, state } = signIn(op);
+        return tryPasskey(state, ctx, {
+          start: op.start as Hints,
+          leaves: op.leaves ? regexOf(op.leaves) : undefined,
+          other: op.other as Hints | undefined,
+        });
+      }
+      case "pick-account": {
+        const { ctx, state } = signIn(op);
+        return pickAccount(state, ctx, {
+          goal: op.goal,
+          tile: op.tile as Hints,
+          shows: op.shows ? regexOf(op.shows) : undefined,
+          other: op.other as Hints | undefined,
+          ride: op.ride as { pick: Hints; stop: Hints; why: string } | undefined,
+        });
+      }
+      case "second-step": {
+        const { ctx, state } = signIn(op);
+        return secondStep(state, ctx, op.ways);
       }
       case "provider": {
         const { ctx, state } = signIn(op);
@@ -614,6 +649,8 @@ async function walkSpec(
   /** Until the page is not the one the ops started on, or a while passed. */
   const moved = async (from: PageLook, url: string): Promise<void> => {
     for (let t = 0; t < MOVE_MS; t += LOOK_MS) {
+      // a provider's popup that closed itself has moved on
+      if (fp.page.isClosed?.()) return;
       seen = null;
       const now = await look();
       if (
@@ -649,7 +686,7 @@ async function walkSpec(
     return {
       name: s.name,
       looks: s.looks,
-      ...recognizer(s),
+      ...recognizer(s, vars),
       is: async () =>
         (s.after ?? []).every((a) => handled.has(a)) &&
         (ends || !(s.once !== false && handled.has(s.name))) &&
@@ -677,18 +714,26 @@ async function walkSpec(
           }),
     };
   });
+  // a sign-in in a provider's popup: the popup closing itself is the goal
+  const closed: Screen = {
+    name: "popup-closed",
+    looks: "the provider's popup closed itself",
+    is: async () => !!fp.page.isClosed?.(),
+    goal: true,
+  };
   return walk(
     { fp },
     {
       site: spec.site,
       name: walkFlowName(spec),
       goal: spec.goal,
-      screens,
+      screens: sign ? [closed, ...screens] : screens,
       ...(deps.fail ? { fail: deps.fail } : {}),
       // A page that comes back (results, next page) may come back many times.
       maxSteps:
+        spec.maxSteps ??
         Math.max(12, spec.screens.length + 4) *
-        (spec.screens.some((s) => s.once === false) ? 10 : 1),
+          (spec.screens.some((s) => s.once === false) ? 10 : 1),
     },
   );
 }

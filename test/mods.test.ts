@@ -129,6 +129,72 @@ describe("mods pack", () => {
     expect(checkMod(p.dir, { version: "0.3.0" }).name).toBe("autobrowse-mod-scratch");
   });
 
+  it("scrubs a login walk's account tile, ride and second-step ways", async () => {
+    const o = await owner();
+    const named = { text: `/${USER}/i` };
+    saveWalk(
+      o.walks,
+      walk({
+        name: "login",
+        irreversible: false,
+        screens: [
+          {
+            name: "pick",
+            looks: "a picker",
+            url: null,
+            landmarks: [],
+            says: "/pick an account/i",
+            seen: 1,
+            ops: [
+              {
+                kind: "pick-account",
+                goal: "pick the account",
+                tile: named,
+                other: named,
+                ride: { pick: named, stop: named, why: `no session for ${USER}` },
+              },
+              {
+                kind: "second-step",
+                goal: "answer",
+                ways: [
+                  { way: "totp", choice: named },
+                  { way: "sms", choice: named, field: named, submit: named, hint: USER },
+                  { way: "push", ask: `approve for ${USER}`, until: "/done/" },
+                ],
+              },
+            ],
+          },
+          {
+            name: "home",
+            looks: "signed in",
+            url: null,
+            landmarks: [],
+            at: "/scratch\\.test\\/home/",
+            ops: [],
+            goal: true,
+            seen: 1,
+          },
+        ],
+      }),
+    );
+    const p = packMod({
+      site: "scratch",
+      walksDir: o.walks,
+      walks: ["login"],
+      scrub: o.scrub,
+      out: join(o.dir, "out"),
+      version: "0.3.0",
+    });
+    const text = readFileSync(join(p.dir, "walks/scratch/login.json"), "utf8");
+    expect(text).not.toContain(USER);
+    const w = JSON.parse(text);
+    expect(w.screens[0].ops[1].ways.map((x: { way: string }) => x.way)).toEqual([
+      "totp",
+      "sms",
+      "push",
+    ]);
+  });
+
   it("refuses when a stored value survives the scrub, and writes nothing", async () => {
     const o = await owner();
     // A screen name is not prose: the scrubber leaves it, the final check catches it.

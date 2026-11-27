@@ -21,7 +21,7 @@ import {
   type SiteLogin,
   type TotpSetupSpec,
 } from "./login.js";
-import { MICROSOFT_HOST, signInToMicrosoft } from "./microsoft.js";
+import "./microsoft.js";
 import { providerOf } from "./providers.js";
 
 const CLOUDFLARE_HOME = /dash\.cloudflare\.com\/[0-9a-f]{32}/;
@@ -350,29 +350,6 @@ const googleAdmin: SiteLogin = {
 };
 
 /**
- * Outlook on the web: the `microsoft` credential signs in (personal at
- * outlook.live.com, work at outlook.office.com; the sign-in host is the
- * same). Unverified until a credential exists.
- */
-const OUTLOOK_HOME = /outlook\.(live|office)\.com\/mail/;
-const outlook: SiteLogin = {
-  site: "outlook",
-  home: "https://outlook.live.com/mail/0/",
-  credential: "microsoft",
-  origins: ["live.com", "microsoftonline.com", "microsoft.com"],
-  properties: ["office.com", "azure.com", "microsoft365.com"],
-  ask: "The Microsoft account whose mailbox Outlook shows (personal or work)",
-  loggedIn: async (fp) => OUTLOOK_HOME.test(fp.url()) && !MICROSOFT_HOST.test(fp.url()),
-  signIn: async (ctx) => {
-    await ctx.fp.open("https://outlook.live.com/mail/0/", { allowWall: true });
-    if (MICROSOFT_HOST.test(ctx.fp.url())) await signInToMicrosoft(ctx);
-    if (!(await ctx.fp.waitForUrl(OUTLOOK_HOME, 30_000)))
-      throw new LoginFailed("outlook", `still on ${ctx.fp.url()} after the Microsoft sign-in`);
-  },
-  signInHere: { at: MICROSOFT_HOST, run: signInToMicrosoft },
-};
-
-/**
  * npm. The sign-in page is plain and loads headless (mapped 2026-09-22:
  * textbox "Username", textbox "Password", button "Sign In"). The username,
  * not the address, is what npm knows the account by, so `signup --by-hand
@@ -436,13 +413,26 @@ export const ACCOUNT_CHORES: Readonly<
   },
 };
 
+/**
+ * Apps a repo walk signs in to with its own credential: the walk's site → each app
+ * and its setup prompt. `repoWalkLogins` adds one login per app, after the walk's.
+ */
+export const WALK_APPS: Readonly<Record<string, readonly { site: string; ask: string }[]>> = {
+  // personal at outlook.live.com, work at outlook.office.com; one sign-in host
+  microsoft: [
+    {
+      site: "outlook",
+      ask: "The Microsoft account whose mailbox Outlook shows (personal or work)",
+    },
+  ],
+};
+
 export const SITE_LOGINS: readonly SiteLogin[] = [
   cloudflare,
   google,
   // After google: a lookup by credential name finds google itself first.
   ...GOOGLE_APPS,
   googleAdmin,
-  outlook,
 ];
 
 const BUILT_IN = new Set(SITE_LOGINS);

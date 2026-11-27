@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { CodeKind } from "../src/auth/codes.js";
 import { LoginFailed, passwordDomains, type SignInContext } from "../src/auth/login.js";
 import { isProvider, providerOf, registerProvider } from "../src/auth/providers.js";
-import { SITE_LOGINS } from "../src/auth/sites.js";
+import { SITE_LOGINS, WALK_APPS } from "../src/auth/sites.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { repoWalkLogins } from "../src/walks/login.js";
 import { LOGIN_WALK_FILES } from "../src/walks/logins/index.js";
@@ -64,7 +64,9 @@ function ctxFor(
 
 describe("repo sign-in walks", () => {
   it("each file parses as a login walk, and its site has no built-in login left", () => {
-    expect(logins.map((l) => l.site)).toEqual(LOGIN_WALK_FILES.map((f) => f.site));
+    expect(logins.map((l) => l.site)).toEqual(
+      LOGIN_WALK_FILES.flatMap((f) => [f.site, ...(WALK_APPS[f.site] ?? []).map((a) => a.site)]),
+    );
     for (const f of LOGIN_WALK_FILES) {
       expect(f.name).toBe("login");
       expect(SITE_LOGINS.some((l) => l.site === f.site)).toBe(false);
@@ -1583,6 +1585,347 @@ describe("learn walk", () => {
     await expect(loginOf("learn").signIn(ctxFor(code.fp, ["sms"]).ctx)).rejects.toMatchObject({
       refused: true,
       case: "code",
+    });
+  });
+});
+
+describe("microsoft walk", () => {
+  const MS = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?x";
+  const LIVE = "https://login.live.com/login.srf";
+  const MAIL = "https://outlook.live.com/mail/0/";
+  const APP = "https://site.test/home";
+  const email: State = {
+    url: MS,
+    has: ["textbox:Email, phone, or Skype", "button:Next"],
+    text: "Sign in",
+    on: { "click button:Next": "password" },
+  };
+  const password = (next: string): State => ({
+    url: MS,
+    has: ["textbox:Password", "button:Sign in"],
+    text: "Enter password",
+    on: { "click button:Sign in": next },
+  });
+  const app: State = { url: APP, has: [], text: "Welcome" };
+  const approve: State = {
+    url: MS,
+    has: [],
+    text: "Approve sign in request Open your Authenticator app, and enter the number shown to sign in. 42",
+  };
+
+  it("is the provider behind Sign in with Microsoft; signInHere covers its hosts, not Outlook", () => {
+    expect(isProvider("microsoft")).toBe(true);
+    const p = providerOf("microsoft");
+    expect(p.host.test(MS)).toBe(true);
+    expect(p.host.test("https://login.live.com/oauth20_authorize.srf")).toBe(true);
+    expect(p.host.test(APP)).toBe(false);
+    const at = loginOf("microsoft").signInHere?.at as RegExp;
+    expect(at.test(MS)).toBe(true);
+    expect(at.test(LIVE)).toBe(true);
+    expect(at.test(MAIL)).toBe(false);
+  });
+
+  it("types the password only on Microsoft's hosts; names its products", () => {
+    const l = loginOf("microsoft");
+    expect(passwordDomains(logins, "microsoft", {} as never)).toEqual(
+      expect.arrayContaining(["live.com", "microsoftonline.com", "microsoft.com"]),
+    );
+    expect(l.properties).toEqual(["office.com", "azure.com", "microsoft365.com"]);
+  });
+
+  it("as a provider: email, password, the authenticator code, stay signed in, permissions", async () => {
+    const s = siteOf(
+      {
+        email,
+        password: password("code"),
+        code: {
+          url: MS,
+          has: ["textbox:Code", "button:Verify"],
+          text: "Verify your identity Enter code",
+          on: { "click button:Verify": "kmsi" },
+        },
+        kmsi: {
+          url: MS,
+          has: ["button:Yes", "button:No"],
+          text: "Stay signed in?",
+          on: { "click button:Yes": "consent" },
+        },
+        consent: {
+          url: MS,
+          has: ["button:Accept", "button:Cancel"],
+          text: "Permissions requested",
+          on: { "click button:Accept": "app" },
+        },
+        app,
+      },
+      "email",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["totp"], { username: "w@wren.test" });
+    await providerOf("microsoft").signIn(ctx);
+    expect(s.acts).toEqual([
+      "fill Email, phone, or Skype=w@wren.test",
+      "click Next",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+      "fill Code=123456",
+      "click Verify",
+      "click Yes",
+      "click Accept",
+    ]);
+    expect(asked).toEqual(["totp"]);
+    expect(s.opened).toEqual([]);
+  });
+
+  it("no code source: the phone's approval, with the number to tap", async () => {
+    const notes: string[] = [];
+    const s = siteOf({ email, password: password("approve"), approve, app }, "email");
+    const { ctx } = ctxFor(s.fp);
+    await loginOf("microsoft").signInHere?.run({
+      ...ctx,
+      notify: async (t: string) => {
+        notes.push(t);
+        s.go("app");
+      },
+    });
+    expect(notes).toEqual(["microsoft sign-in for wren: approve it in the Authenticator app (42)"]);
+    expect(s.acts).toHaveLength(4);
+  });
+
+  it("an authenticator code beats the phone: another way, then the verification code", async () => {
+    const s = siteOf(
+      {
+        approve: {
+          ...approve,
+          has: ["link:I can't use my Microsoft Authenticator app right now"],
+          on: { "click link:I can't use my Microsoft Authenticator app right now": "list" },
+        },
+        list: {
+          url: MS,
+          has: ["button:Use a verification code", "button:Text +X XXXXXXXX12"],
+          text: "Verify your identity",
+          on: { "click button:Use a verification code": "code" },
+        },
+        code: {
+          url: MS,
+          has: ["textbox:Code", "button:Verify"],
+          on: { "click button:Verify": "app" },
+        },
+        app,
+      },
+      "approve",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["totp", "sms"]);
+    await loginOf("microsoft").signInHere?.run({ ...ctx, inbox: () => "+15551234512" });
+    expect(s.acts).toEqual([
+      "click I can't use my Microsoft Authenticator app right now",
+      "click Use a verification code",
+      "fill Code=123456",
+      "click Verify",
+    ]);
+    expect(asked).toEqual(["totp"]);
+  });
+
+  it("no authenticator: the list's text to our phone, by its last two digits", async () => {
+    const s = siteOf(
+      {
+        list: {
+          url: MS,
+          has: ["button:Text +X XXXXXXXX99", "button:Text +X XXXXXXXX12", "button:Verify"],
+          text: "Verify your identity",
+          on: { "click button:Text +X XXXXXXXX12": "code" },
+        },
+        code: {
+          url: MS,
+          has: ["textbox:Code", "button:Verify"],
+          text: "Enter code",
+          on: { "click button:Verify": "app" },
+        },
+        app,
+      },
+      "list",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["sms"]);
+    await loginOf("microsoft").signInHere?.run({ ...ctx, inbox: () => "+1 555 123 4512" });
+    expect(s.acts).toEqual(["click Text +X XXXXXXXX12", "fill Code=123456", "click Verify"]);
+    expect(asked).toEqual(["sms"]);
+  });
+
+  it("the picker: our tile when it shows, else Use another account", async () => {
+    const pick = (has: string[]) =>
+      siteOf(
+        {
+          pick: {
+            url: MS,
+            has,
+            text: "Pick an account",
+            on: {
+              "click button:w@wren.test Signed in": "app",
+              "click button:Use another account": "email",
+            },
+          },
+          email: { ...email, on: { "click button:Next": "password" } },
+          password: password("app"),
+          app,
+        },
+        "pick",
+      );
+    const ours = pick(["button:w@wren.test Signed in", "button:Use another account"]);
+    await loginOf("microsoft").signInHere?.run(
+      ctxFor(ours.fp, [], { username: "w@wren.test" }).ctx,
+    );
+    expect(ours.acts).toEqual(["click w@wren.test Signed in"]);
+    const other = pick(["button:someone@else.test", "button:Use another account"]);
+    await loginOf("microsoft").signInHere?.run(
+      ctxFor(other.fp, [], { username: "w@wren.test" }).ctx,
+    );
+    expect(other.acts.slice(0, 2)).toEqual([
+      "click Use another account",
+      "fill Email, phone, or Skype=w@wren.test",
+    ]);
+  });
+
+  it("refuses a rejected password, an unknown account and a wrong code by case", async () => {
+    const run = (states: Record<string, State>, start: string, kinds: CodeKind[] = []) =>
+      loginOf("microsoft").signInHere?.run(ctxFor(siteOf(states, start).fp, kinds).ctx);
+    await expect(
+      run(
+        {
+          email,
+          password: password("wrong"),
+          wrong: {
+            url: MS,
+            has: ["textbox:Password"],
+            text: "Your account or password is incorrect.",
+          },
+        },
+        "email",
+      ),
+    ).rejects.toMatchObject({ refused: true, case: "password" });
+    await expect(
+      run(
+        {
+          email: { ...email, on: { "click button:Next": "unknown" } },
+          unknown: { url: MS, has: [], text: "We couldn't find an account with that username." },
+        },
+        "email",
+      ),
+    ).rejects.toMatchObject({ refused: true, case: "account" });
+    await expect(
+      run(
+        {
+          code: {
+            url: MS,
+            has: ["textbox:Code", "button:Verify"],
+            on: { "click button:Verify": "bad" },
+          },
+          bad: {
+            url: MS,
+            has: ["textbox:Code"],
+            text: "That code didn't work. Check the code and try again.",
+          },
+        },
+        "code",
+        ["totp"],
+      ),
+    ).rejects.toMatchObject({ refused: true, case: "code" });
+  });
+
+  describe("outlook", () => {
+    const tail: Record<string, State> = {
+      password: {
+        url: LIVE,
+        has: ["textbox:Password", "button:Sign in"],
+        text: "Enter password",
+        on: { "click button:Sign in": "kmsi" },
+      },
+      kmsi: {
+        url: `${LIVE}?kmsi`,
+        has: ["button:Yes", "button:No"],
+        text: "Stay signed in?",
+        on: { "click button:Yes": "mail" },
+      },
+      mail: { url: MAIL, has: [], text: "Inbox" },
+    };
+
+    it("is the microsoft credential's app, with its own prompt and no products", () => {
+      const l = loginOf("outlook");
+      expect(l.credential).toBe("microsoft");
+      expect(l.ask).toMatch(/mailbox Outlook shows/);
+      expect(l.properties).toBeUndefined();
+      expect(l.signInHere?.at.test(LIVE)).toBe(true);
+    });
+
+    it("opens the mailbox, signs in on the Microsoft wall, lands on mail", async () => {
+      const s = siteOf(
+        {
+          email: {
+            url: LIVE,
+            has: ["textbox:Email, phone, or Skype", "button:Next"],
+            on: { "click button:Next": "password" },
+          },
+          ...tail,
+        },
+        "email",
+      );
+      const l = loginOf("outlook");
+      await l.signIn(ctxFor(s.fp, [], { username: "w@outlook.com" }).ctx);
+      expect(s.opened).toEqual([MAIL]);
+      expect(s.acts).toEqual([
+        "fill Email, phone, or Skype=w@outlook.com",
+        "click Next",
+        "fill Password=pw-ig-1",
+        "click Sign in",
+        "click Yes",
+      ]);
+      expect(await l.loggedIn(s.fp)).toBe(true);
+    });
+
+    it("a passwordless prompt takes the password, not a person's phone", async () => {
+      const s = siteOf(
+        {
+          approve: {
+            url: LIVE,
+            has: ["link:Use your password instead"],
+            text: "Approve sign in request. Open your Authenticator app and enter the number 42",
+            on: { "click link:Use your password instead": "password" },
+          },
+          ...tail,
+        },
+        "approve",
+      );
+      await loginOf("outlook").signInHere?.run(ctxFor(s.fp).ctx);
+      expect(s.acts).toEqual([
+        "click Use your password instead",
+        "fill Password=pw-ig-1",
+        "click Sign in",
+        "click Yes",
+      ]);
+    });
+
+    it("the same prompt after the password goes to the phone, never back to the password", async () => {
+      const notes: string[] = [];
+      const s = siteOf(
+        {
+          password: { ...tail.password, on: { "click button:Sign in": "approve" } } as State,
+          approve: {
+            url: LIVE,
+            has: ["link:Use your password instead"],
+            text: "Approve sign in request. Open your Authenticator app and enter the number 42",
+          },
+          mail: tail.mail as State,
+        },
+        "password",
+      );
+      const { ctx } = ctxFor(s.fp);
+      await loginOf("outlook").signInHere?.run({
+        ...ctx,
+        notify: async (t: string) => {
+          notes.push(t);
+          s.go("mail");
+        },
+      });
+      expect(s.acts).toEqual(["fill Password=pw-ig-1", "click Sign in"]);
+      expect(notes).toHaveLength(1);
     });
   });
 });

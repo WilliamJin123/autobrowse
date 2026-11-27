@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { CodeKind, SignInContext } from "../src/auth/login.js";
-import { MICROSOFT_HOST, signInToMicrosoft } from "../src/auth/microsoft.js";
-import { SITE_LOGINS } from "../src/auth/sites.js";
 import { outlookOauthConsent } from "../src/browser/flows/outlook-oauth-consent.js";
 import type { Hints } from "../src/browser/locate.js";
 import { httpClient } from "../src/clients/http.js";
@@ -10,108 +7,9 @@ import { SITES } from "../src/sites/index.js";
 import { runConsent } from "../src/sites/oauth.js";
 import { outlook, outlookOAuth } from "../src/sites/outlook.js";
 import { fakePage } from "./auth-fakes.js";
-import { fakeSite, type State } from "./site-fakes.js";
 
-const base = { username: "w@outlook.com", password: "p", recoveryCodes: [], passkeys: [] };
-const ctx = (fp: SignInContext["fp"], kinds: CodeKind[] = []): SignInContext => ({
-  fp,
-  cred: base,
-  code: async (kind) => (kinds.includes(kind) ? "123456" : Promise.reject(new Error("none"))),
-  offers: (kind) => kinds.includes(kind),
-  inbox: () => null,
-  credFor: async () => base,
-  as: () => ctx(fp, kinds),
-});
 const line = (a: { op: { kind: string }; hints: Hints }) =>
   `${a.op.kind} ${a.hints.name ?? a.hints.text}`;
-
-describe("outlook sign-in", () => {
-  it("is the microsoft credential's site: sign-in host handled by the microsoft flow", () => {
-    const login = SITE_LOGINS.find((l) => l.site === "outlook");
-    expect(login?.credential).toBe("microsoft");
-    expect(login?.signInHere).toEqual({ at: MICROSOFT_HOST, run: signInToMicrosoft });
-    expect(MICROSOFT_HOST.test("https://login.live.com/oauth20_authorize.srf?x")).toBe(true);
-    expect(
-      MICROSOFT_HOST.test("https://login.microsoftonline.com/common/oauth2/v2.0/authorize"),
-    ).toBe(true);
-    expect(MICROSOFT_HOST.test("https://outlook.live.com/mail/0/")).toBe(false);
-  });
-
-  const MAIL = "https://outlook.live.com/mail/0/";
-  const wall = (states: Record<string, State>, start: string) => {
-    const site = fakeSite(states, start);
-    const opened: string[] = [];
-    site.fp.open = async (u) => {
-      opened.push(u);
-    };
-    site.fp.waitForUrl = async (p) =>
-      p instanceof RegExp ? p.test(site.fp.url()) : p(site.fp.url());
-    return { ...site, opened };
-  };
-  const LIVE = "https://login.live.com/login.srf";
-  const tail: Record<string, State> = {
-    password: {
-      url: LIVE,
-      has: ["textbox:Password", "button:Sign in"],
-      text: "Enter password",
-      on: { "click button:Sign in": "kmsi" },
-    },
-    kmsi: {
-      url: `${LIVE}?kmsi`,
-      has: ["button:Yes", "button:No"],
-      text: "Stay signed in?",
-      on: { "click button:Yes": "mail" },
-    },
-    mail: { url: MAIL, has: [], text: "Inbox" },
-  };
-
-  it("opens the mailbox, signs in on the Microsoft wall, lands on mail", async () => {
-    const site = wall(
-      {
-        email: {
-          url: LIVE,
-          has: ["textbox:Email, phone, or Skype", "button:Next"],
-          on: { "click button:Next": "password" },
-        },
-        ...tail,
-      },
-      "email",
-    );
-    const login = SITE_LOGINS.find((l) => l.site === "outlook");
-    await login?.signIn(ctx(site.fp));
-    expect(site.opened).toEqual([MAIL]);
-    expect(site.acts).toEqual([
-      "fill Email, phone, or Skype=w@outlook.com",
-      "click Next",
-      "fill Password=p",
-      "click Sign in",
-      "click Yes",
-    ]);
-    expect(await login?.loggedIn(site.fp)).toBe(true);
-  });
-
-  it("a passwordless prompt takes the password instead, not a person's phone", async () => {
-    const site = wall(
-      {
-        approve: {
-          url: LIVE,
-          has: ["link:Use your password instead"],
-          text: "Approve sign in request. Open your Authenticator app and enter the number 42",
-          on: { "click link:Use your password instead": "password" },
-        },
-        ...tail,
-      },
-      "approve",
-    );
-    await signInToMicrosoft(ctx(site.fp));
-    expect(site.acts).toEqual([
-      "click Use your password instead",
-      "fill Password=p",
-      "click Sign in",
-      "click Yes",
-    ]);
-  });
-});
 
 describe("outlook site API", () => {
   it("is a registered site under Graph's shape whose legs are catalogued", () => {

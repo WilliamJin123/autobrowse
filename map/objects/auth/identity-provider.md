@@ -13,13 +13,13 @@ A sign-in reused by every site that shows its button: `IdentityProvider` in `src
 
 ## Why this shape
 
-"Sign in with Google" on any site lands on the same pages, so one sign-in serves all of them. The registry is filled at import time by the file that owns each sign-in, so nothing cycles (`src/auth/providers.ts:24-30`).
+"Sign in with Google" on any site lands on the same pages, so one sign-in serves all of them. The registry is filled at import time by the file that owns each sign-in, so nothing cycles (`registerProvider` in `src/auth/providers.ts`).
 
 ## Shape
 
-- `PROVIDERS`, `IdentityProvider { site, host, buttons, signIn }`, `registerProvider`, `providerOf` — `src/auth/providers.ts:11-37`
+- `PROVIDERS`, `IdentityProvider { site, host, buttons, signIn }`, `registerProvider`, `providerOf` — `src/auth/providers.ts`
 - Google: `googleWalk(ctx)` (17 screens, second step by passkey → TOTP → SMS → Tap Yes) and `signInToGoogle` — `src/auth/google.ts`
-- GitHub, Microsoft: `src/auth/github.ts` (linear), `src/auth/microsoft.ts` (a walk since 2026-10-05)
+- GitHub, Microsoft: `src/auth/github.ts`, `src/auth/microsoft.ts` register only; `walkInPlace` (`src/auth/providers.ts`) runs the repo walk (`src/walks/logins/{github,microsoft}.ts`) in place on the page the button opened
 
 ## Connected to
 

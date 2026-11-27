@@ -151,8 +151,29 @@ function scrubWalk(w: WalkSpec, x: Scrubber): WalkSpec {
     const h = "hints" in o && o.hints ? { hints: x.hints(o.hints, where) } : {};
     // a login op's boxes are hints too: scrubbed the same
     const boxes = o as unknown as Record<string, Record<string, unknown> | undefined>;
-    for (const k of ["field", "submit", "send", "keepSignedIn", "start"])
+    for (const k of ["field", "submit", "send", "keepSignedIn", "start", "tile", "other"])
       if (boxes[k]) Object.assign(h, { [k]: x.hints(boxes[k], where) });
+    if (o.kind === "pick-account" && o.ride)
+      Object.assign(h, {
+        ride: {
+          pick: x.hints(o.ride.pick, where),
+          stop: x.hints(o.ride.stop, where),
+          why: x.text(o.ride.why, where),
+        },
+      });
+    if (o.kind === "second-step")
+      Object.assign(h, {
+        ways: o.ways.map((w) => {
+          const out: Record<string, unknown> = { ...w };
+          for (const k of ["choice", "field", "submit"] as const)
+            if (k in w && w[k as keyof typeof w])
+              out[k] = x.hints(w[k as keyof typeof w] as Record<string, unknown>, where);
+          for (const k of ["hint", "note", "ask"] as const)
+            if (k in w && typeof w[k as keyof typeof w] === "string")
+              out[k] = x.text(w[k as keyof typeof w] as string, where);
+          return out;
+        }),
+      });
     const goal = x.text(o.goal, where);
     if (o.kind === "open") return { ...o, goal, url: x.url(o.url, where) } as WalkOp;
     if (o.kind === "fill" && o.value.from === "literal" && x.dirty(o.value.text))

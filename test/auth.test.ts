@@ -1067,9 +1067,11 @@ describe("resolveLogin", () => {
       credential: "google@ops",
     });
     const { SITE_LOGINS } = await import("../src/auth/sites.js");
+    const { repoWalkLogins } = await import("../src/walks/login.js");
     for (const app of ["gmail", "drive", "calendar", "docs", "sheets"])
       expect(credentialFor(SITE_LOGINS, app)).toBe("google");
     expect(credentialFor(SITE_LOGINS, "gmail@will")).toBe("google@will");
-    expect(credentialFor(SITE_LOGINS, "outlook@work")).toBe("microsoft@work");
+    const walks = [...SITE_LOGINS, ...repoWalkLogins()];
+    expect(credentialFor(walks, "outlook@work")).toBe("microsoft@work");
   });
 });

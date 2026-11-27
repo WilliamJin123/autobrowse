@@ -134,6 +134,7 @@ describe("a sign-in walk as a SiteLogin", () => {
         return "123456";
       },
       offers: () => true,
+      inbox: () => null,
       serial: async (kind: string, fn: () => Promise<unknown>) => {
         asked.push(`lock ${kind}`);
         return fn();
@@ -178,6 +179,7 @@ describe("a sign-in walk as a SiteLogin", () => {
           return codes.shift();
         },
         offers: () => true,
+        inbox: () => null,
       } as unknown as SignInContext;
       await walkLogin(again, { code: "sms" }).signIn(ctx);
       expect(typed).toEqual(["User=user-a", "Password=pw-a", "Passcode=111111", "Passcode=222222"]);

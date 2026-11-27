@@ -19,6 +19,7 @@ import instantly from "./instantly.js";
 import intuit from "./intuit.js";
 import learn from "./learn.js";
 import linkedin from "./linkedin.js";
+import microsoft from "./microsoft.js";
 import npm from "./npm.js";
 import perplexity from "./perplexity.js";
 import reddit from "./reddit.js";
@@ -48,4 +49,5 @@ export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [
   perplexity,
   aws,
   learn,
+  microsoft,
 ];

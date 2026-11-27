@@ -6,6 +6,7 @@
  * per-site code is needed for that, only the provider entry here.
  */
 import type { Hints } from "../browser/locate.js";
+import type { WalkSpecInput } from "../walks/spec.js";
 import type { SignInContext } from "./login.js";
 
 export const PROVIDERS = ["google", "github", "microsoft"] as const;
@@ -36,4 +37,32 @@ export function providerOf(name: Provider): IdentityProvider {
 
 export function isProvider(name: string): name is Provider {
   return (PROVIDERS as readonly string[]).includes(name);
+}
+
+/**
+ * A provider's sign-in as its repo walk, run in place on whatever page its button
+ * opened, so the app's return URL survives. Imported lazily: the walk runner
+ * imports the site logins, which register the providers.
+ */
+export function walkInPlace(
+  site: Provider,
+  load: () => Promise<{ default: WalkSpecInput }>,
+): (ctx: SignInContext) => Promise<void> {
+  return async (ctx) => {
+    const [{ walkLogin }, { walkSpecSchema }, { default: file }] = await Promise.all([
+      import("../walks/login.js"),
+      import("../walks/spec.js"),
+      load(),
+    ]);
+    const here = walkLogin(walkSpecSchema.parse(file)).signInHere;
+    if (!here) throw new Error(`the ${site} walk has no signInHere`);
+    const page = ctx.fp.page;
+    try {
+      await here.run(ctx);
+    } catch (err) {
+      // a popup closes once the provider hands back: that is the end, not a failure
+      if (page.isClosed()) return;
+      throw err;
+    }
+  };
 }
