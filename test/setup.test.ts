@@ -2,6 +2,10 @@ import { memoryCredentials } from "credvault";
 import { describe, expect, it } from "vitest";
 import { needsFor, type Prompter, runSetup } from "../src/app/setup.js";
 import { SITE_LOGINS } from "../src/auth/sites.js";
+import { repoWalkLogins } from "../src/walks/login.js";
+
+/** As boot leaves them: the repo's sign-in walks after the built-in logins. */
+const LOGINS = [...SITE_LOGINS, ...repoWalkLogins()];
 
 function scripted(answers: string[]) {
   const said: string[] = [];
@@ -43,13 +47,13 @@ describe("setup", () => {
       "", // twilio skipped
       "", // sentry skipped
       "", // linkedin skipped
-      "", // instagram skipped
       "", // facebook skipped
       "", // x skipped
       "", // tiktok skipped
       "", // microsoft skipped
+      "", // instagram skipped
     ]);
-    const out = await runSetup(io, store, SITE_LOGINS, {
+    const out = await runSetup(io, store, LOGINS, {
       tier: 1,
       all: true,
       set: { llm: true, codesInbox: true },
@@ -63,7 +67,6 @@ describe("setup", () => {
       "twilio",
       "sentry",
       "linkedin",
-      "instagram",
       "facebook",
       "x",
       "tiktok",
@@ -78,6 +81,7 @@ describe("setup", () => {
       "intuit",
       "costco",
       "outlook@uw",
+      "instagram",
     ]);
     expect((await store.get("cloudflare"))?.via).toBe("google");
     expect(asked.filter((q) => q.startsWith("hidden")).length).toBe(2);
@@ -110,7 +114,7 @@ describe("setup", () => {
       "outlook@uw": { username: "w@uwaterloo.ca", password: "u" },
     });
     const { io, asked, said } = scripted([]);
-    await runSetup(io, store, SITE_LOGINS, {
+    await runSetup(io, store, LOGINS, {
       tier: 1,
       all: true,
       set: { llm: true, codesInbox: true },
@@ -156,7 +160,7 @@ describe("setup", () => {
       "codes@x.co",
       "+1 (555) 123-4567",
     ]);
-    const out = await runSetup(io, store, SITE_LOGINS, {
+    const out = await runSetup(io, store, LOGINS, {
       tier: 1,
       env,
       has: (b) => b === "claude",

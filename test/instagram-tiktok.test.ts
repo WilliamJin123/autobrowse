@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { INSTAGRAM_LOGIN_URL, signInToInstagram } from "../src/auth/instagram.js";
 import type { CodeKind, SignInContext } from "../src/auth/login.js";
 import { SITE_LOGINS } from "../src/auth/sites.js";
 import { signInToTiktok, TIKTOK_LOGIN_URL } from "../src/auth/tiktok.js";
@@ -36,110 +35,6 @@ const ctx = (fp: SignInContext["fp"], kinds: CodeKind[]): SignInContext => ({
 });
 const line = (a: { op: { kind: string }; hints: Hints }) =>
   `${a.op.kind} ${a.hints.name ?? a.hints.text}`;
-
-describe("instagram sign-in", () => {
-  it("is a site login whose signInHere covers the login, two-factor and challenge pages", () => {
-    const login = SITE_LOGINS.find((l) => l.site === "instagram");
-    expect(login?.signInHere?.at).toBe(INSTAGRAM_LOGIN_URL);
-    for (const u of [
-      "https://www.instagram.com/accounts/login/?next=%2Foauth%2Fauthorize",
-      "https://www.instagram.com/accounts/login/two_factor?next=x",
-      "https://www.instagram.com/challenge/action/abc/",
-    ])
-      expect(INSTAGRAM_LOGIN_URL.test(u)).toBe(true);
-    expect(INSTAGRAM_LOGIN_URL.test("https://www.instagram.com/")).toBe(false);
-    expect(INSTAGRAM_LOGIN_URL.test("https://www.instagram.com/oauth/authorize?x")).toBe(false);
-  });
-
-  it("a password box with no username box tries the fill (a loud locator error), never skips it", async () => {
-    const { fp, acts } = fakePage({
-      text: ["Password Log in"],
-      present: (h) => h.name === "/^password$/i",
-      url: () => "https://www.instagram.com/accounts/login/",
-    });
-    await signInToInstagram(ctx(fp, [])).catch(() => undefined);
-    expect(acts.map(line)[0]).toBe("fill /(phone|mobile) number, username,? or email/i");
-  });
-
-  it("no form at all on the login page fails, never walks on", async () => {
-    const { fp, acts } = fakePage({
-      text: ["Something else"],
-      present: () => false,
-      url: () => "https://www.instagram.com/accounts/login/?next=x",
-    });
-    await expect(signInToInstagram(ctx(fp, []))).rejects.toThrow(/no sign-in form/);
-    expect(acts).toEqual([]);
-  });
-
-  it("username, password, the authenticator code, then declines the save prompt", async () => {
-    let url = "https://www.instagram.com/accounts/login/?next=%2Foauth";
-    const { fp, acts } = fakePage({
-      text: [
-        "Phone number, username, or email Password Log in",
-        "Enter the code from your authentication app",
-        "Save your login info?",
-      ],
-      present: (h) => !/send/i.test(String(h.name)),
-      url: () => url,
-      onAct: (n) => {
-        if (n === 3) url = "https://www.instagram.com/accounts/login/two_factor?next=x";
-        if (n === 5) url = "https://www.instagram.com/oauth/authorize?client_id=1";
-      },
-    });
-    await signInToInstagram(ctx(fp, ["totp"]));
-    expect(acts.map(line)).toEqual([
-      "fill /(phone|mobile) number, username,? or email/i",
-      "fill /^password$/i",
-      "click /^log in$/i",
-      "fill /security code|confirmation code|^code$/i",
-      "click /^(confirm|submit|next|continue)$/i",
-      "click /^not now$/i",
-      "click /^not now$/i",
-    ]);
-  });
-
-  it("sends and takes the emailed code on an unusual login; stops on a rejected password or a selfie check", async () => {
-    let url = "https://www.instagram.com/accounts/login/";
-    const emailed = fakePage({
-      text: [
-        "Phone number, username, or email Password",
-        "We detected an unusual login attempt. Send Security Code",
-        "Enter the security code we emailed",
-      ],
-      present: (h) => !/not now/i.test(String(h.name)),
-      url: () => url,
-      onAct: (n) => {
-        if (n === 3) url = "https://www.instagram.com/challenge/action/1/";
-        if (n === 6) url = "https://www.instagram.com/";
-      },
-    });
-    await signInToInstagram(ctx(emailed.fp, ["email"]));
-    expect(emailed.acts.map(line).slice(3)).toEqual([
-      "click /send (security )?code/i",
-      "fill /security code|confirmation code|^code$/i",
-      "click /^(confirm|submit|next|continue)$/i",
-    ]);
-    expect(emailed.acts[4]?.op).toMatchObject({ kind: "fill", value: "123456" });
-
-    const rejected = fakePage({
-      text: ["Phone number, username, or email", "Sorry, your password was incorrect."],
-      present: () => true,
-    });
-    await expect(signInToInstagram(ctx(rejected.fp, []))).rejects.toThrow(/password rejected/);
-
-    const selfie = fakePage({
-      text: [
-        "Phone number, username, or email",
-        "We noticed suspicious activity: confirm it's you",
-      ],
-      present: (h) => !/code/i.test(String(h.name)),
-      url: "https://www.instagram.com/challenge/action/2/",
-    });
-    await expect(signInToInstagram(ctx(selfie.fp, ["email"]))).rejects.toThrow(
-      /check only a person/,
-    );
-  });
-});
 
 describe("tiktok sign-in", () => {
   it("is a site login whose signInHere covers the login pages", () => {

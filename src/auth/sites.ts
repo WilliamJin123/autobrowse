@@ -11,7 +11,6 @@ import { backFrom, clickOpening, type Walk, walk } from "../browser/screens.js";
 import { FACEBOOK_LOGIN_URL, signInToFacebook } from "./facebook.js";
 import { signInToGithub } from "./github.js";
 import { signInToGoogle } from "./google.js";
-import { INSTAGRAM_LOGIN_URL, signInToInstagram } from "./instagram.js";
 import { LINKEDIN_LOGIN_URL, signInToLinkedin } from "./linkedin.js";
 import {
   addressOf,
@@ -686,19 +685,6 @@ const github: SiteLogin = {
   },
 };
 
-/** Instagram: the professional account's own login. Unverified until a credential exists. */
-const instagram: SiteLogin = {
-  site: "instagram",
-  home: "https://www.instagram.com/",
-  ask: "Your Instagram login (username, password, authenticator key if set)",
-  loggedIn: async (fp) => !INSTAGRAM_LOGIN_URL.test(fp.url()),
-  signIn: async (ctx) => {
-    await ctx.fp.open("https://www.instagram.com/accounts/login/", { allowWall: true });
-    await signInToInstagram(ctx);
-  },
-  signInHere: { at: INSTAGRAM_LOGIN_URL, run: signInToInstagram },
-};
-
 /** Facebook: the person's account behind the Meta app (Pages, ad accounts). Unverified until a credential exists. */
 const facebook: SiteLogin = {
   site: "facebook",
@@ -999,7 +985,6 @@ export const SITE_LOGINS: readonly SiteLogin[] = [
   twilio,
   sentry,
   linkedin,
-  instagram,
   facebook,
   x,
   tiktok,

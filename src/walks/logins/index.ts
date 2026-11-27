@@ -6,5 +6,6 @@
  */
 
 import type { WalkSpecInput } from "../spec.js";
+import instagram from "./instagram.js";
 
-export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [];
+export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [instagram];

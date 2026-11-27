@@ -312,6 +312,8 @@ export const walkSpecSchema = z
       .default([]),
     /** A click on it creates, sends or pays: running it takes a yes. */
     irreversible: z.boolean().default(false),
+    /** Login walks: the site's sign-in pages; on one, the walk runs in place (no open), so a `next` in its URL survives. */
+    signInHere: patternSchema.optional(),
     screens: z.array(screenSpecSchema).min(1),
   })
   .superRefine((w, ctx) => {
@@ -334,6 +336,12 @@ export const walkSpecSchema = z
           at(`a ${op.kind} op runs only in a walk named ${LOGIN_WALK}`, "ops", j);
       });
     });
+    if (w.signInHere && !login)
+      ctx.addIssue({
+        code: "custom",
+        path: ["signInHere"],
+        message: "signInHere is for a login walk",
+      });
     if (!w.screens.some((s) => s.goal))
       ctx.addIssue({ code: "custom", path: ["screens"], message: "no goal screen" });
     const fields = new Set(w.fields.map((f) => f.key));
