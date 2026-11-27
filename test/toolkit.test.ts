@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { SITE_LOGINS } from "../src/auth/sites.js";
 import type { Ability } from "../src/do/catalog.js";
@@ -31,11 +31,15 @@ const wf = (name: string, site: string | undefined, hosts?: string[], descriptio
     emptyMemo: () => ({}),
   });
 
-const tools = toolsOf([
-  wf("hn-search", "hn", ["hn.algolia.com"], "Recorded 2026-10-25 on hn"),
-  wf("linkedin-profile-basics", "linkedin"),
-  wf("domain", undefined),
-]);
+let tools: Tool[] = [];
+// after the setup's hook: the login tools come from the repo walks it loads
+beforeAll(() => {
+  tools = toolsOf([
+    wf("hn-search", "hn", ["hn.algolia.com"], "Recorded 2026-10-25 on hn"),
+    wf("linkedin-profile-basics", "linkedin"),
+    wf("domain", undefined),
+  ]);
+});
 
 describe("the toolkit", () => {
   it("holds the catalog, then every leg it does not shadow", () => {
