@@ -47,6 +47,8 @@ export function fakeSite(states: Record<string, State>, start: string) {
   const fp: FlowPage = {
     page: {} as FlowPage["page"],
     passkeys: {} as FlowPage["passkeys"],
+    async scroll() {},
+    newIp: async () => false,
     captcha: async () => ({ solved: false, kind: null, vendor: null, reason: "fake" }),
     async open() {},
     url,

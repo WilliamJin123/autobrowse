@@ -26,7 +26,7 @@ function scripted(answers: string[]) {
 
 describe("setup", () => {
   it("needs one google credential for every site behind it, providers first", () => {
-    const needs = needsFor(SITE_LOGINS);
+    const needs = needsFor(LOGINS);
     expect(needs[0]?.name).toBe("google");
     expect(needs[0]?.sites).toContain("google");
     expect(needs.map((n) => n.name)).toContain("google@admin");
@@ -38,9 +38,9 @@ describe("setup", () => {
       "admin@x.co",
       "pw",
       "", // google
+      "", // google@admin skipped
       "y",
       "admin@x.co", // cloudflare via google
-      "", // google@admin skipped
       "", // aws skipped
       "", // anthropic skipped
       "", // twilio skipped

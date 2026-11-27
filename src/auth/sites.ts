@@ -7,194 +7,17 @@
  */
 
 import type { FlowPage } from "../browser/flow.js";
-import { backFrom, clickOpening, type Walk, walk } from "../browser/screens.js";
 // registers GitHub as an identity provider
 import "./github.js";
 import { signInToGoogle } from "./google.js";
 import {
-  addressOf,
   LoginFailed,
   type PasskeySetupSpec,
   type PasswordChangeSpec,
-  passwordOf,
-  type SignInContext,
   type SiteLogin,
   type TotpSetupSpec,
 } from "./login.js";
 import "./microsoft.js";
-import { providerOf } from "./providers.js";
-
-const CLOUDFLARE_HOME = /dash\.cloudflare\.com\/[0-9a-f]{32}/;
-const CLOUDFLARE_LOGIN = "https://dash.cloudflare.com/login";
-const GOOGLE_ACCOUNTS = /^https:\/\/accounts\.google\.com\//;
-
-/** A returning browser's saved profile: "Continue as <email> using Google". Seen 2026-09-28. */
-const SAVED_PROFILE = { role: "button", name: "/^continue as .+ using google$/i" } as const;
-const OTHER_PROFILE = { role: "button", name: "Sign in with another profile" } as const;
-const EMAIL = { role: "textbox", name: "Email" } as const;
-const PASSWORD = { role: "textbox", name: "Password" } as const;
-const LOG_IN = { role: "button", name: "/^(log|sign) ?in$/i" } as const;
-const CODE = { role: "textbox", name: "/code/i" } as const;
-
-/**
- * Whether a saved profile's label names this address. Cloudflare cuts a
- * long one short ("jinwi…@gmail.com", "jinwi…"): the shown parts, in order.
- */
-export function savedProfileIs(label: string, address: string): boolean {
-  const shown = label
-    .match(/continue as (.+?) using google/i)?.[1]
-    ?.trim()
-    .toLowerCase();
-  if (!shown || !address) return false;
-  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const cut = /(…|\.\.\.)$/.test(shown);
-  const parts = shown.split(/…|\.\.\./).map(esc);
-  return new RegExp(`^${parts.join(".*")}${cut ? "" : "$"}`).test(address.trim().toLowerCase());
-}
-
-/**
- * Cloudflare's sign-in as screens: whichever way the page comes (the form,
- * a saved profile, Google in a popup or a redirect, a code), the walk
- * does the right thing there and looks again.
- *
- * - A saved profile for this account rides the browser's live Google
- *   session: no secret typed. If Google then wants a password the session
- *   is gone, and the walk stops rather than type one (the account is
- *   personal; a rejected personal password is never retried).
- * - A saved profile for someone else: "Sign in with another profile".
- * - The form: the password, or the Google button when the account signs
- *   in via Google (the credential's `via`, or no password).
- */
-export function cloudflareWalk(ctx: SignInContext): Walk<SignInContext> {
-  const { cred } = ctx;
-  const main = ctx.fp.page;
-  const byGoogle = cred.via === "google" || !cred.password;
-  const ours = (label: string) =>
-    savedProfileIs(label, addressOf(cred)) || savedProfileIs(label, cred.username);
-  let riding = false;
-  let typedPrevious = false;
-  const fail = (why: string): never => {
-    throw new LoginFailed("cloudflare", why);
-  };
-  return {
-    site: "cloudflare",
-    name: "sign-in",
-    goal: "signed in to the Cloudflare dashboard",
-    fail,
-    screens: [
-      {
-        name: "dashboard",
-        looks: "the Cloudflare dashboard, signed in",
-        at: CLOUDFLARE_HOME,
-        hides: [PASSWORD],
-        goal: true,
-      },
-      {
-        name: "google",
-        looks: "Google's own sign-in: account chooser, email, password or 2-step",
-        at: GOOGLE_ACCOUNTS,
-        async act(c) {
-          const { fp } = c;
-          if (riding) {
-            // A tile for an account the profile is signed in as needs no password.
-            const tile = { text: addressOf(cred) } as const;
-            if (await fp.has(tile, 3_000))
-              await fp.act({ kind: "click" }, tile, { goal: "pick the account" });
-            else if (await fp.has({ role: "textbox", name: "/password/i" }))
-              fail(
-                "the saved Google session is gone and Google wants a password: sign in to Google once in the cloudflare profile",
-              );
-          } else {
-            const google = await c.credFor(
-              "google",
-              cred.via === "google" ? cred.username : undefined,
-            );
-            await providerOf("google").signIn(c.as(google));
-          }
-          await backFrom(fp, main);
-          await fp.waitForUrl(CLOUDFLARE_HOME, 30_000);
-        },
-      },
-      {
-        name: "saved profile",
-        looks: "'Continue as <email> using Google', with 'Sign in with another profile'",
-        shows: [SAVED_PROFILE],
-        async act({ fp }) {
-          if (ours(await fp.read(SAVED_PROFILE))) {
-            riding = true;
-            return clickOpening(fp, SAVED_PROFILE, "continue with the saved Google profile");
-          }
-          await fp.act({ kind: "click" }, OTHER_PROFILE, { goal: "sign in with another profile" });
-        },
-      },
-      {
-        name: "rejected",
-        looks: "the login form saying the email or password is wrong",
-        shows: [PASSWORD],
-        says: /incorrect email or password|invalid credentials/i,
-        async act({ fp }) {
-          // A rotation the site took without saying so: the one before still works once.
-          if (!cred.previousPassword || typedPrevious) fail("password rejected");
-          typedPrevious = true;
-          await fp.act({ kind: "fill", value: cred.previousPassword as string }, PASSWORD, {
-            goal: "type the previous password",
-          });
-          await fp.act({ kind: "click" }, LOG_IN, { goal: "submit login form" });
-        },
-      },
-      {
-        name: "code",
-        looks: "a box asking for an authenticator or two-factor code",
-        shows: [CODE],
-        says: /authenticator|verification code|two-factor|2fa/i,
-        async act(c) {
-          const code = await c.code("totp");
-          await c.fp.act({ kind: "fill", value: code }, CODE, { goal: "type verification code" });
-          await c.fp.act(
-            { kind: "click" },
-            { role: "button", name: "/continue|verify/i" },
-            {
-              goal: "submit verification code",
-            },
-          );
-        },
-      },
-      {
-        name: "login form",
-        looks: "the Cloudflare login form: email and password boxes, and 'Sign in with Google'",
-        shows: [EMAIL],
-        async act({ fp }) {
-          if (byGoogle)
-            return clickOpening(fp, { role: "button", name: "/google/i" }, "sign in with google");
-          await fp.act({ kind: "fill", value: cred.username }, EMAIL, { goal: "type username" });
-          await fp.act({ kind: "fill", value: passwordOf("cloudflare", cred) }, PASSWORD, {
-            goal: "type password",
-          });
-          await fp.act({ kind: "click" }, LOG_IN, { goal: "submit login form" });
-        },
-      },
-    ],
-  };
-}
-
-/**
- * Cloudflare: the stored `cloudflare` credential, by password or through
- * Google (`via: "google"`, or no password). One account can hold both;
- * the password goes first (`methodsOf`).
- */
-const cloudflare: SiteLogin = {
-  site: "cloudflare",
-  home: "https://dash.cloudflare.com/",
-  ask: "Your Cloudflare account (dash.cloudflare.com), where the domains get registered",
-  via: ["google"],
-  // A signed-in dashboard URL carries the 32-hex account id; the bare host is the pre-redirect state.
-  loggedIn: async (fp) =>
-    CLOUDFLARE_HOME.test(fp.url()) && !(await fp.has({ role: "textbox", name: "Password" })),
-  async signIn(ctx: SignInContext) {
-    await ctx.fp.open(CLOUDFLARE_LOGIN, { allowWall: true });
-    await walk(ctx, cloudflareWalk(ctx));
-  },
-};
 
 /** Where any Google account turns on an authenticator app. Mapped 2026-09-19 in explore mode. */
 const GOOGLE_TOTP_SETUP: TotpSetupSpec = {
@@ -428,7 +251,6 @@ export const WALK_APPS: Readonly<Record<string, readonly { site: string; ask: st
 };
 
 export const SITE_LOGINS: readonly SiteLogin[] = [
-  cloudflare,
   google,
   // After google: a lookup by credential name finds google itself first.
   ...GOOGLE_APPS,

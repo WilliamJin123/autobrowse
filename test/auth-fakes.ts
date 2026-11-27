@@ -16,6 +16,9 @@ export function fakePage(script: {
   const acts: Array<{ op: Op; hints: Hints }> = [];
   let i = 0;
   const fp: FlowPage = {
+    passkeys: {} as FlowPage["passkeys"],
+    async scroll() {},
+    newIp: async () => false,
     captcha: async () => ({ solved: false, kind: null, vendor: null, reason: "fake" }),
     page: { on() {}, off() {} } as unknown as FlowPage["page"],
     async open() {},

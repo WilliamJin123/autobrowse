@@ -1929,3 +1929,126 @@ describe("microsoft walk", () => {
     });
   });
 });
+
+describe("cloudflare walk", () => {
+  const DASH = "https://dash.cloudflare.com/4f3a9c0e4f3a9c0e4f3a9c0e4f3a9c0e/home";
+  const LOGIN = "https://dash.cloudflare.com/login";
+  const states = (): Record<string, State> => ({
+    saved: {
+      url: LOGIN,
+      has: ["button:Continue as wi… using Google", "button:Sign in with another profile"],
+      on: {
+        "click button:Continue as wi… using Google": "google",
+        "click button:Sign in with another profile": "form",
+      },
+    },
+    google: {
+      url: "https://accounts.google.com/o/oauth2/auth",
+      has: ["text:will@gmail.com"],
+      on: { "click text:will@gmail.com": "dashboard" },
+    },
+    form: {
+      url: LOGIN,
+      has: ["textbox:Email", "textbox:Password", "button:Log in", "button:Sign in with Google"],
+      on: { "click button:Log in": "dashboard", "click button:Sign in with Google": "dashboard" },
+    },
+    rejected: {
+      url: LOGIN,
+      has: ["textbox:Email", "textbox:Password", "button:Log in"],
+      text: "Incorrect email or password",
+      on: { "click button:Log in": "dashboard" },
+    },
+    code: {
+      url: LOGIN,
+      has: ["textbox:Code", "button:Continue"],
+      text: "Enter the code from your authenticator app",
+      on: { "click button:Continue": "dashboard" },
+    },
+    dashboard: { url: DASH, has: [] },
+  });
+  const will = { username: "will@gmail.com", password: "cfpw" };
+
+  it("rides the saved profile when it is this account: nothing typed", async () => {
+    const s = siteOf(states(), "saved");
+    const { ctx, providers } = ctxFor(s.fp, [], will);
+    await loginOf("cloudflare").signIn(ctx);
+    expect(s.acts).toEqual(["click Continue as wi… using Google", "click will@gmail.com"]);
+    expect(providers).toEqual([]);
+    expect(await loginOf("cloudflare").loggedIn(s.fp)).toBe(true);
+  });
+
+  it("a ride where Google wants a password: no fill, no Google credential, the try fails", async () => {
+    const st = states();
+    (st.google as State).has = ["textbox:Password", "button:Next"];
+    const s = siteOf(st, "saved");
+    const { ctx, providers } = ctxFor(s.fp, [], will);
+    await expect(loginOf("cloudflare").signIn(ctx)).rejects.toThrow(/saved Google session is gone/);
+    expect(s.acts).toEqual(["click Continue as wi… using Google"]);
+    expect(s.acts.some((a) => a.startsWith("fill"))).toBe(false);
+    expect(providers).toEqual([]);
+  });
+
+  it("someone else's saved profile: another profile, then the password", async () => {
+    const s = siteOf(states(), "saved");
+    const { ctx } = ctxFor(s.fp, [], { ...will, username: "ops@wren.dev" });
+    await loginOf("cloudflare").signIn(ctx);
+    expect(s.acts).toEqual([
+      "click Sign in with another profile",
+      "fill Email=ops@wren.dev",
+      "fill Password=cfpw",
+      "click Log in",
+    ]);
+    expect(s.opened).toEqual([LOGIN]);
+  });
+
+  it("a via-google account presses the Google button, as its own Google address", async () => {
+    const st = states();
+    (st.form as State).on = { "click button:Sign in with Google": "google" };
+    st.google = { url: GOOGLE_PAGE, has: [] };
+    const s = siteOf(st, "form");
+    const signedAs = fakeGoogle(() => s.go("dashboard"));
+    const { ctx, providers } = ctxFor(s.fp, [], { username: "will@gmail.com", via: "google" });
+    await loginOf("cloudflare").signIn(ctx);
+    expect(s.acts).toEqual(["click Sign in with Google"]);
+    expect(providers).toEqual(["google:will@gmail.com"]);
+    expect(signedAs).toEqual(["will@gmail.com"]);
+  });
+
+  it("a rejected password gets the previous one once, then is refused with case password", async () => {
+    const s = siteOf(
+      {
+        ...states(),
+        form: { ...(states().form as State), on: { "click button:Log in": "rejected" } },
+      },
+      "form",
+    );
+    const { ctx } = ctxFor(s.fp, [], { ...will, previousPassword: "old" });
+    await loginOf("cloudflare").signIn(ctx);
+    expect(s.acts).toEqual([
+      "fill Email=will@gmail.com",
+      "fill Password=cfpw",
+      "click Log in",
+      "fill Password=old",
+      "click Log in",
+    ]);
+    const stuck = siteOf(
+      {
+        ...states(),
+        form: { ...(states().form as State), on: { "click button:Log in": "rejected" } },
+        rejected: { ...(states().rejected as State), on: {} },
+      },
+      "form",
+    );
+    await expect(
+      loginOf("cloudflare").signIn(ctxFor(stuck.fp, [], { ...will, previousPassword: "old" }).ctx),
+    ).rejects.toMatchObject({ refused: true, case: "password" });
+  });
+
+  it("a code page gets the authenticator code", async () => {
+    const s = siteOf(states(), "code");
+    const { ctx, asked } = ctxFor(s.fp, ["totp"], will);
+    await loginOf("cloudflare").signIn(ctx);
+    expect(s.acts).toEqual(["fill Code=123456", "click Continue"]);
+    expect(asked).toEqual(["totp"]);
+  });
+});

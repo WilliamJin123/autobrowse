@@ -4,9 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import type { Credential } from "../src/auth/credentials.js";
-import { LoginFailed, type SignInContext } from "../src/auth/login.js";
-import { cloudflareWalk, savedProfileIs } from "../src/auth/sites.js";
+import { tileNames } from "../src/auth/sign-in-kit.js";
 import { defineFlow, type FlowPage, flowRunner } from "../src/browser/flow.js";
 import type { Repairer } from "../src/browser/repair.js";
 import {
@@ -23,17 +21,6 @@ import {
 } from "../src/browser/screens.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { fakeSite } from "./site-fakes.js";
-
-const google: Credential = { username: "will@gmail.com", password: "gpw", passkeys: [] };
-const ctxOf = (fp: FlowPage, cred: Credential): SignInContext => ({
-  fp,
-  cred,
-  code: async () => "123456",
-  offers: () => true,
-  inbox: () => null,
-  credFor: async () => google,
-  as: (c) => ctxOf(fp, c),
-});
 
 describe("screens", () => {
   it("shapes URLs and blurs landmarks so a page matches across ids and names", () => {
@@ -55,13 +42,14 @@ describe("screens", () => {
     expect(landmark("Order #4821 shipped")).toBe("order ## shipped");
   });
 
-  it("reads a saved profile's label, cut short or whole", () => {
-    expect(savedProfileIs("Continue as will@gmail.com using Google", "will@gmail.com")).toBe(true);
-    expect(savedProfileIs("Continue as wi… using Google", "will@gmail.com")).toBe(true);
-    expect(savedProfileIs("Continue as wi…@gmail.com using Google", "will@gmail.com")).toBe(true);
-    expect(savedProfileIs("Continue as wi… using Google", "bob@gmail.com")).toBe(false);
-    expect(savedProfileIs("Continue as will@gmail.com using Google", "will@gmail.co")).toBe(false);
-    expect(savedProfileIs("Sign in", "will@gmail.com")).toBe(false);
+  it("reads a saved account tile's label, cut short or whole", () => {
+    const at = /continue as (.+?) using google/i;
+    expect(tileNames("Continue as will@gmail.com using Google", at, "will@gmail.com")).toBe(true);
+    expect(tileNames("Continue as wi… using Google", at, "will@gmail.com")).toBe(true);
+    expect(tileNames("Continue as wi…@gmail.com using Google", at, "will@gmail.com")).toBe(true);
+    expect(tileNames("Continue as wi… using Google", at, "bob@gmail.com")).toBe(false);
+    expect(tileNames("Continue as will@gmail.com using Google", at, "will@gmail.co")).toBe(false);
+    expect(tileNames("Sign in", at, "will@gmail.com")).toBe(false);
   });
 
   it("keeps learned pages by site, matched by URL shape and landmarks; a walk's screen over a click", () => {
@@ -298,104 +286,6 @@ describe("screens", () => {
     s.fp.screens = helpOf(learned);
     await expect(walk({ fp: s.fp }, twoStep())).rejects.toThrow(/nothing matches/);
     expect(learned.list()).toEqual([]);
-  });
-
-  describe("cloudflare", () => {
-    const cred: Credential = {
-      username: "will@gmail.com",
-      password: "cfpw",
-      previousPassword: "old",
-      passkeys: [],
-    };
-    const states = (): Record<string, State> => ({
-      saved: {
-        has: ["button:Continue as wi… using Google", "button:Sign in with another profile"],
-        on: {
-          "click button:Continue as wi… using Google": "google",
-          "click button:Sign in with another profile": "form",
-        },
-      },
-      google: {
-        url: "https://accounts.google.com/o/oauth2/auth",
-        has: ["text:will@gmail.com"],
-        on: { "click text:will@gmail.com": "dashboard" },
-      },
-      form: {
-        has: ["textbox:Email", "textbox:Password", "button:Log in", "button:Sign in with Google"],
-        on: { "click button:Log in": "dashboard", "click button:Sign in with Google": "dashboard" },
-      },
-      rejected: {
-        has: ["textbox:Email", "textbox:Password", "button:Log in"],
-        text: "Incorrect email or password",
-        on: { "click button:Log in": "dashboard" },
-      },
-      code: {
-        has: ["textbox:Code", "button:Continue"],
-        text: "Enter the code from your authenticator app",
-        on: { "click button:Continue": "dashboard" },
-      },
-      dashboard: {
-        url: "https://dash.cloudflare.com/4f3a9c0e4f3a9c0e4f3a9c0e4f3a9c0e/home",
-        has: [],
-      },
-    });
-
-    it("rides the saved profile when it is this account: nothing typed", async () => {
-      const s = fakeSite(states(), "saved");
-      const ctx = ctxOf(s.fp, cred);
-      expect(await walk(ctx, cloudflareWalk(ctx))).toBe("dashboard");
-      expect(s.acts).toEqual(["click Continue as wi… using Google", "click will@gmail.com"]);
-    });
-
-    it("someone else's saved profile: another profile, then the password", async () => {
-      const s = fakeSite(states(), "saved");
-      const ctx = ctxOf(s.fp, { ...cred, username: "ops@wren.dev" });
-      expect(await walk(ctx, cloudflareWalk(ctx))).toBe("dashboard");
-      expect(s.acts).toEqual([
-        "click Sign in with another profile",
-        "fill Email=ops@wren.dev",
-        "fill Password=cfpw",
-        "click Log in",
-      ]);
-    });
-
-    it("a via-google account presses the Google button on the form", async () => {
-      const s = fakeSite(states(), "form");
-      const ctx = ctxOf(s.fp, { username: "will@gmail.com", via: "google", passkeys: [] });
-      expect(await walk(ctx, cloudflareWalk(ctx))).toBe("dashboard");
-      expect(s.acts).toEqual(["click Sign in with Google"]);
-    });
-
-    it("a rejected password gets the previous one once, then fails as LoginFailed", async () => {
-      const s = fakeSite(states(), "rejected");
-      const ctx = ctxOf(s.fp, cred);
-      expect(await walk(ctx, cloudflareWalk(ctx))).toBe("dashboard");
-      expect(s.acts).toEqual(["fill Password=old", "click Log in"]);
-      const stuck = fakeSite(
-        { ...states(), rejected: { ...(states().rejected as State), on: {} } },
-        "rejected",
-      );
-      const c2 = ctxOf(stuck.fp, cred);
-      await expect(walk(c2, cloudflareWalk(c2))).rejects.toThrow(LoginFailed);
-      await expect(
-        walk(c2, cloudflareWalk(ctxOf(stuck.fp, { ...cred, previousPassword: undefined }))),
-      ).rejects.toThrow(/password rejected/);
-    });
-
-    it("a code page gets the authenticator code", async () => {
-      const s = fakeSite(states(), "code");
-      const ctx = ctxOf(s.fp, cred);
-      expect(await walk(ctx, cloudflareWalk(ctx))).toBe("dashboard");
-      expect(s.acts).toEqual(["fill Code=123456", "click Continue"]);
-    });
-
-    it("the riding path stops when Google wants a password", async () => {
-      const st = states();
-      (st.google as State).has = ["textbox:Password"];
-      const s = fakeSite(st, "saved");
-      const ctx = ctxOf(s.fp, cred);
-      await expect(walk(ctx, cloudflareWalk(ctx))).rejects.toThrow(/saved Google session is gone/);
-    });
   });
 
   describe("interrupts in the runner", () => {

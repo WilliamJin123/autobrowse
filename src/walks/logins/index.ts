@@ -9,6 +9,7 @@ import type { WalkSpecInput } from "../spec.js";
 import anthropic from "./anthropic.js";
 import apple from "./apple.js";
 import aws from "./aws.js";
+import cloudflare from "./cloudflare.js";
 import costco from "./costco.js";
 import discord from "./discord.js";
 import facebook from "./facebook.js";
@@ -29,6 +30,7 @@ import twilio from "./twilio.js";
 import x from "./x.js";
 
 export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [
+  cloudflare,
   instagram,
   facebook,
   x,

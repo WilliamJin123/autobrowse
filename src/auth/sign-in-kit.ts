@@ -179,6 +179,8 @@ export async function enterCode(st: SignInState, ctx: SignInContext, box: CodeBo
     await fp.act({ kind: "fill", value: code, into: "code" }, box.field, {
       goal: "type verification code",
     });
+    // a code answers for the account as a password does: the goal may follow
+    st.submitted = true;
     // six digits submit themselves on some pages (GitHub): the button is gone by then
     if (await fp.has(box.submit, SUBMIT_MS))
       await fp.act({ kind: "click" }, box.submit, { goal: "submit verification code" });
