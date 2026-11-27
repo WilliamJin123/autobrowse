@@ -16,10 +16,12 @@ import { banHit } from "../browser/ban-signals.js";
 import type { FlowPage } from "../browser/flow.js";
 import type { Hints } from "../browser/locate.js";
 import { pageState, untilLoaded } from "../browser/page-state.js";
-import { type Screen, type Walk, walk } from "../browser/screens.js";
+import { snapshotPage } from "../browser/repair.js";
+import { isUnknownPage, type Screen, type Walk, walk } from "../browser/screens.js";
 import { holdsSecret, secret } from "../browser/secrets.js";
 import { NeedsHuman, wallOf } from "../browser/session.js";
 import { safeUrls } from "../clients/http.js";
+import type { WalkSpec } from "../walks/spec.js";
 import { type CodeKind, type CodeSource, inboxLock } from "./codes.js";
 import { guardedPage, hostNamed, hostUnder, registrable } from "./guard.js";
 import { pageLogin } from "./page-login.js";
@@ -139,6 +141,8 @@ export interface SiteLogin {
   ask?: string;
   /** Identity providers whose button this site's `signIn` can use instead of a password. */
   via?: readonly Provider[];
+  /** A walk sign-in: its spec and the walks dir a heal screen goes to (`healSignIn`). */
+  heal?: { spec: WalkSpec; dir: string };
   /** True when the page shows a signed-in state (avatar, dashboard, no sign-in form). */
   loggedIn(fp: FlowPage): Promise<boolean>;
   signIn(ctx: SignInContext): Promise<void>;
@@ -774,6 +778,16 @@ export async function landAfterOauth(
 
 const sameUser = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/** The page a walk sign-in failed on, caught before anything leaves it. */
+export interface SignInHealAsk {
+  spec: WalkSpec;
+  dir: string;
+  url: string;
+  snapshot: string;
+  error: string;
+  steps: readonly string[];
+}
+
 export interface LoginOptions {
   credentials: CredentialStore;
   codes: CodeSource;
@@ -788,6 +802,8 @@ export interface LoginOptions {
   random?: () => number;
   /** Where a "signed in after all" page is shot: the page our flow misread. */
   shots?: string;
+  /** A walk failed on a page it does not know: write a screen for it. Not awaited. */
+  heal?: (ask: SignInHealAsk) => Promise<unknown>;
   now?: () => Date;
 }
 
@@ -1139,6 +1155,7 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
     const watched = typedSecret(fp, track, () => passwords);
     const typed = () => ({ password: track.password, code: track.code });
     const steps: string[] = [];
+    let healAsk: SignInHealAsk | null = null;
     for (const method of methodsOf(cred)) {
       // A method via a provider takes the generic provider path when the
       // site's own spec does not know that provider (or there is no spec at all).
@@ -1189,6 +1206,15 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
         if (!first) {
           failedIn = login;
           failedVia = via;
+          // the walk's own failure on a page it does not know: keep that page for a heal
+          if (login.heal && !err.refused && isUnknownPage(err.message))
+            healAsk = {
+              ...login.heal,
+              url: fp.url(),
+              snapshot: await snapshotPage(fp.page).catch(() => ""),
+              error: err.message.slice(0, 300),
+              steps: [...steps],
+            };
         }
         first ??= err;
       }
@@ -1251,6 +1277,9 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
           }
         : {}),
     });
+    // after the hold: the next try reads the heal screen fresh
+    if (healAsk && opts.heal)
+      void opts.heal(healAsk).catch((err) => console.warn(`${name}: heal failed: ${errText(err)}`));
     throw first;
   };
 }

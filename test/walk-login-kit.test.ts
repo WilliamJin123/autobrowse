@@ -1,12 +1,33 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { memoryCredentials } from "credvault";
 import { describe, expect, it } from "vitest";
-import { isPassword, LoginFailed, type SignInContext } from "../src/auth/login.js";
+import { totpSource } from "../src/auth/codes.js";
+import {
+  isPassword,
+  LoginFailed,
+  loginProvider,
+  type SignInContext,
+  type SignInHealAsk,
+} from "../src/auth/login.js";
 import { signInState } from "../src/auth/sign-in-kit.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { walkFlow } from "../src/walks/flow.js";
 import { repoWalkLogins, walkLogin } from "../src/walks/login.js";
+import {
+  addHealScreen,
+  HEAL_EVERY_MS,
+  type HealProposal,
+  type HealWriter,
+  healLog,
+  healScreenOf,
+  healSignIn,
+  withHeal,
+} from "../src/walks/login-heal.js";
 import { LOGIN_WALK_FILES } from "../src/walks/logins/index.js";
-import { type WalkSpec, walkSpecSchema } from "../src/walks/spec.js";
+import { regexOf, screenSpecSchema, type WalkSpec, walkSpecSchema } from "../src/walks/spec.js";
 import { fakeSite, type State } from "./site-fakes.js";
 
 const USER = { role: "textbox", name: "/username|email/i" };
@@ -411,5 +432,222 @@ describe("repo sign-in walks", () => {
     ]);
     expect(() => repoWalkLogins([{ ...ok, name: "setup" }])).toThrow(/is named login/);
     expect(() => repoWalkLogins([{ ...ok, start: 7 } as never])).toThrow();
+  });
+});
+
+describe("heal screens on a sign-in", () => {
+  const CONTINUE = { role: "button", name: "Continue to app" };
+  const healScreen = (name = "heal-interstitial") => ({
+    name,
+    looks: "a new page after the password",
+    shows: [CONTINUE],
+    ops: [{ kind: "click", goal: "continue", hints: CONTINUE, irreversible: false }],
+  });
+  const dir = () => mkdtempSync(join(tmpdir(), "login-heal-"));
+  const page = (s: ReturnType<typeof fakeSite>) => {
+    s.fp.page = { url: s.fp.url, evaluate: async () => [], isClosed: () => false } as never;
+    return s;
+  };
+  // a new page between the password and the feed: no repo screen knows it
+  const site = (after: string) =>
+    page(
+      fakeSite(
+        {
+          login: { ...LOGIN, on: { "click button:Log in": "inter" } },
+          inter: {
+            url: "https://gram.test/accounts/interstitial",
+            has: ["button:Continue to app"],
+            on: { "click button:Continue to app": after },
+          },
+          home: { url: "https://gram.test/feed", has: [] },
+          odd: { url: "https://gram.test/accounts/odd", has: ["button:Something"] },
+          wrong: { has: [], text: "Sorry, your password was incorrect." },
+        },
+        "login",
+      ),
+    );
+  const outcomes = (d: string) =>
+    readFileSync(healLog(d, "gram"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).outcome);
+
+  it("with no heal screen the try fails; a trial screen gets it through and is kept", async () => {
+    const d = dir();
+    await expect(
+      walkLogin(instagramLike(), { healDir: d }).signIn(ctxFor(site("home").fp).ctx),
+    ).rejects.toThrow(/does not know/);
+    expect(addHealScreen(d, "gram", screenSpecSchema.parse(healScreen()))).toBe(
+      "heal-interstitial",
+    );
+    const s = site("home");
+    await walkLogin(instagramLike(), { healDir: d }).signIn(ctxFor(s.fp).ctx);
+    expect(s.acts.at(-1)).toBe("click Continue to app");
+    expect(outcomes(d)).toEqual(["passed"]);
+    expect(withHeal(instagramLike(), d)).toMatchObject({ kept: ["heal-interstitial"], trial: [] });
+  });
+
+  it("a trial screen on a try that fails on its own is dropped; a refusal drops nothing", async () => {
+    const d = dir();
+    addHealScreen(d, "gram", screenSpecSchema.parse(healScreen()));
+    await expect(
+      walkLogin(instagramLike(), { healDir: d }).signIn(ctxFor(site("wrong").fp).ctx),
+    ).rejects.toMatchObject({ case: "password" });
+    expect(withHeal(instagramLike(), d).trial).toEqual(["heal-interstitial"]);
+    await expect(
+      walkLogin(instagramLike(), { healDir: d }).signIn(ctxFor(site("odd").fp).ctx),
+    ).rejects.toThrow(LoginFailed);
+    expect(outcomes(d)).toEqual(["failed"]);
+    const after = withHeal(instagramLike(), d);
+    expect([after.trial, after.kept]).toEqual([[], []]);
+    expect(after.spec.screens.map((x) => x.name)).not.toContain("heal-interstitial");
+  });
+
+  it("loads newest first, after the repo screens; a bad or clashing screen drops alone", () => {
+    const d = dir();
+    mkdirSync(join(d, "gram"), { recursive: true });
+    writeFileSync(
+      join(d, "gram", "login-heal.json"),
+      JSON.stringify({
+        screens: [
+          healScreen("heal-old"),
+          { ...healScreen("heal-bad"), after: ["renamed-screen"] },
+          { ...healScreen("login-form") },
+          healScreen("heal-new"),
+        ],
+      }),
+    );
+    const h = withHeal(instagramLike(), d);
+    const names = h.spec.screens.map((x) => x.name);
+    expect(names.slice(-2)).toEqual(["heal-new", "heal-old"]);
+    expect(names.indexOf("selfie")).toBeLessThan(names.indexOf("heal-new"));
+    expect(h.trial).toEqual(["heal-new", "heal-old"]);
+    expect(h.warnings.join("\n")).toMatch(/heal-bad/);
+    expect(h.warnings.join("\n")).toMatch(/login-form: the walk already has/);
+  });
+});
+
+describe("writing a heal screen", () => {
+  const CONTINUE = { role: "button", name: "Continue to app" };
+  const URL_AT = "https://gram.test/accounts/interstitial?next=%2F";
+  const proposal = (ops: object[] = [{ kind: "click", goal: "continue", hints: CONTINUE }]) => ({
+    name: "interstitial",
+    looks: "a continue page after the password",
+    ops,
+  });
+  const writer = (p: HealProposal | null, seen: unknown[] = []): HealWriter => ({
+    id: "fake",
+    propose: async (req) => {
+      seen.push(req);
+      return p;
+    },
+  });
+  const askFor = (dir: string): SignInHealAsk => ({
+    spec: instagramLike(),
+    dir,
+    url: URL_AT,
+    snapshot: 'button "Continue to app"',
+    error: "gram: a page login does not know: https://gram.test/accounts/interstitial",
+    steps: ["login-form"],
+  });
+  const dir = () => mkdtempSync(join(tmpdir(), "login-heal-write-"));
+
+  it("the code sets at from the URL (no query) and shows from the first op's control", () => {
+    const s = healScreenOf(proposal(), URL_AT);
+    expect(s).toMatchObject({ name: "heal-interstitial", shows: [CONTINUE] });
+    const at = regexOf((s as { at: string }).at);
+    expect(at.test("https://gram.test/accounts/interstitial")).toBe(true);
+    expect(at.test("https://gram.test/accounts/login/")).toBe(false);
+  });
+
+  it("refuses a click that buys or deletes, an op that is not a heal op, and no ops", () => {
+    const buy = { kind: "click", goal: "buy", hints: { role: "button", name: "Buy now" } };
+    expect(healScreenOf(proposal([buy]), URL_AT)).toMatch(/never clicks/);
+    const open = { kind: "open", goal: "leave", url: "https://elsewhere.test/" };
+    expect(healScreenOf(proposal([open]), URL_AT)).toMatch(/never holds a open/);
+    expect(healScreenOf(proposal([]), URL_AT)).toMatch(/no ops/);
+  });
+
+  it("adds a trial screen once per site per day; the model sees the page and the known screens", async () => {
+    const d = dir();
+    const seen: { known: { name: string }[]; snapshot: string }[] = [];
+    const now = new Date("2026-11-27T00:00:00Z");
+    expect(await healSignIn(writer(proposal(), seen), askFor(d), now)).toEqual({
+      status: "added",
+      screen: "heal-interstitial",
+    });
+    expect(seen[0]?.snapshot).toMatch(/Continue to app/);
+    expect(seen[0]?.known.map((k) => k.name)).toContain("login-form");
+    expect(withHeal(instagramLike(), d).trial).toEqual(["heal-interstitial"]);
+    const soon = new Date(now.getTime() + HEAL_EVERY_MS - 1);
+    expect(await healSignIn(writer(proposal()), askFor(d), soon)).toMatchObject({
+      status: "skipped",
+    });
+    const later = new Date(now.getTime() + HEAL_EVERY_MS);
+    expect(await healSignIn(writer(null), askFor(d), later)).toMatchObject({ status: "none" });
+  });
+
+  it("a sign-in lost on a new page heals itself: fail, write the screen, then pass", async () => {
+    const d = dir();
+    const site = (stateDir: string) => {
+      const s = fakeSite(
+        {
+          login: { ...LOGIN, on: { "click button:Log in": "inter" } },
+          inter: {
+            url: URL_AT,
+            has: ["button:Continue to app"],
+            on: { "click button:Continue to app": "home" },
+          },
+          home: { url: "https://gram.test/feed", has: [] },
+        },
+        "login",
+      );
+      s.fp.page = { url: s.fp.url, evaluate: async () => [], isClosed: () => false } as never;
+      return { s, walk: walkLogin(instagramLike(), { healDir: stateDir }) };
+    };
+    const asks: Promise<unknown>[] = [];
+    const opts = (healed: SignInHealAsk[]) => ({
+      credentials: memoryCredentials({ gram: { username: "user-a", password: "pw-a-1" } }),
+      codes: totpSource(),
+      heal: (ask: SignInHealAsk) => {
+        healed.push(ask);
+        const p = healSignIn(writer(proposal()), ask);
+        asks.push(p);
+        return p;
+      },
+    });
+    const healed: SignInHealAsk[] = [];
+    const one = site(d);
+    await expect(loginProvider([one.walk], opts(healed))(one.s.fp, "gram")).rejects.toThrow(
+      /does not know/,
+    );
+    await Promise.all(asks);
+    expect(healed).toHaveLength(1);
+    expect(healed[0]).toMatchObject({ url: URL_AT, steps: ["login-form"] });
+    expect(withHeal(instagramLike(), d).trial).toEqual(["heal-interstitial"]);
+    const two = site(d);
+    expect(await loginProvider([two.walk], opts([]))(two.s.fp, "gram")).toBe("signed-in");
+    expect(two.s.acts.at(-1)).toBe("click Continue to app");
+    expect(withHeal(instagramLike(), d).kept).toEqual(["heal-interstitial"]);
+  });
+
+  it("a refused sign-in asks for no heal", async () => {
+    const s = fakeSite(
+      {
+        login: { ...LOGIN, on: { "click button:Log in": "wrong" } },
+        wrong: { has: [], text: "Sorry, your password was incorrect." },
+      },
+      "login",
+    );
+    s.fp.page = { url: s.fp.url, evaluate: async () => [], isClosed: () => false } as never;
+    const healed: unknown[] = [];
+    await expect(
+      loginProvider([walkLogin(instagramLike(), { healDir: dir() })], {
+        credentials: memoryCredentials({ gram: { username: "user-a", password: "pw-a-1" } }),
+        codes: totpSource(),
+        heal: async (ask) => healed.push(ask),
+      })(s.fp, "gram"),
+    ).rejects.toThrow(LoginFailed);
+    expect(healed).toEqual([]);
   });
 });

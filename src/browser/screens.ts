@@ -383,6 +383,11 @@ const clickScreen = <C extends ScreenCtx>(name: string, click: Hints): Screen<C>
   act: ({ fp }) => fp.act({ kind: "click" }, click, { goal: name }),
 });
 
+/** The failure a walk gives on a page none of its screens knows. */
+export const unknownPage = (walk: string, url: string) => `a page ${walk} does not know: ${url}`;
+/** True for that failure, whoever wrapped it. */
+export const isUnknownPage = (message: string) => /\ba page \S+ does not know: /.test(message);
+
 const commits = (h: Hints) => COMMITTING.test(`${h.name ?? ""} ${h.text ?? ""}`);
 
 async function unknown<C extends ScreenCtx>(
@@ -395,7 +400,7 @@ async function unknown<C extends ScreenCtx>(
   const known = w.screens.filter((s) => s.act || s.goal);
   // A secret goes only on a page a recognizer or a kept row matched: the model never picks one.
   const pickable = known.filter((s) => !s.secret);
-  const lost = () => fail(`a page ${w.name} does not know: ${fp.url()}`);
+  const lost = () => fail(unknownPage(w.name, fp.url()));
   if (!help) return lost();
   const look = await help.look();
   const kept = help.learned.find(w.site, w.name, look);

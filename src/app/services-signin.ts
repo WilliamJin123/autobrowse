@@ -13,6 +13,7 @@ import {
   SITE_LOGINS,
   totpSource,
 } from "../auth/index.js";
+import type { SignInHealAsk } from "../auth/login.js";
 import { loginSecrets, type SecretValues } from "../auth/signup.js";
 import type { BrowserFlow, FlowRunner } from "../browser/flow.js";
 import { FILM_PACE, HUMAN_PACE, type Pace } from "../browser/human/index.js";
@@ -34,6 +35,7 @@ import type { Profile } from "../money/profile.js";
 import { isDefaultOwner } from "../owner.js";
 import { loadCalls, saveCalls } from "../walks/calls.js";
 import { type WalkDeps, type WalkInput, type WalkOutput, walkFlow } from "../walks/flow.js";
+import { healSignIn, llmHealWriter } from "../walks/login-heal.js";
 import { loadWalk, saveWalk, type WalkSpec } from "../walks/spec.js";
 import type { Settings } from "./config.js";
 import { llmFor } from "./services-browser.js";
@@ -276,6 +278,17 @@ export function loginFor(
   const people = channelsFor(settings, gmail, http).filter((c) => c.note);
   const all = channels(people);
   const notify = people.length && all.note ? all.note.bind(all) : undefined;
+  // a walk sign-in lost on a new page: the model writes a trial screen, once per site per day
+  const llm = llmFor(settings);
+  const heal = llm
+    ? async (ask: SignInHealAsk) => {
+        const r = await healSignIn(llmHealWriter(llm), ask);
+        if (r.status === "added")
+          await notify?.(`${ask.spec.site}: sign-in heal added trial screen ${r.screen}`);
+        else if (r.status !== "skipped")
+          console.warn(`${ask.spec.site}: heal ${r.status}: ${r.why}`);
+      }
+    : null;
   return loginProvider(SITE_LOGINS, {
     credentials: credentialsFor(settings, {
       by: "login",
@@ -288,6 +301,7 @@ export function loginFor(
       join(dirname(expandHome(settings.signInHoldsFile)), "sign-in-tries.jsonl"),
     ),
     shots: join(expandHome(settings.artifactsDir), "sign-in-misread"),
+    ...(heal ? { heal } : {}),
     ...(notify ? { notify } : {}),
   });
 }
