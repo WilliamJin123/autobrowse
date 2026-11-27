@@ -21,7 +21,13 @@ const codeScreen = (name: string, looks: string, says: string, kind: "totp" | "s
   shows: [CODE],
   once: false,
   ops: [
-    { kind: "one-time-code" as const, goal: `type the ${kind} code`, kinds: [kind], field: CODE, submit: CONTINUE },
+    {
+      kind: "one-time-code" as const,
+      goal: `type the ${kind} code`,
+      kinds: [kind],
+      field: CODE,
+      submit: CONTINUE,
+    },
   ],
 });
 
@@ -69,12 +75,27 @@ export default {
         { kind: "password", goal: "type the password", field: PASSWORD, submit: LOG_IN },
       ],
     },
-    codeScreen("app-code", "the two-factor page asks for the authenticator code", "/authentication app|authenticator/i", "totp"),
-    codeScreen("texted-code", "the two-factor page asks for the code it texted", "/\\btext(ed)?\\b|sms|phone/i", "sms"),
-    codeScreen("emailed-code", "the two-factor page asks for the code it emailed", "/two-factor|login code|6-digit|email/i", "email"),
+    codeScreen(
+      "app-code",
+      "the two-factor page asks for the authenticator code",
+      "/authentication app|authenticator/i",
+      "totp",
+    ),
+    codeScreen(
+      "texted-code",
+      "the two-factor page asks for the code it texted",
+      "/\\btext(ed)?\\b|sms|phone/i",
+      "sms",
+    ),
+    codeScreen(
+      "emailed-code",
+      "the two-factor page asks for the code it emailed",
+      "/two-factor|login code|6-digit|email/i",
+      "email",
+    ),
     {
       name: "save-browser",
-      looks: "\"Save browser?\" or \"Trust this device?\" after the code",
+      looks: '"Save browser?" or "Trust this device?" after the code',
       shows: [DECLINE],
       hides: [CODE, PASSWORD],
       once: false,

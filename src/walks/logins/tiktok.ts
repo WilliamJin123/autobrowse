@@ -63,7 +63,15 @@ export default {
       says: "/authenticator/i",
       shows: [CODE],
       once: false,
-      ops: [{ kind: "one-time-code", goal: "type the totp code", kinds: ["totp"], field: CODE, submit: SUBMIT }],
+      ops: [
+        {
+          kind: "one-time-code",
+          goal: "type the totp code",
+          kinds: ["totp"],
+          field: CODE,
+          submit: SUBMIT,
+        },
+      ],
     },
     {
       name: "emailed-code",
@@ -71,11 +79,19 @@ export default {
       says: "/verification code|6-digit code|verify your account/i",
       shows: [CODE],
       once: false,
-      ops: [{ kind: "one-time-code", goal: "type the email code", kinds: ["email"], field: CODE, submit: SUBMIT }],
+      ops: [
+        {
+          kind: "one-time-code",
+          goal: "type the email code",
+          kinds: ["email"],
+          field: CODE,
+          submit: SUBMIT,
+        },
+      ],
     },
     {
       name: "chooser",
-      looks: "\"Use phone / email / username\" among the ways in",
+      looks: '"Use phone / email / username" among the ways in',
       shows: [USE_EMAIL],
       ops: [{ kind: "click", goal: "email sign-in", hints: USE_EMAIL, irreversible: false }],
     },
@@ -90,7 +106,13 @@ export default {
       looks: "a login page with no email box and no link to it",
       at: "/tiktok\\.com\\/login/",
       hides: [USERNAME, EMAIL_TAB, USE_EMAIL],
-      ops: [{ kind: "open", goal: "the email tab", url: "https://www.tiktok.com/login/phone-or-email/email" }],
+      ops: [
+        {
+          kind: "open",
+          goal: "the email tab",
+          url: "https://www.tiktok.com/login/phone-or-email/email",
+        },
+      ],
     },
   ],
 } satisfies WalkSpecInput;

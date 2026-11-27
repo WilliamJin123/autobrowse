@@ -28,7 +28,13 @@ const codeScreen = (name: string, looks: string, says: string, kind: "totp" | "s
   shows: [CODE],
   once: false,
   ops: [
-    { kind: "one-time-code" as const, goal: `type the ${kind} code`, kinds: [kind], field: CODE, submit: NEXT },
+    {
+      kind: "one-time-code" as const,
+      goal: `type the ${kind} code`,
+      kinds: [kind],
+      field: CODE,
+      submit: NEXT,
+    },
   ],
 });
 
@@ -75,7 +81,7 @@ export default {
     },
     {
       name: "handle-again",
-      looks: "\"Enter your phone number or username\" on an unusual login",
+      looks: '"Enter your phone number or username" on an unusual login',
       shows: [AGAIN],
       ops: [
         { kind: "username", goal: "type the username again", field: AGAIN },
@@ -92,8 +98,23 @@ export default {
         { kind: "click", goal: "next", hints: NEXT, irreversible: false },
       ],
     },
-    codeScreen("app-code", "X asks for the authenticator code", "/authentication app|authenticator/i", "totp"),
-    codeScreen("texted-code", "X asks for the code it texted", "/\\btext(ed)?\\b|sms|phone/i", "sms"),
-    codeScreen("emailed-code", "X asks for the code it emailed", "/verification code|confirmation code/i", "email"),
+    codeScreen(
+      "app-code",
+      "X asks for the authenticator code",
+      "/authentication app|authenticator/i",
+      "totp",
+    ),
+    codeScreen(
+      "texted-code",
+      "X asks for the code it texted",
+      "/\\btext(ed)?\\b|sms|phone/i",
+      "sms",
+    ),
+    codeScreen(
+      "emailed-code",
+      "X asks for the code it emailed",
+      "/verification code|confirmation code/i",
+      "email",
+    ),
   ],
 } satisfies WalkSpecInput;
