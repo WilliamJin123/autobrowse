@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { isPassword, LoginFailed, type SignInContext } from "../src/auth/login.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import { NeedsHuman } from "../src/browser/session.js";
-import { walkLogin } from "../src/walks/login.js";
+import { repoWalkLogins, walkLogin } from "../src/walks/login.js";
+import { LOGIN_WALK_FILES } from "../src/walks/logins/index.js";
 import { type WalkSpec, walkSpecSchema } from "../src/walks/spec.js";
 import { fakeSite, type State } from "./site-fakes.js";
 
@@ -315,5 +316,27 @@ describe("the walk schema's login rules", () => {
         screens: [...base.screens, refused({ person: { why: "x" } })],
       }),
     ).toContain("one of goal, refused and person");
+  });
+});
+
+describe("repo sign-in walks", () => {
+  it("every file in the index loads through the schema as a SiteLogin", () => {
+    const logins = repoWalkLogins();
+    expect(logins.map((l) => l.site)).toEqual(LOGIN_WALK_FILES.map((f) => f.site));
+  });
+
+  it("a file the schema refuses, or one not named login, throws", () => {
+    const ok = {
+      site: "gram",
+      name: "login",
+      goal: "in",
+      start: "https://gram.test/",
+      screens: [{ name: "home", looks: "home", at: "/feed/", goal: true }],
+    };
+    expect(repoWalkLogins([ok]).map((l) => [l.site, l.home])).toEqual([
+      ["gram", "https://gram.test/"],
+    ]);
+    expect(() => repoWalkLogins([{ ...ok, name: "setup" }])).toThrow(/is named login/);
+    expect(() => repoWalkLogins([{ ...ok, start: 7 } as never])).toThrow();
   });
 });

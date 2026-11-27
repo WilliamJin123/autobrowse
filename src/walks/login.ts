@@ -12,7 +12,8 @@ import { LoginFailed, passwordOf, SignInHeld, type SiteLogin } from "../auth/log
 import { failSignIn, signInState } from "../auth/sign-in-kit.js";
 import { NeedsHuman } from "../browser/session.js";
 import { onScreen, walkFlow } from "./flow.js";
-import { loadWalk, type WalkSpec } from "./spec.js";
+import { LOGIN_WALK_FILES } from "./logins/index.js";
+import { loadWalk, type WalkSpec, type WalkSpecInput, walkSpecSchema } from "./spec.js";
 
 /** Second factors in the order a sign-in tries them, when the site does not say. */
 const CODES: readonly CodeKind[] = ["totp", "sms", "email"];
@@ -80,6 +81,19 @@ export function walkLogin(
       }
     },
   };
+}
+
+/**
+ * The repo's sign-in walks (`src/walks/logins/`), as `SiteLogin`s. A file the
+ * schema refuses throws: it is repo code, and its test catches it first.
+ */
+export function repoWalkLogins(files: readonly WalkSpecInput[] = LOGIN_WALK_FILES): SiteLogin[] {
+  return files.map((file) => {
+    const spec = walkSpecSchema.parse(file);
+    if (spec.name !== "login")
+      throw new Error(`${spec.site}/walk-${spec.name}: a repo sign-in walk is named login`);
+    return walkLogin(spec);
+  });
 }
 
 /**

@@ -399,6 +399,8 @@ export const walkSpecSchema = z
         });
   });
 export type WalkSpec = z.infer<typeof walkSpecSchema>;
+/** A walk as a repo file writes it: defaults left out (`src/walks/logins/<site>.ts`). */
+export type WalkSpecInput = z.input<typeof walkSpecSchema>;
 
 /** Where a value comes from, in a word or two: `fixed`, `plan.note`, `profile.email`, `secret password`. */
 export const valueSource = (v: WalkValue): string =>

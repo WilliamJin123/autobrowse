@@ -56,7 +56,7 @@ import { backupTraces, dirTraceStore, sweepTraces, traceDirName } from "../shots
 import type { SiteFacade } from "../sites/facade.js";
 import { fileSendJournal, type SendJournal } from "../sites/index.js";
 import { fileMintedTokens } from "../sites/oauth.js";
-import { walkLogins } from "../walks/login.js";
+import { repoWalkLogins, walkLogins } from "../walks/login.js";
 import type { Proof } from "../workflows/proof.js";
 import type { Settings } from "./config.js";
 import { holding } from "./metered.js";
@@ -500,8 +500,10 @@ export const modsDirFor = (settings: Settings): string => join(stateDirFor(setti
 /** The owner's own sign-ins as data (src/mods/login.ts): `logins/<site>.json`. */
 export const loginsDirFor = (settings: Settings): string => join(stateDirFor(settings), "logins");
 
-/** Add the owner's data logins, then installed mods', then sign-in walks, to `SITE_LOGINS`; every entry point, after `boot()`. */
+/** Add the repo's sign-in walks, then the owner's data logins, installed mods' and sign-in walks, to `SITE_LOGINS`; every entry point, after `boot()`. */
 export const loadDataLogins = (settings: Settings): void => {
+  // first: a repo sign-in walk beats the state dir's data login or cut walk for its site
+  addSiteLogins(repoWalkLogins());
   registerDataLogins(loginsDirFor(settings), modsDirFor(settings));
   addSiteLogins(walkLogins(walksDirFor(settings)));
 };
