@@ -1,6 +1,6 @@
 # Sign-ins as branching walks: no hand-written sign-in, heal adds a branch
 
-2026-11-26. Status: design, options open. Task WA-1461.
+2026-11-26. Status: design, option A picked; C is the direction after it. Task WA-1461.
 
 ## Ask
 
@@ -163,6 +163,19 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 - **Overlay load:** per screen, after the repo file. A screen that fails the schema (a repo screen it names was renamed) drops alone with a warning; the rest load. Trial counts go to an append-only log, so two accounts of one site never overwrite each other.
 - **Reader fix (all walks):** screens with a secret op leave the reader's `known` list (`screens.ts:393`). A secret then goes only on a page a recognizer matched.
 
+## Lockout
+
+A site locks an account after several bad secrets in a short time. The 12 h hold is the guard against that: after a failed try that typed a secret, nothing types on that account for 12 h. So a trial screen adds at most one bad try per 12 h. These rules keep the count there:
+
+- `password` fills only an `input[type=password]`. `code` fills only a box shaped for a code (`autocomplete=one-time-code`, a numeric input mode, or a max length of 4 to 8). A heal screen cannot aim a secret at any other box.
+- A secret goes only on the spec's origins (the guard), with an audit row.
+- One heal per site per hold. The heal continues the failed try from its page; it starts no new try.
+- A trial screen that fails is dropped and never runs again.
+- Two failed heals for one site in 7 days: heal stops for that site, and William gets a note.
+- Worst case per account: the normal try (with the previous password once on a rejected screen) and one heal, then 12 h of nothing.
+
+The cost is the other way round: a held account does no work for 12 h. The session check (771eacb) lifts a hold when the account is in fact signed in.
+
 ## Proof (designed first)
 
 1. **Parity.** Data screens compile to `Screen` objects and match through `fp.has` and `fp.text` (`isOn`, `screens.ts:309`), so the `fakePage` scripts (`test/auth-fakes.ts`, the site tests) run on them. The old and new sign-in must give the same act lines on each script. The old tests go with the old code.
@@ -171,9 +184,17 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 4. **One live sign-in, Instagram first,** after 1 to 3 pass. One try; the hold applies. Then the rest by shape.
 5. **Switch per site.** The site's file and the removal of its TypeScript sign-in go in one commit, after its parity and look-only checks pass.
 
+## One format, one schema
+
+William, 11-26: "i just want things to be unified where typing can be similar so theres less maitenance overhead". So C follows A.
+
+- One zod schema (`walkSpecSchema`) types every walk: sign-ins, taught walks, and later the rendered workflows.
+- `z.toJSONSchema` emits it as a JSON Schema file (as `cutJsonSchema` does, `src/walks/cut.ts:144`). Each walk file names it in `$schema`, so the editor checks and completes a walk file as it does TypeScript.
+- A walk file in the repo is checked in CI by the same schema, and its parity and fixture tests run in the gate.
+
 ## Non-goals
 
-- Option C.
+- Option C in this task. It is its own task, after A ships.
 - An outline step that runs a walk inside a rendered workflow. Built walks already branch and run as catalog flows (`<site>/walk-<name>`, `flow.ts:609`). Own task.
 - New sign-in sites. Sites with no stored account are proved by fixtures only.
 - Learned rows for interrupts in other flows.
@@ -194,7 +215,7 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 
 ## Open: William's decisions
 
-1. The option. Recommended: A. The alternative with the least risk: E.
+1. Decided 11-26: A. Then C, so one format holds every flow that branches.
 2. Decided 11-26: a heal screen that types a secret runs as a trial before any commit.
 3. Decided 11-26: Google, Microsoft and Cloudflare are in scope.
 
@@ -203,3 +224,5 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 - 2026-11-26: Doc written. Option A recommended.
 - 2026-11-26: goldfish review: 43 findings (critic 15, reader 15, zoom-out 13), 30 applied, 6 rejected; open: decisions 1 to 3. Added option E, the heal trigger, the reader fix, fixes for moved controls, the loader and overlay rules, an Instagram example; moved the outline `walk` op to its own task; decision 2 now keeps secrets off trial screens.
 - 2026-11-26: William: Google, Microsoft and Cloudflare in scope ("shoudl be in scope"); a secret on a trial screen is fine ("typing a secret befor ea commit is fine"). Added the `second-step` kit op. Open: decision 1.
+- 2026-11-26: William picked A ("sure we cand o A") and asked for one format with shared typing. C follows A as its own task. Added "One format, one schema".
+- 2026-11-26: William asked if the 12 h hold plus secrets on trial screens risks lockout. Added "Lockout": the hold caps bad tries at one per 12 h; secret ops fill only password or code boxes; two failed heals in 7 days stop heal for that site.
