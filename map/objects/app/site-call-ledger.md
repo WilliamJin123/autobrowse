@@ -21,6 +21,7 @@ Restate keeps a finished invocation about a day and `caps` only metered reads fo
 - Written inside `ctx.run` on every try, retries included — `src/sites/service.ts:80-122,153`; dir `siteCallsDirFor` — `src/app/services-state.ts:355`; wired for `sites` (`:1556`) and `desk` (`src/app/desk.ts:41`)
 - Report: `successReport` — `src/runs/success.ts:203`; a call refused at a cap (spent nothing) shows as `capped`, apart from a broken route; failure kinds `cmdFailure` (`:35`), `callFailure` (`:73`); a target miss's cause off Playwright's call log, `missCause` (`:48`): `not-found` is the digest's, `hidden`/`covered`/`disabled`/`detached` the hands' or the page's; `STRUGGLE` 3 failed commands a run — `:88`
 - Backfill: `fromCaps`, `newRows` (never a row the ledger has) — `src/runs/import.ts:10,33`
+- To wren's lake: `shipLedgers` gzips each month file of `calls/`, `flows/`, `engine/` to the track bucket as `ledgers/<kind>/<file>.gz`, again when it grew; bodies stay here — `src/runs/ledger-ship.ts`; on the disk timer, operator only, `ledgerShipperFor` — `src/app/services-state.ts`. Models: wren's lake design doc (2026-10-11), section "autobrowse ledgers"
 
 ## Connected to
 
@@ -30,7 +31,7 @@ Restate keeps a finished invocation about a day and `caps` only metered reads fo
 
 ## If you change this
 
-- **Hits:** `src/runs/success.ts`, `src/runs/import.ts`, `src/app/cli-runs.ts` (`stats success`, `stats success import`).
+- **Hits:** `src/runs/success.ts`, `src/runs/import.ts`, `src/app/cli-runs.ts` (`stats success`, `stats success import`); a new or renamed field needs its column in wren `apps/cli/src/lake-track.ts` (`CALL_COLUMNS`).
 - **Does not hit:** the facade, caps, pacing.
 
 - `artifact`: a failed browser leg's `.failure.json`, from `failureOf` (`src/errors.ts`, walks `cause`); `errorOf` gives the same path to every caller (U19).

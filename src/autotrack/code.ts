@@ -12,9 +12,9 @@ export const DEVICE_MAX = 40;
 
 /**
  * Top-level prefixes of the bucket that are not a device's: `labels/` holds the offline labels,
- * `steps/` the RL view and its quality report.
+ * `steps/` the RL view and its quality report, `ledgers/` the desk's run ledgers (wren's lake).
  */
-export const RESERVED_DEVICES = ["labels", "steps"];
+export const RESERVED_DEVICES = ["labels", "steps", "ledgers"];
 
 export function checkDevice(device: string): string {
   if (!DEVICE.test(device) || device.length > DEVICE_MAX)

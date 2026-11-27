@@ -30,10 +30,12 @@ import {
 import { CRED_ENV, keychainOf } from "../auth/keep.js";
 import { type NamedStore, namedStore } from "../auth/roles.js";
 import { addSiteLogins } from "../auth/sites.js";
+import { s3TrackStore } from "../autotrack/store.js";
 import { type Fixes, fileFixes } from "../browser/fixes.js";
 import { trimProfiles, trimWording } from "../browser/profile-trim.js";
 import { fileScreens, type LearnedScreens } from "../browser/screens.js";
 import { httpClient } from "../clients/http.js";
+import { statsDir } from "../deps/stats.js";
 import { expandHome } from "../google/auth.js";
 import { registerDataLogins } from "../mods/login.js";
 import { modFixes, modScreens, withModFixes, withModScreens } from "../mods/mod.js";
@@ -41,6 +43,7 @@ import { isDefaultOwner, ownerKeys } from "../owner.js";
 import { closedHour } from "../runs/call-bodies.js";
 import { bodiesDirOf } from "../runs/calls.js";
 import { clearRun, keepRun, packStale } from "../runs/capture.js";
+import { shipLedgers } from "../runs/ledger-ship.js";
 import type { ProbeRow } from "../runs/probes.js";
 import { s3BlobStore, s3TraceStore } from "../shots/s3.js";
 import {
@@ -249,6 +252,15 @@ export function profileTrimFor(settings: Settings, o: { dry?: boolean } = {}) {
   });
 }
 
+/** The operator's run ledgers to the track bucket, for wren's lake (`runs/ledger-ship.ts`); null elsewhere. */
+function ledgerShipperFor(settings: Settings): (() => Promise<string[]>) | null {
+  const dir = statsDir();
+  if (!dir || !settings.trackBucket || !isDefaultOwner(settings.owner)) return null;
+  const store = s3TrackStore({ bucket: settings.trackBucket, aws: awsFor(settings) });
+  const sent = new Map<string, number>();
+  return () => shipLedgers({ dir, put: (k, b, t) => store.put(k, b, t), sent });
+}
+
 /**
  * This disk's upkeep, one timer for desk and box: every SHOTS_EVERY_MINUTES (at least 15) and a
  * minute after start, traces copied then swept, shots shipped then old dumps cleared; once a day,
@@ -275,6 +287,7 @@ export function keepDiskOnTimer(
       });
     return shipping;
   };
+  const ledgers = ledgerShipperFor(settings);
   let trimmedAt = 0;
   let chromeAt = 0;
   let busy = false;
@@ -306,6 +319,12 @@ export function keepDiskOnTimer(
           })
           .catch((e) => log.warn(err(e), "chrome for testing"));
       }
+      if (ledgers)
+        await ledgers()
+          .then((shipped) => {
+            if (shipped.length) log.info({ shipped }, "ledgers");
+          })
+          .catch((e) => log.warn(err(e), "ledgers"));
       if (keep)
         await (async () => {
           const r = await keep.backup();
