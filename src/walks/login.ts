@@ -8,10 +8,10 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { CodeKind } from "../auth/codes.js";
-import { passwordOf, type SiteLogin } from "../auth/login.js";
-import { lookAt } from "../browser/screens.js";
-import { shows } from "./build.js";
-import { walkFlow } from "./flow.js";
+import { LoginFailed, passwordOf, SignInHeld, type SiteLogin } from "../auth/login.js";
+import { failSignIn, signInState } from "../auth/sign-in-kit.js";
+import { NeedsHuman } from "../browser/session.js";
+import { onScreen, walkFlow } from "./flow.js";
 import { loadWalk, type WalkSpec } from "./spec.js";
 
 /** Second factors in the order a sign-in tries them, when the site does not say. */
@@ -43,12 +43,11 @@ export function walkLogin(
     home: spec.start,
     ...(credential ? { credential } : {}),
     ...(o.origins ? { origins: o.origins } : {}),
-    // Signed in: the page the sign-in landed on, by its look.
-    async loggedIn(fp) {
-      if (!goal || (goal.url === null && !goal.landmarks.length)) return false;
-      return shows(goal.url, goal.landmarks, await lookAt(fp.page));
-    },
+    // Signed in: the page the sign-in landed on, by every check its goal names.
+    loggedIn: async (fp) => !!goal && (await onScreen(fp, goal)),
     async signIn(ctx) {
+      const site = o.site ?? spec.site;
+      const state = signInState(site);
       let asked = new Date();
       const kind = o.code ?? CODES.find((k) => ctx.offers(k));
       // `<cred>.username` and `.password` from the credential; any other secret is the code the page sent.
@@ -66,9 +65,19 @@ export function walkLogin(
             asked = new Date();
             return code;
           },
+          signIn: { ctx, state },
+          fail: (why) => failSignIn(state, why),
         }).run(ctx.fp, {});
-      // One sign-in at a time asks this inbox, so a code meant for another stays its own.
-      await (kind && ctx.serial ? ctx.serial(kind, run) : run());
+      // A walk with a code op takes the inbox lock per code; an old one holds it the whole walk.
+      const codeOp = spec.screens.some((s) => s.ops.some((op) => op.kind === "one-time-code"));
+      try {
+        await (kind && ctx.serial && !codeOp ? ctx.serial(kind, run) : run());
+      } catch (err) {
+        // A person's step and a hold stay what they are; any other break is a failed try.
+        if (err instanceof LoginFailed || err instanceof NeedsHuman || err instanceof SignInHeld)
+          throw err;
+        throw new LoginFailed(site, err instanceof Error ? err.message : String(err), false);
+      }
     },
   };
 }

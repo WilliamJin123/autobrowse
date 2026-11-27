@@ -7,7 +7,8 @@
 import type { Credential } from "credvault";
 import { totp, totpRemainingMs } from "credvault";
 
-export type CodeKind = "totp" | "email" | "sms";
+export const CODE_KINDS = ["totp", "email", "sms"] as const;
+export type CodeKind = (typeof CODE_KINDS)[number];
 
 export interface CodeRequest {
   site: string;

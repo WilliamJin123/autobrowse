@@ -54,6 +54,8 @@ export interface Screen<C extends ScreenCtx = ScreenCtx> {
   overlay?: boolean;
   /** It may come back (a next page): again on a new URL is not stuck, and a new URL is leaving it. */
   repeats?: boolean;
+  /** Its act types a password or a code: only a matched page runs it, never the reader's pick. */
+  secret?: boolean;
 }
 
 /** A page by its shape: host and path (ids as `*`), and the headings, buttons and fields it shows. */
@@ -391,6 +393,8 @@ async function unknown<C extends ScreenCtx>(
   const { fp } = c;
   const help = fp.screens;
   const known = w.screens.filter((s) => s.act || s.goal);
+  // A secret goes only on a page a recognizer or a kept row matched: the model never picks one.
+  const pickable = known.filter((s) => !s.secret);
   const lost = () => fail(`a page ${w.name} does not know: ${fp.url()}`);
   if (!help) return lost();
   const look = await help.look();
@@ -412,10 +416,10 @@ async function unknown<C extends ScreenCtx>(
     goal: w.goal,
     url: fp.url(),
     snapshot: await help.snapshot(),
-    known: known.map((s) => ({ name: s.name, looks: s.looks })),
+    known: pickable.map((s) => ({ name: s.name, looks: s.looks })),
   });
   const row = { site: w.site, url: look.url, landmarks: keepOf(look), reason: "" };
-  const named = byName(reading?.screen);
+  const named = pickable.find((s) => s.name === reading?.screen);
   if (reading && named)
     return {
       screen: named,

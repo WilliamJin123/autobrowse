@@ -9,6 +9,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { CODE_KINDS } from "../auth/codes.js";
 import { hostNamed } from "../auth/guard.js";
 import {
   type FormLoginSpec,
@@ -20,25 +21,15 @@ import {
 import { PROVIDERS } from "../auth/providers.js";
 import { addSiteLogins, builtInLogin } from "../auth/sites.js";
 import { hintsSchema } from "../compiler/outline.js";
+import { patternSchema, regexOf } from "../walks/spec.js";
 import { hostOf, inDomains, installedMods, type Mod } from "./mod.js";
 
-/** `/source/flags`, or a plain source matched without case. */
-const pattern = z.string().refine((s) => {
-  try {
-    regexOf(s);
-    return true;
-  } catch {
-    return false;
-  }
-}, "not a regular expression");
+const pattern = patternSchema;
 
-export function regexOf(s: string): RegExp {
-  const m = /^\/(.*)\/([dgimsuy]*)$/s.exec(s);
-  return m ? new RegExp(m[1] as string, m[2]) : new RegExp(s, "i");
-}
+export { regexOf };
 
 const codeStep = z.object({
-  kind: z.enum(["totp", "email", "sms"]),
+  kind: z.enum(CODE_KINDS),
   field: hintsSchema,
   submit: hintsSchema,
   asks: pattern.optional(),

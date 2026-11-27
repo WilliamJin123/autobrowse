@@ -236,6 +236,55 @@ describe("screens", () => {
     expect(s.acts).toEqual([]);
   });
 
+  it("the model never picks a screen that types a secret; a kept row still may", async () => {
+    const pw = {
+      name: "password",
+      looks: "a password box",
+      secret: true,
+      shows: [{ role: "textbox", name: "Password" }],
+      act: ({ fp }: { fp: FlowPage }) =>
+        fp.act(
+          { kind: "fill", value: "pw" },
+          { role: "textbox", name: "Passcode" },
+          { goal: "pw" },
+        ),
+    } satisfies Screen<{ fp: FlowPage }>;
+    const withPw = (): Walk<{ fp: FlowPage }> => ({
+      ...twoStep(),
+      screens: [...twoStep().screens, pw],
+    });
+    // A redesign renamed the box: no screen's check matches.
+    const s = fakeSite({ card: { has: ["textbox:Passcode"] } }, "card");
+    const asked: string[] = [];
+    const reader: ScreenReader = {
+      id: "x",
+      async read(req) {
+        asked.push(req.known.map((k) => k.name).join(","));
+        return { screen: "password", reason: "looks like the password page" };
+      },
+    };
+    s.fp.screens = helpOf(memoryScreens(), reader);
+    await expect(walk({ fp: s.fp }, withPw())).rejects.toThrow(/does not know/);
+    expect(asked).toEqual(["home,welcome,form"]);
+    expect(s.acts).toEqual([]);
+
+    // A row a person kept (teach) names the secret screen: it runs.
+    const learned = memoryScreens();
+    learned.keep({
+      site: "site",
+      url: "site.test/login",
+      landmarks: ["heading hello", "button continue"],
+      walk: "in",
+      screen: "password",
+      reason: "taught",
+    });
+    s.fp.screens = helpOf(learned, reader);
+    // the page never changes: the walk calls it stuck after the fills
+    await expect(walk({ fp: s.fp }, withPw())).rejects.toThrow(/stuck on "password"/);
+    expect(new Set(s.acts)).toEqual(new Set(["fill Passcode=pw"]));
+    expect(asked.length).toBe(1);
+  });
+
   it("a learned answer that stops working is dropped", async () => {
     const s = fakeSite({ card: { has: ["button:Later"] } }, "card");
     const learned = memoryScreens();

@@ -32,6 +32,17 @@ import {
   type SignInLog,
   type SignInTry,
 } from "./sign-in-holds.js";
+import {
+  askPerson,
+  enterCode,
+  failSignIn,
+  type PasswordForm,
+  retypePrevious,
+  signInState,
+  signInWithPasskey,
+  solveCaptcha,
+  typePassword,
+} from "./sign-in-kit.js";
 
 export {
   type FailCase,
@@ -302,20 +313,6 @@ export class SignInHeld extends Error {
 
 const SETTLE_MS = 1_500;
 
-/** The tick that keeps a profile signed in, by the words sites use. */
-const KEEP_SIGNED_IN = {
-  role: "checkbox",
-  name: "/keep me (signed|logged) in|stay (signed|logged) in|remember me|keep me signed/i",
-} as const;
-
-/** Ticks the keep-signed-in box when the form has one and it is off; no box, no act. */
-async function keepSignedIn(fp: FlowPage, hints: Hints): Promise<void> {
-  if (!(await fp.has(hints, 500))) return;
-  await fp.act({ kind: "script", js: "(el) => { if (!el.checked) el.click(); }" }, hints, {
-    goal: "keep me signed in",
-  });
-}
-
 /** Passwords this process read to type (a provider's too): a typed secret in this set is a password, else a code. */
 const PASSWORDS = new Set<string>();
 export const isPassword = (value: string): boolean => PASSWORDS.has(value);
@@ -361,19 +358,12 @@ function formWalk(
   { cred }: SignInContext,
   password: string,
 ): Walk<SignInContext> {
-  let submitted = false;
-  let typedPrevious = false;
-  let typedUsername = false;
-  const fail = (why: string): never => {
-    throw new LoginFailed(site, why);
-  };
-  const submit = async (fp: FlowPage, value: string, goal: string) => {
-    if (submitted && !typedPrevious && value === password)
-      fail(`the form came back after the password, saying nothing known: ${fp.url()}`);
-    await fp.act({ kind: "fill", value }, spec.password, { goal });
-    await keepSignedIn(fp, spec.keepSignedIn ?? KEEP_SIGNED_IN);
-    await fp.act({ kind: "click" }, spec.submit, { goal: "submit login form" });
-    submitted = true;
+  const st = signInState(site);
+  const fail = (why: string): never => failSignIn(st, why);
+  const form: PasswordForm = {
+    field: spec.password,
+    submit: spec.submit,
+    keepSignedIn: spec.keepSignedIn,
   };
   const codes = spec.code ? [spec.code].flat() : [];
   const screens: Screen<SignInContext>[] = [
@@ -382,7 +372,7 @@ function formWalk(
       looks: "the site signed in, past the login form",
       // Only after the password: a start page is never mistaken for the goal.
       async is({ fp }) {
-        if (!submitted) return false;
+        if (!st.submitted) return false;
         if (spec.success) return spec.success.test(fp.url()) || spec.success.test(await fp.text());
         for (const h of [spec.password, spec.username, ...codes.map((c) => c.field)])
           if (await fp.has(h)) return false;
@@ -396,15 +386,7 @@ function formWalk(
             name: "captcha",
             looks: "a captcha challenge on the login form",
             shows: [spec.captcha],
-            async act(c: SignInContext) {
-              const got = await c.fp.captcha();
-              if (!got.solved)
-                await personStep(
-                  c,
-                  `${site}: the sign-in captcha is a person's (${got.reason})`,
-                  async () => !(await c.fp.has(spec.captcha as Hints)),
-                );
-            },
+            act: (c: SignInContext) => solveCaptcha(st, c, spec.captcha as Hints),
           },
         ]
       : []),
@@ -414,13 +396,8 @@ function formWalk(
             name: "rejected",
             looks: "the login form saying the username or password is wrong",
             says: spec.rejected,
-            async act({ fp }: SignInContext) {
-              // A rotation the site took without saying so: the one before still works once.
-              const previous = previousPasswordOf(cred);
-              if (!previous || typedPrevious) fail("password rejected");
-              typedPrevious = true;
-              await submit(fp, previous as string, "type the previous password");
-            },
+            secret: true,
+            act: (c: SignInContext) => retypePrevious(st, c, form),
           },
         ]
       : []),
@@ -430,11 +407,7 @@ function formWalk(
             name: "passkey",
             looks: "a prompt to verify with a security key or passkey",
             says: spec.passkey.asks,
-            // Our authenticator holds the key: the ceremony completes on the click.
-            act: ({ fp }: SignInContext) =>
-              fp.act({ kind: "click" }, spec.passkey?.start as Hints, {
-                goal: "verify with our passkey",
-              }),
+            act: ({ fp }: SignInContext) => signInWithPasskey(fp, spec.passkey?.start as Hints),
           },
         ]
       : []),
@@ -444,11 +417,14 @@ function formWalk(
         looks: `a box asking for a ${step.kind} verification code`,
         // Text that asks decides; else the field showing does.
         ...(step.asks ? { says: step.asks } : { shows: [step.field] }),
-        async act({ fp, code }) {
-          const c = await code(step.kind, step.hint);
-          await fp.act({ kind: "fill", value: c }, step.field, { goal: "type verification code" });
-          await fp.act({ kind: "click" }, step.submit, { goal: "submit verification code" });
-        },
+        secret: true,
+        act: (c) =>
+          enterCode(st, c, {
+            kinds: [step.kind],
+            field: step.field,
+            submit: step.submit,
+            hint: step.hint,
+          }),
       }),
     ),
     ...(spec.person
@@ -457,7 +433,7 @@ function formWalk(
             name: "person's step",
             looks: "a second step only a person's device can answer",
             says: spec.person.asks,
-            act: (c: SignInContext) => personStep(c, `${site}: ${spec.person?.why}`),
+            act: (c: SignInContext) => askPerson(st, c, spec.person?.why as string),
           },
         ]
       : []),
@@ -489,13 +465,14 @@ function formWalk(
       name: "login form",
       looks: "the login form: username and password boxes",
       shows: [spec.username, spec.password],
+      secret: true,
       async act({ fp }) {
         // retyping the address makes Apple's widget drop the password box again
-        if (!typedUsername)
+        if (!st.typedUsername)
           await fp.act({ kind: "fill", value: cred.username }, spec.username, {
             goal: "type username",
           });
-        await submit(fp, password, "type password");
+        await typePassword(st, fp, form, password);
       },
     },
     {
@@ -510,7 +487,7 @@ function formWalk(
         await fp.act({ kind: "click" }, spec.next ?? spec.submit, {
           goal: "continue past username",
         });
-        typedUsername = true;
+        st.typedUsername = true;
         // password shows late (Apple); settle before the next screen reads
         if (spec.next) await fp.has(spec.password, 8000);
       },
@@ -520,7 +497,8 @@ function formWalk(
       looks: "the second page of a two-page login: the password box alone",
       shows: [spec.password],
       hides: [spec.username],
-      act: ({ fp }) => submit(fp, password, "type password"),
+      secret: true,
+      act: ({ fp }) => typePassword(st, fp, form, password),
     },
   ];
   return { site, name: "sign-in", goal: `signed in to ${site}`, fail, screens };

@@ -9,6 +9,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { LoginFailed, passwordOf, personStep, type SignInContext } from "../auth/login.js";
+import {
+  enterCode,
+  retypePrevious,
+  type SignInState,
+  signInWithPasskey,
+  typePassword,
+} from "../auth/sign-in-kit.js";
 import type { SecretValues } from "../auth/signup.js";
 import { runCode } from "../browser/code.js";
 import { type Fetched, fetchFile } from "../browser/download.js";
@@ -17,7 +25,7 @@ import { type Fell, ladder, type Rung, RungBroke, type Strategy } from "../brows
 import type { Hints } from "../browser/locate.js";
 import { OPTIONS, optionsIn, ROWS, squash } from "../browser/pick.js";
 import { checkRows, type RecordsOp, type Row, readRecords } from "../browser/records.js";
-import { lookAt, type PageLook, type Screen, walk } from "../browser/screens.js";
+import { isOn, lookAt, type PageLook, type Screen, walk } from "../browser/screens.js";
 import { NeedsHuman } from "../browser/session.js";
 import { heldOther, type SecretSink } from "../deps/sink.js";
 import { samePage, shows } from "./build.js";
@@ -34,12 +42,16 @@ import {
   type WalkCalls,
 } from "./calls.js";
 import {
+  checksOf,
   FIELD_REF,
+  LOGIN_WALK,
   MAX_DEPTH,
   MAX_EACH,
   type ProfileFieldName,
   RELATIVE_DAY,
+  regexOf,
   type ScreenSpec,
+  typesSecret,
   type WalkField,
   type WalkOp,
   type WalkSpec,
@@ -70,6 +82,10 @@ export interface WalkDeps {
   ai?(op: Extract<WalkOp, { kind: "ai" }>, prompt: string): Promise<string>;
   /** Where a `download` op's file goes; the answer (a path, a ref) is read under its `as`. Missing: a temp file. */
   download?(as: string, file: Fetched): Promise<string>;
+  /** A login walk's sign-in: the credential, its codes, and the kit's state across screens. */
+  signIn?: { ctx: SignInContext; state: SignInState };
+  /** How the walk fails on a page it does not know, or stuck; default: to a person. */
+  fail?(reason: string): never;
 }
 
 /** Ops that only look: every other op is an act (walks/calls.ts). */
@@ -184,6 +200,35 @@ const ordered = (screens: readonly ScreenSpec[]): ScreenSpec[] =>
     (a, b) => Number(!!b.goal) - Number(!!a.goal) || b.landmarks.length - a.landmarks.length,
   );
 
+/** A login walk: goal first, then file order (the site's screens, then the kit's). */
+const fileOrder = (screens: readonly ScreenSpec[]): ScreenSpec[] =>
+  [...screens].sort((a, b) => Number(!!b.goal) - Number(!!a.goal));
+
+export const isLoginWalk = (spec: Pick<WalkSpec, "name">): boolean => spec.name === LOGIN_WALK;
+
+/** A data screen's checks as a code screen's: `at`, `shows`, `hides`, `says`. */
+const recognizer = (s: ScreenSpec): Pick<Screen, "at" | "shows" | "hides" | "says"> => ({
+  ...(s.at ? { at: regexOf(s.at) } : {}),
+  ...(s.shows?.length ? { shows: s.shows as Hints[] } : {}),
+  ...(s.hides?.length ? { hides: s.hides as Hints[] } : {}),
+  ...(s.says ? { says: regexOf(s.says) } : {}),
+});
+
+/** The page is this screen by every check it names; a screen that names none is no page. */
+export async function onScreen(fp: FlowPage, s: ScreenSpec): Promise<boolean> {
+  if (!checksOf(s)) return false;
+  const bare = s.url === null && !s.landmarks.length;
+  return isOn(
+    {
+      name: s.name,
+      looks: s.looks,
+      ...recognizer(s),
+      is: async () => bare || shows(s.url, s.landmarks, await lookAt(fp.page)),
+    },
+    { fp },
+  );
+}
+
 /** An `ai` op: its prompt with reads, rows and plan values filled in, sent to the model. */
 async function askModel(
   op: Extract<WalkOp, { kind: "ai" }>,
@@ -295,9 +340,45 @@ async function walkSpec(
     return sub;
   };
 
+  /** A login op's sign-in; the schema keeps them to login walks, a caller may still run one bare. */
+  const signIn = (op: WalkOp) => {
+    if (!deps.signIn) throw new Error(`a ${op.kind} op runs only in a sign-in`);
+    return deps.signIn;
+  };
+
   const run = async (op: WalkOp): Promise<void> => {
     if (acts && !LOOKS.has(op.kind)) acts.n++;
     switch (op.kind) {
+      case "username": {
+        const { ctx, state } = signIn(op);
+        await fp.act({ kind: "fill", value: ctx.cred.username }, op.field as Hints, {
+          goal: op.goal,
+        });
+        state.typedUsername = true;
+        return;
+      }
+      case "password": {
+        const { ctx, state } = signIn(op);
+        const form = {
+          field: op.field as Hints,
+          submit: op.submit as Hints,
+          keepSignedIn: op.keepSignedIn as Hints | undefined,
+        };
+        return typePassword(state, fp, form, passwordOf(state.site, ctx.cred), op.goal);
+      }
+      case "one-time-code": {
+        const { ctx, state } = signIn(op);
+        return enterCode(state, ctx, {
+          kinds: op.kinds,
+          field: op.field as Hints,
+          submit: op.submit as Hints,
+          send: op.send as Hints | undefined,
+          hint: op.hint,
+        });
+      }
+      case "passkey":
+        signIn(op);
+        return signInWithPasskey(fp, op.start as Hints);
       case "click":
         gate(op);
         return fp.act({ kind: "click" }, await hintsFor(op), {
@@ -305,13 +386,12 @@ async function walkSpec(
           irreversible: op.irreversible,
         });
       case "fill":
-        return fp.act(
-          { kind: "fill", value: await textFor(op.value, op.goal) },
-          op.hints as Hints,
-          {
-            goal: op.goal,
-          },
-        );
+        await fp.act({ kind: "fill", value: await textFor(op.value, op.goal) }, op.hints as Hints, {
+          goal: op.goal,
+        });
+        // an older sign-in walk types its secrets as fills: from here its goal may count
+        if (deps.signIn && op.value.from === "secret") deps.signIn.state.submitted = true;
+        return;
       case "select":
         return fp.act({ kind: "select", value: await fill(op.value, op.goal) }, op.hints as Hints, {
           goal: op.goal,
@@ -513,27 +593,53 @@ async function walkSpec(
     }
   };
 
-  const screens: Screen[] = ordered(spec.screens).map((s) => ({
-    name: s.name,
-    looks: s.looks,
-    is: async () =>
-      (s.after ?? []).every((a) => handled.has(a)) &&
-      !(s.once !== false && handled.has(s.name)) &&
-      shows(s.url, s.landmarks, await look()),
-    ...(s.once === false ? { repeats: true } : {}),
-    ...(s.goal
-      ? { goal: true }
-      : {
-          act: async () => {
-            const from = await look();
-            const url = fp.url();
-            for (const op of s.ops) await run(op);
-            handled.add(s.name);
-            out.screens.push(depth ? `${spec.name}/${s.name}` : s.name);
-            await moved(from, url);
-          },
-        }),
-  }));
+  const sign = deps.signIn;
+  /** A refusal: the previous password once (case password), else the try fails with the case's hold. */
+  const refuse = async (r: NonNullable<ScreenSpec["refused"]>): Promise<void> => {
+    if (r.case === "password" && sign?.state.form)
+      return retypePrevious(sign.state, sign.ctx, sign.state.form, r.says);
+    throw new LoginFailed(spec.site, r.says, true, r.case);
+  };
+  const ask = async (why: string): Promise<void> => {
+    const reason = `${spec.site}: ${why}`;
+    if (sign) return personStep(sign.ctx, reason);
+    fp.human(reason);
+  };
+
+  const screens: Screen[] = (isLoginWalk(spec) ? fileOrder : ordered)(spec.screens).map((s) => {
+    // a refusal or a person may come back: a second rejection fails, a second check asks again
+    const ends = !!(s.refused || s.person);
+    const bare = s.url === null && !s.landmarks.length;
+    return {
+      name: s.name,
+      looks: s.looks,
+      ...recognizer(s),
+      is: async () =>
+        (s.after ?? []).every((a) => handled.has(a)) &&
+        (ends || !(s.once !== false && handled.has(s.name))) &&
+        // a sign-in's goal counts only after a secret went in: a start page is never the goal
+        !(s.goal && sign && !sign.state.submitted) &&
+        (bare || shows(s.url, s.landmarks, await look())),
+      ...(s.once === false ? { repeats: true } : {}),
+      ...(typesSecret(s) ? { secret: true } : {}),
+      ...(s.goal
+        ? { goal: true }
+        : {
+            act: async () => {
+              const from = await look();
+              const url = fp.url();
+              const name = depth ? `${spec.name}/${s.name}` : s.name;
+              sign?.ctx.steps?.push(name);
+              if (s.refused) await refuse(s.refused);
+              else if (s.person) await ask(s.person.why);
+              else for (const op of s.ops) await run(op);
+              handled.add(s.name);
+              out.screens.push(name);
+              await moved(from, url);
+            },
+          }),
+    };
+  });
   return walk(
     { fp },
     {
@@ -541,6 +647,7 @@ async function walkSpec(
       name: walkFlowName(spec),
       goal: spec.goal,
       screens,
+      ...(deps.fail ? { fail: deps.fail } : {}),
       // A page that comes back (results, next page) may come back many times.
       maxSteps:
         Math.max(12, spec.screens.length + 4) *
@@ -622,8 +729,10 @@ export function walkFlow(spec: WalkSpec, deps: WalkDeps = {}): BrowserFlow<WalkI
         kept: [],
         screens: [],
       });
-      const stored = deps.calls?.load() ?? null;
-      const calls = input?.submit === "false" ? null : usableCalls(spec, stored, now);
+      const login = isLoginWalk(spec);
+      const stored = login ? null : (deps.calls?.load() ?? null);
+      // A sign-in types secrets on the page: never the request tier, never learned as legs.
+      const calls = login || input?.submit === "false" ? null : usableCalls(spec, stored, now);
       let broke: string | null = null;
       const request: Rung<WalkOutput> = {
         strategy: calls ? strategyOf(calls) : "cookie",
@@ -646,7 +755,7 @@ export function walkFlow(spec: WalkSpec, deps: WalkDeps = {}): BrowserFlow<WalkI
           const acts = { n: 0 };
           // Off: the legs broke and came back the same; no new try till `until`.
           const learn =
-            store && !ineligible(spec) && !offNow(stored, now)
+            store && !login && !ineligible(spec) && !offNow(stored, now)
               ? listenCalls(fp.page, () => acts.n)
               : null;
           const used = new Map<string, string>();

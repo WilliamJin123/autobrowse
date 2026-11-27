@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
+import { CODE_KINDS } from "../auth/codes.js";
 import { fieldSchema, hintsSchema, opSchema, valueSchema } from "../compiler/outline.js";
 import { baseSite } from "../runs/log.js";
 
@@ -29,6 +30,22 @@ export const MAX_EACH = 500;
 
 const NAME = /^[a-z][a-z0-9-]*$/;
 const SITE = /^[a-z0-9][a-z0-9._-]*$/i;
+/** `/source/flags`, or a plain source matched without case. */
+export function regexOf(s: string): RegExp {
+  const m = /^\/(.*)\/([dgimsuy]*)$/s.exec(s);
+  return m ? new RegExp(m[1] as string, m[2]) : new RegExp(s, "i");
+}
+
+/** A regex as a string, checked on load (`regexOf`). */
+export const patternSchema = z.string().refine((s) => {
+  try {
+    regexOf(s);
+    return true;
+  } catch {
+    return false;
+  }
+}, "not a regular expression");
+
 /** A placed secret's name as the explore server takes it: `code`, `google.password`, `google-admin.code`. */
 const SECRET_KEY = /^[a-z][\w-]*(@[\w-]+)?(\.[a-zA-Z]\w*)*$/;
 
@@ -159,6 +176,34 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
     as: z.string().regex(AS),
   }),
   z.object({ kind: z.literal("captcha"), goal: z.string() }),
+  /** Login walks only: the credential's username into `field`. */
+  z.object({ kind: z.literal("username"), goal: z.string(), field: hintsSchema }),
+  /**
+   * Login walks only: the credential's password into `field` (a password box), then
+   * `submit`. The form back after it with nothing known fails; never a retype.
+   */
+  z.object({
+    kind: z.literal("password"),
+    goal: z.string(),
+    field: hintsSchema,
+    submit: hintsSchema,
+    keepSignedIn: hintsSchema.optional(),
+  }),
+  /**
+   * Login walks only: a code of the first kind the credential can get, into `field`,
+   * then `submit`. `send` is pressed first when it shows; a second ask takes a newer code.
+   */
+  z.object({
+    kind: z.literal("one-time-code"),
+    goal: z.string(),
+    kinds: z.array(z.enum(CODE_KINDS)).min(1),
+    field: hintsSchema,
+    submit: hintsSchema,
+    send: hintsSchema.optional(),
+    hint: z.string().optional(),
+  }),
+  /** Login walks only: our stored passkey answers; the ceremony completes on the click. */
+  z.object({ kind: z.literal("passkey"), goal: z.string(), start: hintsSchema }),
   /** Another walk, by `name` on this site or `site/name`: a sign-in inside a setup. */
   z.object({
     kind: z.literal("walk"),
@@ -185,56 +230,109 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
 ]);
 export type WalkOp = z.infer<typeof walkOpSchema>;
 
+/** Ops only a login walk runs: they type the credential's secrets. */
+export const LOGIN_OPS = new Set<WalkOp["kind"]>([
+  "username",
+  "password",
+  "one-time-code",
+  "passkey",
+]);
+/** Ops that type a secret: their screen runs only on a page its recognizer matched. */
+export const SECRET_OPS = new Set<WalkOp["kind"]>(["password", "one-time-code"]);
+/** The name a walk must have for login ops: one per site. */
+export const LOGIN_WALK = "login";
+
 export const screenSpecSchema = z.object({
   name: z.string().regex(NAME),
   /** One line a person would say about it. */
   looks: z.string(),
   /** Its URL shape (`urlShape`: host and path, ids as `*`); null: any page. */
-  url: z.string().nullable(),
+  url: z.string().nullable().default(null),
   /** All on the page (`lookAt` landmarks): it is this screen. */
-  landmarks: z.array(z.string()).max(12),
-  ops: z.array(walkOpSchema),
+  landmarks: z.array(z.string()).max(12).default([]),
+  /** The URL matches this regex (`/source/flags`). */
+  at: patternSchema.optional(),
+  /** Each shows on the page. */
+  shows: z.array(hintsSchema).optional(),
+  /** None shows (a dashboard has no password box). */
+  hides: z.array(hintsSchema).optional(),
+  /** The page's text matches this regex. */
+  says: patternSchema.optional(),
+  ops: z.array(walkOpSchema).default([]),
   goal: z.boolean().optional(),
+  /**
+   * The site turned the try away: the walk fails with `LoginFailed` and this case's hold.
+   * Case `password` types the previous password once first, when the credential has one.
+   */
+  refused: z
+    .object({ says: z.string().min(1), case: z.enum(["password", "code", "account"]) })
+    .optional(),
+  /** A step only a person can pass: they act in the window, then the walk goes on. */
+  person: z.object({ why: z.string().min(1) }).optional(),
   /** Screens that must be done first: the second visit to a page, or a page two screens share. */
   after: z.array(z.string().regex(NAME)).optional(),
   /** Done at most once per walk (the default); false for a page that may come back (a next page). */
   once: z.boolean().optional(),
   /** How many of the runs it was built from passed through it. */
-  seen: z.number().int().nonnegative(),
+  seen: z.number().int().nonnegative().default(0),
 });
 export type ScreenSpec = z.infer<typeof screenSpecSchema>;
 
+/** What a screen checks before it is the page: none means any page. */
+export const checksOf = (s: ScreenSpec): number =>
+  Number(s.url !== null) +
+  s.landmarks.length +
+  Number(!!s.at) +
+  (s.shows?.length ?? 0) +
+  Number(!!s.says);
+
+/** Its acts type a secret: a password, a code, or the previous password on a refusal. */
+export const typesSecret = (s: ScreenSpec): boolean =>
+  s.ops.some((op) => SECRET_OPS.has(op.kind)) || s.refused?.case === "password";
+
 export const walkSpecSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(WALK_VERSION)]),
+    version: z.union([z.literal(1), z.literal(WALK_VERSION)]).default(WALK_VERSION),
     site: z.string().regex(SITE),
     name: z.string().regex(NAME),
     /** In words: what the walk ends with. */
     goal: z.string(),
-    built: z.string(),
+    /** When it was built; empty for a walk written in the repo. */
+    built: z.string().default(""),
     /** The runs it was built from, oldest first. */
-    from: z.array(z.object({ run: z.string(), outcome: z.string(), endedAt: z.string() })),
+    from: z
+      .array(z.object({ run: z.string(), outcome: z.string(), endedAt: z.string() }))
+      .default([]),
     /** Where it opens, may hold `{field}`s; null: it starts on whatever page it is handed (a walk inside a walk). */
     start: z.string().url().nullable(),
     /** Typed values: the run's value is the example, used when the input does not give one. */
-    fields: z.array(walkFieldSchema),
-    secrets: z.array(z.object({ key: z.string().regex(SECRET_KEY), label: z.string() })),
+    fields: z.array(walkFieldSchema).default([]),
+    secrets: z
+      .array(z.object({ key: z.string().regex(SECRET_KEY), label: z.string() }))
+      .default([]),
     /** A click on it creates, sends or pays: running it takes a yes. */
-    irreversible: z.boolean(),
+    irreversible: z.boolean().default(false),
     screens: z.array(screenSpecSchema).min(1),
   })
   .superRefine((w, ctx) => {
     const names = new Set<string>();
+    const login = w.name === LOGIN_WALK;
     w.screens.forEach((s, i) => {
-      if (names.has(s.name))
-        ctx.addIssue({ code: "custom", path: ["screens", i, "name"], message: "not unique" });
+      const at = (message: string, ...more: (string | number)[]) =>
+        ctx.addIssue({ code: "custom", path: ["screens", i, ...more], message });
+      if (names.has(s.name)) at("not unique", "name");
       names.add(s.name);
-      if (s.goal && s.ops.length)
-        ctx.addIssue({
-          code: "custom",
-          path: ["screens", i, "ops"],
-          message: "a goal does nothing",
-        });
+      const ends = [s.goal, s.refused, s.person].filter(Boolean).length;
+      if (ends > 1) at("one of goal, refused and person", "name");
+      if (ends && s.ops.length)
+        at(s.goal ? "a goal does nothing" : "it ends the step: no ops", "ops");
+      if (s.refused && !login) at("refused is for a login walk", "refused");
+      // A login screen with nothing to check would match every page, a secret's page among them.
+      if (login && !checksOf(s)) at("a login screen needs url, landmarks, at, shows or says");
+      s.ops.forEach((op, j) => {
+        if (LOGIN_OPS.has(op.kind) && !login)
+          at(`a ${op.kind} op runs only in a walk named ${LOGIN_WALK}`, "ops", j);
+      });
     });
     if (!w.screens.some((s) => s.goal))
       ctx.addIssue({ code: "custom", path: ["screens"], message: "no goal screen" });

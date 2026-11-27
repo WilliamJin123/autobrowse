@@ -149,6 +149,10 @@ function scrubWalk(w: WalkSpec, x: Scrubber): WalkSpec {
   const op = (o: WalkOp, where: string): WalkOp => {
     if (o.kind === "human") return { ...o, reason: x.text(o.reason, where) } as WalkOp;
     const h = "hints" in o && o.hints ? { hints: x.hints(o.hints, where) } : {};
+    // a login op's boxes are hints too: scrubbed the same
+    const boxes = o as unknown as Record<string, Record<string, unknown> | undefined>;
+    for (const k of ["field", "submit", "send", "keepSignedIn", "start"])
+      if (boxes[k]) Object.assign(h, { [k]: x.hints(boxes[k], where) });
     const goal = x.text(o.goal, where);
     if (o.kind === "open") return { ...o, goal, url: x.url(o.url, where) } as WalkOp;
     if (o.kind === "fill" && o.value.from === "literal" && x.dirty(o.value.text))
@@ -175,6 +179,11 @@ function scrubWalk(w: WalkSpec, x: Scrubber): WalkSpec {
         looks: x.text(s.looks, where),
         url: s.url ? x.url(s.url, where) : null,
         landmarks: x.landmarks(s.landmarks, where),
+        ...(s.shows ? { shows: s.shows.map((h) => x.hints(h, where)) } : {}),
+        ...(s.hides ? { hides: s.hides.map((h) => x.hints(h, where)) } : {}),
+        ...(s.says ? { says: x.text(s.says, where) } : {}),
+        ...(s.refused ? { refused: { ...s.refused, says: x.text(s.refused.says, where) } } : {}),
+        ...(s.person ? { person: { why: x.text(s.person.why, where) } } : {}),
         ops: s.ops.map((o) => op(o, where)),
       };
     }),
