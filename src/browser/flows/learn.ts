@@ -1,6 +1,6 @@
 /**
  * LEARN (learn.uwaterloo.ca, D2L Brightspace), signed in as `outlook@uw`
- * (`auth/uwaterloo.ts`). Mapped 2026-10-23 in explore on PD 10 (ou 1285415).
+ * (`walks/logins/learn.ts`). Mapped 2026-10-23 in explore on PD 10 (ou 1285415).
  *
  * Reads call D2L's own REST API (Valence) from inside the signed-in page:
  * same origin, the session's cookies, no app key. It answers
@@ -28,10 +28,11 @@
  *   `quiz_submissions.d2l?qi=&ou=`. Run end to end on the practice quiz
  *   (qi 325150, unlimited), 2026-10-23.
  */
-import { LEARN } from "../../auth/uwaterloo.js";
 import { defineFlow, type FlowPage } from "../flow.js";
 import type { Hints } from "../locate.js";
 import { pageFetch } from "../page-json.js";
+
+const LEARN = "https://learn.uwaterloo.ca";
 
 /** The little of the DOM these page scripts touch; the project compiles without lib dom. */
 interface El {

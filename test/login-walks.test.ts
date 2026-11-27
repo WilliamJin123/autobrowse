@@ -1496,3 +1496,93 @@ describe("aws walk", () => {
     ).rejects.toMatchObject({ refused: true, case: "account" });
   });
 });
+
+describe("learn walk", () => {
+  const ADFS = "https://adfs.uwaterloo.ca/adfs/ls/?SAMLRequest=x";
+  const DUO = "https://api-1234.duosecurity.com/frame/v4/auth/prompt";
+  const HOME = "https://learn.uwaterloo.ca/d2l/home";
+  const states = {
+    user: {
+      url: ADFS,
+      has: ["textbox:User Account", "button:Next"],
+      on: { "click button:Next": "password" },
+    },
+    password: {
+      url: ADFS,
+      has: ["textbox:Password", "button:Sign in"],
+      on: { "click button:Sign in": "push" },
+    },
+    push: {
+      url: DUO,
+      text: "Sent a Duo Push to your phone",
+      has: ["text:Other options"],
+      on: { "click text:Other options": "methods" },
+    },
+    methods: {
+      url: DUO,
+      has: ["button:Send a passcode", "textbox:Passcode", "button:Verify"],
+      on: { "click button:Verify": "trust" },
+    },
+    trust: {
+      url: DUO,
+      has: ["button:Yes, this is my device"],
+      on: { "click button:Yes, this is my device": "home" },
+    },
+    home: { url: HOME, has: [] },
+  } satisfies Record<string, State>;
+
+  it("signs in as outlook@uw; signInHere covers the university's sign-in, not Duo or LEARN", () => {
+    const l = loginOf("learn");
+    expect(l.credential).toBe("outlook@uw");
+    const at = l.signInHere?.at as RegExp;
+    expect(at.test(ADFS)).toBe(true);
+    expect(at.test(DUO)).toBe(false);
+    expect(at.test(HOME)).toBe(false);
+  });
+
+  it("account, password, past the push, the texted passcode, trust the device", async () => {
+    const s = siteOf(states, "user");
+    const { ctx, asked } = ctxFor(s.fp, ["sms"], { username: "wjin" });
+    await loginOf("learn").signIn(ctx);
+    expect(s.acts).toEqual([
+      "fill User Account=wjin",
+      "click Next",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+      "click Other options",
+      "click Send a passcode",
+      "fill Passcode=123456",
+      "click Verify",
+      "click Yes, this is my device",
+    ]);
+    expect(asked).toEqual(["sms"]);
+    expect(s.opened).toEqual([HOME]);
+  });
+
+  it("a rejected password and a wrong passcode: refused with their cases", async () => {
+    const wrong = siteOf(
+      {
+        ...states,
+        password: { ...states.password, on: { "click button:Sign in": "rejected" } },
+        rejected: { url: ADFS, has: ["textbox:Password"], text: "Incorrect user ID or password." },
+      },
+      "password",
+    );
+    await expect(loginOf("learn").signIn(ctxFor(wrong.fp, ["sms"]).ctx)).rejects.toMatchObject({
+      refused: true,
+      case: "password",
+    });
+    const code = siteOf(
+      {
+        ...states,
+        methods: { ...states.methods, on: { "click button:Verify": "bad" } },
+        bad: { url: DUO, has: ["textbox:Passcode"], text: "Incorrect passcode. Try again." },
+      },
+      "methods",
+    );
+    await expect(loginOf("learn").signIn(ctxFor(code.fp, ["sms"]).ctx)).rejects.toMatchObject({
+      refused: true,
+      case: "code",
+    });
+  });
+});

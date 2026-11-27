@@ -197,11 +197,13 @@ describe("a sign-in walk as a SiteLogin", () => {
     expect(() => walkLogin({ ...spec, start: null })).toThrow(/needs a start/);
   });
 
-  it("never takes the place of a built-in login (learn keeps learnLogin)", () => {
+  it("never takes the place of a built-in login (cloudflare keeps its own)", () => {
     const before = SITE_LOGINS.length;
-    addSiteLogins([walkLogin({ ...spec, site: "learn" })]);
+    addSiteLogins([walkLogin({ ...spec, site: "cloudflare" })]);
     expect(SITE_LOGINS.length).toBe(before);
-    expect(SITE_LOGINS.filter((l) => l.site === "learn")).toEqual([builtInLogin("learn")]);
+    expect(SITE_LOGINS.filter((l) => l.site === "cloudflare")).toEqual([
+      builtInLogin("cloudflare"),
+    ]);
   });
 
   it("finds each site's login walk; a broken file is no login", () => {

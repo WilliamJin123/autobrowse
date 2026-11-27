@@ -23,7 +23,6 @@ import {
 } from "./login.js";
 import { MICROSOFT_HOST, signInToMicrosoft } from "./microsoft.js";
 import { providerOf } from "./providers.js";
-import { learnLogin } from "./uwaterloo.js";
 
 const CLOUDFLARE_HOME = /dash\.cloudflare\.com\/[0-9a-f]{32}/;
 const CLOUDFLARE_LOGIN = "https://dash.cloudflare.com/login";
@@ -444,7 +443,6 @@ export const SITE_LOGINS: readonly SiteLogin[] = [
   ...GOOGLE_APPS,
   googleAdmin,
   outlook,
-  learnLogin,
 ];
 
 const BUILT_IN = new Set(SITE_LOGINS);

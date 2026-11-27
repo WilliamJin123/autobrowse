@@ -17,6 +17,7 @@ import hubspot from "./hubspot.js";
 import instagram from "./instagram.js";
 import instantly from "./instantly.js";
 import intuit from "./intuit.js";
+import learn from "./learn.js";
 import linkedin from "./linkedin.js";
 import npm from "./npm.js";
 import perplexity from "./perplexity.js";
@@ -46,4 +47,5 @@ export const LOGIN_WALK_FILES: readonly WalkSpecInput[] = [
   hubspot,
   perplexity,
   aws,
+  learn,
 ];
