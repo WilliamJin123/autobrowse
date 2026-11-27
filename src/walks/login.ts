@@ -53,11 +53,21 @@ export function walkLogin(
     s.ops.some((op) => op.kind === "one-time-code" && op.kinds.includes("totp")),
   );
   const origins = o.origins ?? spec.origins;
+  const via = [
+    ...new Set(
+      spec.screens.flatMap((s) =>
+        s.ops.flatMap((op) => (op.kind === "provider" ? [op.provider] : [])),
+      ),
+    ),
+  ];
   return {
     site: o.site ?? spec.site,
     home: spec.home ?? spec.start,
     // setup's prompt
-    ask: `Your ${spec.site} login (username, password${totp ? ", authenticator key if set" : ""})`,
+    ask:
+      spec.ask ??
+      `Your ${spec.site} login (username, password${totp ? ", authenticator key if set" : ""})`,
+    ...(via.length ? { via } : {}),
     ...(credential ? { credential } : {}),
     ...(origins ? { origins } : {}),
     ...(o.healDir ? { heal: { spec, dir: o.healDir } } : {}),

@@ -1,7 +1,8 @@
 /** The repo's sign-in walks (`src/walks/logins/`): one shared runner, one block per site. */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CodeKind } from "../src/auth/codes.js";
 import { LoginFailed, passwordDomains, type SignInContext } from "../src/auth/login.js";
+import { isProvider, providerOf, registerProvider } from "../src/auth/providers.js";
 import { SITE_LOGINS } from "../src/auth/sites.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { repoWalkLogins } from "../src/walks/login.js";
@@ -26,12 +27,30 @@ function siteOf(states: Record<string, State>, start: string) {
   return { ...s, opened };
 }
 
-function ctxFor(fp: SignInContext["fp"], kinds: CodeKind[] = []) {
+function ctxFor(
+  fp: SignInContext["fp"],
+  kinds: CodeKind[] = [],
+  over: Partial<SignInContext["cred"]> = {},
+) {
   const asked: string[] = [];
-  const cred = { username: "wren", password: "pw-ig-1", recoveryCodes: [], passkeys: [] };
+  /** `credFor` calls: which provider, as which account. */
+  const providers: string[] = [];
+  // a `via` credential holds no password (`methodsOf` splits one that has both)
+  const cred = {
+    username: "wren",
+    ...(over.via ? {} : { password: "pw-ig-1" }),
+    recoveryCodes: [],
+    passkeys: [],
+    ...over,
+  } as SignInContext["cred"];
   const ctx = {
     fp,
     cred,
+    credFor: async (site: string, account?: string) => {
+      providers.push(`${site}:${account ?? "default"}`);
+      return { username: account ?? `${site}-default`, recoveryCodes: [], passkeys: [] };
+    },
+    as: (c: SignInContext["cred"]) => ({ ...ctx, cred: c }),
     code: async (kind: CodeKind) => {
       asked.push(kind);
       return "123456";
@@ -40,7 +59,7 @@ function ctxFor(fp: SignInContext["fp"], kinds: CodeKind[] = []) {
     inbox: () => null,
     steps: [] as string[],
   } as unknown as SignInContext;
-  return { ctx, asked };
+  return { ctx, asked, providers };
 }
 
 describe("repo sign-in walks", () => {
@@ -879,5 +898,448 @@ describe("discord walk", () => {
     const { ctx, asked } = ctxFor(s.fp, ["totp"]);
     await loginOf("discord").signIn(ctx);
     expect(asked).toEqual(["totp"]);
+  });
+});
+
+/** A stand-in for Google: its page is a fake state; signing in there moves the site on. */
+const GOOGLE_PAGE = "https://accounts.google.com/v3/signin/identifier";
+function fakeGoogle(back: () => void) {
+  const signedAs: string[] = [];
+  registerProvider({
+    site: "google",
+    host: /accounts\.google\.com/,
+    buttons: [{ role: "button", name: "/google/i" }],
+    signIn: async (c) => {
+      signedAs.push(c.cred.username);
+      back();
+    },
+  });
+  return signedAs;
+}
+const realGoogle = providerOf("google");
+afterEach(() => registerProvider(realGoogle));
+
+describe("linkedin walk", () => {
+  const LOGIN = "https://www.linkedin.com/login";
+  const HERE = "https://www.linkedin.com/uas/login?session_redirect=%2Foauth";
+  const FORM = ["textbox:Email or phone", "textbox:Password", "button:Sign in"];
+  const CHECKPOINT = "https://www.linkedin.com/checkpoint/challenge/1";
+  const AUTHORIZE = "https://www.linkedin.com/oauth/v2/authorization?client_id=1";
+  const FEED = "https://www.linkedin.com/feed/";
+
+  it("signInHere covers /login, /uas/login and checkpoints, not the feed or the authorize page", () => {
+    const at = loginOf("linkedin").signInHere?.at as RegExp;
+    for (const u of [LOGIN, HERE, CHECKPOINT]) expect(at.test(u)).toBe(true);
+    expect(at.test(FEED)).toBe(false);
+    expect(at.test(AUTHORIZE)).toBe(false);
+    expect(loginOf("linkedin").via).toEqual(["google"]);
+  });
+
+  it("in place: email, password, the authenticator code; lands on the authorize page", async () => {
+    const s = siteOf(
+      {
+        login: { url: HERE, has: FORM, on: { "click button:Sign in": "checkpoint" } },
+        checkpoint: {
+          url: CHECKPOINT,
+          text: "Enter the code from your authenticator app",
+          has: ["textbox:Enter code", "button:Submit"],
+          on: { "click button:Submit": "authorize" },
+        },
+        authorize: { url: AUTHORIZE, has: ["button:Allow"] },
+      },
+      "login",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["totp", "email"]);
+    await loginOf("linkedin").signInHere?.run(ctx);
+    expect(s.acts).toEqual([
+      "fill Email or phone=wren",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+      "fill Enter code=123456",
+      "click Submit",
+    ]);
+    expect(asked).toEqual(["totp"]);
+    expect(s.opened).toEqual([]);
+  });
+
+  it("signIn: the emailed code when no seed is stored, then the feed", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "checkpoint" } },
+        checkpoint: {
+          url: CHECKPOINT,
+          text: "We sent a verification code to your email",
+          has: ["textbox:Enter code", "button:Verify"],
+          on: { "click button:Verify": "feed" },
+        },
+        feed: { url: FEED, has: [] },
+      },
+      "login",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["email"]);
+    await loginOf("linkedin").signIn(ctx);
+    expect(asked).toEqual(["email"]);
+    expect(s.opened).toEqual([LOGIN]);
+  });
+
+  it("a rejected password, a restricted account: refused with their cases", async () => {
+    const wrong = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "wrong" } },
+        wrong: { url: LOGIN, has: FORM, text: "Wrong email or password. Try again" },
+      },
+      "login",
+    );
+    await expect(loginOf("linkedin").signIn(ctxFor(wrong.fp).ctx)).rejects.toMatchObject({
+      refused: true,
+      case: "password",
+    });
+    const restricted = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "restricted" } },
+        restricted: {
+          url: "https://www.linkedin.com/flagship-web/login/login-restriction/",
+          has: [],
+        },
+      },
+      "login",
+    );
+    await expect(loginOf("linkedin").signIn(ctxFor(restricted.fp).ctx)).rejects.toMatchObject({
+      refused: true,
+      case: "account",
+    });
+  });
+
+  it("the security check goes to the solver; solved, the walk goes on", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "check" } },
+        check: { url: CHECKPOINT, text: "Let's do a quick security check", has: [] },
+        feed: { url: FEED, has: [] },
+      },
+      "login",
+    );
+    let solved = 0;
+    s.fp.captcha = async () => {
+      solved++;
+      s.go("feed");
+      return { solved: true, kind: "checkbox", vendor: "recaptcha", rounds: 1 } as never;
+    };
+    await loginOf("linkedin").signIn(ctxFor(s.fp).ctx);
+    expect(solved).toBe(1);
+  });
+
+  it("via google: past the account chooser, Google's button, the feed; no password typed", async () => {
+    const s = siteOf(
+      {
+        chooser: {
+          url: LOGIN,
+          has: ["link:Sign in using another account"],
+          on: { "click link:Sign in using another account": "login" },
+        },
+        login: {
+          url: LOGIN,
+          has: [...FORM, "button:Continue with Google"],
+          on: { "click button:Continue with Google": "google" },
+        },
+        google: { url: GOOGLE_PAGE, has: [] },
+        feed: { url: FEED, has: [] },
+      },
+      "chooser",
+    );
+    const signedAs = fakeGoogle(() => s.go("feed"));
+    const { ctx, providers } = ctxFor(s.fp, [], { via: "google", username: "will@wren.test" });
+    await loginOf("linkedin").signIn(ctx);
+    expect(s.acts).toEqual(["click Sign in using another account", "click Continue with Google"]);
+    expect(providers).toEqual(["google:will@wren.test"]);
+    expect(signedAs).toEqual(["will@wren.test"]);
+  });
+});
+
+describe("github walk", () => {
+  const LOGIN = "https://github.com/login?return_to=%2Flogin%2Foauth%2Fauthorize";
+  const FORM = ["textbox:Username or email address", "textbox:Password", "button:Sign in"];
+  const AUTHORIZE = "https://github.com/login/oauth/authorize?client_id=1";
+  const BACK = "https://tool.test/callback?code=abc";
+  const OTP = "textbox:Authentication code";
+
+  it("is the provider behind Continue with GitHub, with its button readings", () => {
+    expect(isProvider("github")).toBe(true);
+    const p = providerOf("github");
+    expect(p.host.test(LOGIN)).toBe(true);
+    expect(p.host.test("https://github.com/octo/repo")).toBe(false);
+    expect(p.buttons.some((b) => b.text?.includes("with github"))).toBe(true);
+  });
+
+  it("in place: password, the authenticator code, the app's authorize page, back on the app", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "twoFactor" } },
+        twoFactor: {
+          url: "https://github.com/sessions/two-factor/app",
+          has: [OTP, "button:Verify"],
+          on: { "click button:Verify": "authorize" },
+        },
+        authorize: {
+          url: AUTHORIZE,
+          has: ["button:Authorize new-tool"],
+          on: { "click button:Authorize new-tool": "back" },
+        },
+        back: { url: BACK, has: [] },
+      },
+      "login",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["totp"]);
+    await loginOf("github").signInHere?.run(ctx);
+    expect(s.acts).toEqual([
+      "fill Username or email address=wren",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+      "fill Authentication code=123456",
+      "click Verify",
+      "click Authorize new-tool",
+    ]);
+    expect(asked).toEqual(["totp"]);
+  });
+
+  it("as a provider: the walk runs on the page the button opened, never opens /login", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "back" } },
+        back: { url: BACK, has: [] },
+      },
+      "login",
+    );
+    await providerOf("github").signIn(ctxFor(s.fp).ctx);
+    expect(s.acts.slice(0, 3)).toEqual([
+      "fill Username or email address=wren",
+      "fill Password=pw-ig-1",
+      "click Sign in",
+    ]);
+    expect(s.opened).toEqual([]);
+    expect(s.fp.url()).toBe(BACK);
+  });
+
+  it("a rejected password is refused with case password", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "wrong" } },
+        wrong: { url: LOGIN, has: FORM, text: "Incorrect username or password." },
+      },
+      "login",
+    );
+    await expect(loginOf("github").signInHere?.run(ctxFor(s.fp).ctx)).rejects.toMatchObject({
+      refused: true,
+      case: "password",
+    });
+  });
+
+  it("never waits on GitHub Mobile: More options, a text code (sent first), then home", async () => {
+    const s = siteOf(
+      {
+        mobile: {
+          url: "https://github.com/sessions/two-factor/mobile",
+          text: "Two-factor authentication GitHub Mobile",
+          has: ["button:More options"],
+          on: { "click button:More options": "ways" },
+        },
+        ways: {
+          url: "https://github.com/sessions/two-factor/mobile",
+          has: ["link:Use your authenticator app", "link:Send a code via text message"],
+          on: { "click link:Send a code via text message": "sms" },
+        },
+        sms: {
+          url: "https://github.com/sessions/two-factor/sms",
+          has: [OTP, "button:Send SMS", "button:Verify"],
+          on: { "click button:Verify": "home" },
+        },
+        home: { url: "https://github.com/", has: [] },
+      },
+      "mobile",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["sms"]);
+    await loginOf("github").signInHere?.run(ctx);
+    expect(s.acts).toEqual([
+      "click More options",
+      "click Send a code via text message",
+      "click Send SMS",
+      "fill Authentication code=123456",
+      "click Verify",
+    ]);
+    expect(asked).toEqual(["sms"]);
+  });
+
+  it("a device verification code from the inbox; six digits that submit themselves need no Verify", async () => {
+    const s = siteOf(
+      {
+        login: { url: LOGIN, has: FORM, on: { "click button:Sign in": "device" } },
+        device: {
+          url: "https://github.com/sessions/verified-device",
+          text: "Device verification. We just sent your authentication code",
+          has: ["textbox:Device verification code"],
+          on: { "fill textbox:Device verification code": "home" },
+        },
+        home: { url: "https://github.com/", has: [] },
+      },
+      "login",
+    );
+    const { ctx, asked } = ctxFor(s.fp, ["email"]);
+    await loginOf("github").signInHere?.run(ctx);
+    expect(s.acts.slice(3)).toEqual(["fill Device verification code=123456"]);
+    expect(asked).toEqual(["email"]);
+  });
+
+  it("via google: Continue with Google, no password typed", async () => {
+    const s = siteOf(
+      {
+        login: {
+          url: "https://github.com/login",
+          has: [...FORM, "button:Continue with Google"],
+          on: { "click button:Continue with Google": "google" },
+        },
+        google: { url: GOOGLE_PAGE, has: [] },
+        home: { url: "https://github.com/settings/profile", has: [] },
+      },
+      "login",
+    );
+    fakeGoogle(() => s.go("home"));
+    await loginOf("github").signIn(ctxFor(s.fp, [], { via: "google", username: "w@g.test" }).ctx);
+    expect(s.acts).toEqual(["click Continue with Google"]);
+  });
+});
+
+describe("provider walks (Google-made accounts)", () => {
+  const google = { via: "google" as const, username: "william@wren.test" };
+
+  it("anthropic: Continue with Google, as the site's own Google address", async () => {
+    const s = siteOf(
+      {
+        login: {
+          url: "https://platform.claude.com/login",
+          has: ["button:Continue with Google"],
+          on: { "click button:Continue with Google": "google" },
+        },
+        google: { url: GOOGLE_PAGE, has: [] },
+        home: { url: "https://platform.claude.com/dashboard", has: [] },
+      },
+      "login",
+    );
+    const signedAs = fakeGoogle(() => s.go("home"));
+    const { ctx, providers } = ctxFor(s.fp, [], google);
+    await loginOf("anthropic").signIn(ctx);
+    expect(providers).toEqual(["google:william@wren.test"]);
+    expect(signedAs).toEqual(["william@wren.test"]);
+    expect(loginOf("anthropic").ask).toMatch(/Claude Console/);
+  });
+
+  it("an older credential with no via and no password still takes the button, as the default account", async () => {
+    const s = siteOf(
+      {
+        login: {
+          url: "https://sentry.io/auth/login/",
+          has: ["link:Sign in with Google"],
+          on: { "click link:Sign in with Google": "google" },
+        },
+        google: { url: GOOGLE_PAGE, has: [] },
+        home: { url: "https://wren-automation.sentry.io/issues/", has: [] },
+      },
+      "login",
+    );
+    fakeGoogle(() => s.go("home"));
+    const { ctx, providers } = ctxFor(s.fp, [], { username: "x", password: "" });
+    await loginOf("sentry").signIn(ctx);
+    expect(providers).toEqual(["google:default"]);
+  });
+
+  it("a password credential never presses a provider's button", async () => {
+    const s = siteOf(
+      {
+        login: {
+          url: "https://platform.claude.com/login",
+          has: ["button:Continue with Google"],
+          on: { "click button:Continue with Google": "google" },
+        },
+      },
+      "login",
+    );
+    fakeGoogle(() => {});
+    await expect(loginOf("anthropic").signIn(ctxFor(s.fp).ctx)).rejects.toBeInstanceOf(LoginFailed);
+    expect(s.acts).toEqual([]);
+  });
+
+  it("twilio: Google, then the texted code: remember, a fresh text, the code, Continue", async () => {
+    const s = siteOf(
+      {
+        signup: {
+          url: "https://www.twilio.com/try-twilio",
+          has: ["button:Sign up with Google"],
+          on: { "click button:Sign up with Google": "google" },
+        },
+        google: { url: GOOGLE_PAGE, has: [] },
+        sms: {
+          url: "https://login.twilio.com/u/mfa-sms-challenge?state=1",
+          has: ["id:code", "id:rememberBrowser", "button:Resend", "button:Continue"],
+          on: { "click button:Continue": "home" },
+        },
+        home: { url: "https://console.twilio.com/account/AC1/home", has: [] },
+      },
+      "signup",
+    );
+    fakeGoogle(() => s.go("sms"));
+    const { ctx, asked } = ctxFor(s.fp, ["sms"], google);
+    await loginOf("twilio").signIn(ctx);
+    expect(s.acts).toEqual([
+      "click Sign up with Google",
+      "click rememberBrowser",
+      "click Resend",
+      "fill code=123456",
+      "click Continue",
+    ]);
+    expect(asked).toEqual(["sms"]);
+  });
+
+  it("hubspot: the email first, then Sign in with Google", async () => {
+    const s = siteOf(
+      {
+        email: {
+          url: "https://app.hubspot.com/login",
+          has: ["textbox:Email", "button:Continue"],
+          on: { "click button:Continue": "methods" },
+        },
+        methods: {
+          url: "https://app.hubspot.com/login",
+          has: ["button:Sign in with Google"],
+          on: { "click button:Sign in with Google": "google" },
+        },
+        google: { url: GOOGLE_PAGE, has: [] },
+        home: { url: "https://app.hubspot.com/home", has: [] },
+      },
+      "email",
+    );
+    fakeGoogle(() => s.go("home"));
+    await loginOf("hubspot").signIn(ctxFor(s.fp, [], google).ctx);
+    expect(s.acts).toEqual([
+      "fill Email=william@wren.test",
+      "click Continue",
+      "click Sign in with Google",
+    ]);
+  });
+
+  it("perplexity: Sign In opens the modal; the popup signs in and the modal goes, URL unchanged", async () => {
+    const HOME = "https://www.perplexity.ai/";
+    const s = siteOf(
+      {
+        out: { url: HOME, has: ["button:Sign In"], on: { "click button:Sign In": "modal" } },
+        modal: { url: HOME, has: ["button:Sign In", "button:Continue with Google"] },
+        in: { url: HOME, has: [] },
+      },
+      "out",
+    );
+    // a popup: the provider's page opens beside the site's
+    const popup = { url: () => GOOGLE_PAGE } as never;
+    s.fp.nextPage = async () => popup;
+    fakeGoogle(() => s.go("in"));
+    await loginOf("perplexity").signIn(ctxFor(s.fp, [], google).ctx);
+    expect(s.acts).toEqual(["click Sign In", "click Continue with Google"]);
   });
 });

@@ -24,6 +24,11 @@ export function fakeSite(states: Record<string, State>, start: string) {
         const p = namePattern(want);
         return typeof p === "string" ? p === name : p.test(name);
       };
+      // `{ id }` hints: an "id:" control of that id
+      if (h.id) {
+        if (role === "id" && name === h.id) return c;
+        continue;
+      }
       if (h.css) {
         // `:has-text("…")` parts name the control; a bare selector is a "css:" control.
         const parts = [...h.css.matchAll(/has-text\("([^"]*)"\)/g)].map((m) => m[1] ?? "");

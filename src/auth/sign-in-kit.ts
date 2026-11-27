@@ -121,6 +121,9 @@ export interface CodeBox {
   hint?: string | undefined;
 }
 
+/** How long a code's submit button gets to show after the fill. */
+const SUBMIT_MS = 3_000;
+
 /**
  * Asks for a code and types it. A second ask (a wrong code, a resend) takes
  * only a code newer than the last ask. One sign-in at a time asks an inbox.
@@ -142,7 +145,9 @@ export async function enterCode(st: SignInState, ctx: SignInContext, box: CodeBo
     await fp.act({ kind: "fill", value: code, into: "code" }, box.field, {
       goal: "type verification code",
     });
-    await fp.act({ kind: "click" }, box.submit, { goal: "submit verification code" });
+    // six digits submit themselves on some pages (GitHub): the button is gone by then
+    if (await fp.has(box.submit, SUBMIT_MS))
+      await fp.act({ kind: "click" }, box.submit, { goal: "submit verification code" });
   });
 }
 

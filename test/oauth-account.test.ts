@@ -11,7 +11,7 @@ class Stop extends Error {}
 
 /**
  * A page whose Google card is already open (One Tap), or opens after the
- * first click when `oneTap` is false; `credFor` records its account and stops.
+ * Google button's click when `oneTap` is false; `credFor` records its account and stops.
  */
 function ctxOf(cred: { username: string; password: string; via?: "google" }, oneTap = true) {
   const { fp: base, acts } = fakePage({ text: [""], present: () => true });
@@ -20,7 +20,9 @@ function ctxOf(cred: { username: string; password: string; via?: "google" }, one
   const fp: FlowPage = {
     ...base,
     page: main,
-    pages: () => (oneTap || acts.length ? [main, card] : [main]),
+    // the card opens after the provider's button, never after a `before` click
+    pages: () =>
+      oneTap || acts.some((a) => /google/i.test(String(a.hints.name))) ? [main, card] : [main],
   };
   const asked: Array<[string, string | undefined]> = [];
   const ctx = {

@@ -6,13 +6,14 @@
  * would like to access…" with Allow. Unverified until a LinkedIn app and
  * credential exist (mapped from LinkedIn's OAuth docs 2026-09-21).
  */
-import { LINKEDIN_LOGIN_URL } from "../../auth/linkedin.js";
+import linkedin from "../../walks/logins/linkedin.js";
+import { regexOf } from "../../walks/spec.js";
 import { consentFlow } from "./consent-walker.js";
 
 export const linkedinOauthConsent = consentFlow({
   site: "linkedin",
   home: "https://www.linkedin.com/feed/",
-  loginUrl: LINKEDIN_LOGIN_URL,
+  loginUrl: regexOf(linkedin.signInHere),
   allow: { role: "button", name: "/^(allow|continue)$/i" },
   refused: /something went wrong|invalid|unauthorized|not authorized|error/i,
 });

@@ -9,7 +9,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { LoginFailed, passwordOf, personStep, type SignInContext } from "../auth/login.js";
+import {
+  LoginFailed,
+  passwordOf,
+  personStep,
+  type SignInContext,
+  throughProvider,
+} from "../auth/login.js";
 import {
   enterCode,
   retypePrevious,
@@ -389,6 +395,17 @@ async function walkSpec(
           return personStep(ctx, `${spec.site}: the site asks for a security key; none is stored`);
         return signInWithPasskey(fp, op.start as Hints);
       }
+      case "provider": {
+        const { ctx, state } = signIn(op);
+        await throughProvider(ctx, spec.site, {
+          provider: op.provider,
+          ...(op.button ? { button: op.button as Hints } : {}),
+          ...(op.account ? { account: op.account } : {}),
+        });
+        // the provider took the secret: from here the goal may count
+        state.submitted = true;
+        return;
+      }
       case "click":
         gate(op);
         return fp.act({ kind: "click" }, await hintsFor(op), {
@@ -621,10 +638,13 @@ async function walkSpec(
     fp.human(reason);
   };
 
+  // in place (start null) the walk began on a sign-in page, which the goal's checks rule out
+  const inPlace = spec.start === null;
   const screens: Screen[] = (isLoginWalk(spec) ? fileOrder : ordered)(spec.screens).map((s) => {
     // a refusal or a person may come back: a second rejection fails, a second check asks again
     const ends = !!(s.refused || s.person);
     const bare = s.url === null && !s.landmarks.length;
+    const usable = sign ? methodGate(s, sign.ctx) : () => true;
     return {
       name: s.name,
       looks: s.looks,
@@ -633,7 +653,8 @@ async function walkSpec(
         (s.after ?? []).every((a) => handled.has(a)) &&
         (ends || !(s.once !== false && handled.has(s.name))) &&
         // a sign-in's goal counts only after a secret went in: a start page is never the goal
-        !(s.goal && sign && !sign.state.submitted) &&
+        !(s.goal && sign && !sign.state.submitted && !inPlace) &&
+        usable() &&
         (bare || shows(s.url, s.landmarks, await look())),
       ...(s.once === false ? { repeats: true } : {}),
       ...(typesSecret(s) ? { secret: true } : {}),
@@ -669,6 +690,23 @@ async function walkSpec(
         (spec.screens.some((s) => s.once === false) ? 10 : 1),
     },
   );
+}
+
+/**
+ * Which of a sign-in's screens this credential can use: a provider's button only
+ * when it signs in `via` that provider (or has no password and no `via`: an older
+ * provider-only credential), a password form only with no `via`, a code way only
+ * when the credential can get that code.
+ */
+function methodGate(s: ScreenSpec, ctx: SignInContext): () => boolean {
+  const via = s.ops.find((op) => op.kind === "provider");
+  const password = s.ops.some((op) => op.kind === "password");
+  return () => {
+    const c = ctx.cred;
+    if (via?.kind === "provider" && (c.via ? c.via !== via.provider : !!c.password)) return false;
+    if (password && c.via) return false;
+    return !s.needs || ctx.offers(s.needs);
+  };
 }
 
 /** A plan value with no person: given, else the default, else (v1) the example; null when none. */

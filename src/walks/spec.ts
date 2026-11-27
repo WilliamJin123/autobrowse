@@ -18,6 +18,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
 import { CODE_KINDS } from "../auth/codes.js";
+import { PROVIDERS } from "../auth/providers.js";
 import { fieldSchema, hintsSchema, opSchema, valueSchema } from "../compiler/outline.js";
 import { baseSite } from "../runs/log.js";
 
@@ -205,6 +206,19 @@ export const walkOpSchema = z.discriminatedUnion("kind", [
   }),
   /** Login walks only: our stored passkey answers; the ceremony completes on the click. */
   z.object({ kind: z.literal("passkey"), goal: z.string(), start: hintsSchema }),
+  /**
+   * Login walks only: the provider's button (`button`, else its own readings), its
+   * sign-in in the popup or redirect, back on the site. Its screen counts only
+   * when the credential signs in `via` this provider.
+   */
+  z.object({
+    kind: z.literal("provider"),
+    goal: z.string(),
+    provider: z.enum(PROVIDERS),
+    button: hintsSchema.optional(),
+    /** The account at the provider; default the credential's username when it says `via`. */
+    account: z.string().optional(),
+  }),
   /** Another walk, by `name` on this site or `site/name`: a sign-in inside a setup. */
   z.object({
     kind: z.literal("walk"),
@@ -237,6 +251,7 @@ export const LOGIN_OPS = new Set<WalkOp["kind"]>([
   "password",
   "one-time-code",
   "passkey",
+  "provider",
 ]);
 /** Ops that type a secret: their screen runs only on a page its recognizer matched. */
 export const SECRET_OPS = new Set<WalkOp["kind"]>(["password", "one-time-code"]);
@@ -270,6 +285,8 @@ export const screenSpecSchema = z.object({
     .optional(),
   /** A step only a person can pass: they act in the window, then the walk goes on. */
   person: z.object({ why: z.string().min(1) }).optional(),
+  /** Login walks: counts only when the credential can get this kind of code (a two-factor way to pick). */
+  needs: z.enum(CODE_KINDS).optional(),
   /** Screens that must be done first: the second visit to a page, or a page two screens share. */
   after: z.array(z.string().regex(NAME)).optional(),
   /** Done at most once per walk (the default); false for a page that may come back (a next page). */
@@ -319,6 +336,8 @@ export const walkSpecSchema = z
     home: z.string().url().optional(),
     /** Login walks: the site's sign-in pages; on one, the walk runs in place (no open), so a `next` in its URL survives. */
     signInHere: patternSchema.optional(),
+    /** Login walks: what setup says when it asks for the credential; default from the screens. */
+    ask: z.string().min(1).optional(),
     screens: z.array(screenSpecSchema).min(1),
   })
   .superRefine((w, ctx) => {
@@ -334,6 +353,7 @@ export const walkSpecSchema = z
       if (ends && s.ops.length)
         at(s.goal ? "a goal does nothing" : "it ends the step: no ops", "ops");
       if (s.refused && !login) at("refused is for a login walk", "refused");
+      if (s.needs && !login) at("needs is for a login walk", "needs");
       // A login screen with nothing to check would match every page, a secret's page among them.
       if (login && !checksOf(s)) at("a login screen needs url, landmarks, at, shows or says");
       s.ops.forEach((op, j) => {
@@ -345,6 +365,8 @@ export const walkSpecSchema = z
       ctx.addIssue({ code: "custom", path: ["origins"], message: "origins is for a login walk" });
     if (w.home && !login)
       ctx.addIssue({ code: "custom", path: ["home"], message: "home is for a login walk" });
+    if (w.ask && !login)
+      ctx.addIssue({ code: "custom", path: ["ask"], message: "ask is for a login walk" });
     if (w.signInHere && !login)
       ctx.addIssue({
         code: "custom",

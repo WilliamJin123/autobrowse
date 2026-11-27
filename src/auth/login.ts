@@ -551,6 +551,76 @@ async function providerButton(fp: FlowPage, p: IdentityProvider, hint?: Hints): 
 /** How long a site's own spinner may stand between a press and the next page. */
 const LOADING_MS = 30_000;
 
+/** What `throughProvider` presses and as whom. */
+export interface ProviderPress {
+  provider: Provider;
+  /** The provider's button on the site's page; the provider's own readings when absent. */
+  button?: Hints;
+  /** Which account at the provider, when the site's is not the provider's stored one. */
+  account?: string;
+}
+
+/**
+ * The provider's round trip from a site's sign-in page: take One Tap's card
+ * if it is up, else press the button; sign in at the provider (popup or
+ * redirect); back on the site's page once it moved on (URL or button gone).
+ */
+export async function throughProvider(
+  ctx: SignInContext,
+  site: string,
+  o: ProviderPress,
+): Promise<void> {
+  const provider = providerOf(o.provider);
+  const { fp } = ctx;
+  const main = fp.page;
+  const from = fp.url();
+  const opened = () => fp.pages().find((p) => p !== main && provider.host.test(p.url())) ?? null;
+  // One Tap opens its own card as the page loads (`auto_select`), before
+  // anything is pressed — and the button under that card can then be
+  // unclickable. A card that is already there is the sign-in (LinkedIn, 2026-09-22).
+  let page = opened();
+  let button: Hints | null = null;
+  if (!page) {
+    button = await providerButton(fp, provider, o.button);
+    const popup = fp.nextPage(8_000);
+    const failed = await fp
+      .act({ kind: "click" }, button, { goal: `sign in with ${provider.site}` })
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+    page = (await popup) ?? opened();
+    if (!page) {
+      if (failed) throw failed;
+      // The site's own hop (Todoist's /oauth-start spinner) can take its time.
+      const reached = async (ms: number) =>
+        (await fp.waitForUrl(provider.host, ms)) || provider.host.test(fp.url());
+      const spinning = async () => !(await untilLoaded(fp, 0));
+      if (!(await reached(15_000)) && !((await spinning()) && (await reached(LOADING_MS))))
+        throw new LoginFailed(
+          site,
+          `pressed the ${provider.site} button but never reached ${provider.site}: ${await pageState(fp)}`,
+        );
+    }
+  }
+  if (page) fp.switchTo(page);
+  // A site made through the provider's button signs in as its own username
+  // there, never as the provider's stored default: that was a person's own
+  // account once, its password typed for a Wren site (2026-09-29).
+  const account = o.account ?? (ctx.cred.via ? ctx.cred.username : undefined);
+  const cred = await ctx.credFor(provider.site, account);
+  try {
+    await provider.signIn(ctx.as(cred));
+  } finally {
+    fp.switchTo(main);
+  }
+  // a popup closes before its opener moves on; a modal (Perplexity) keeps the URL, drops the button
+  const left = async () =>
+    !provider.host.test(fp.url()) &&
+    (fp.url() !== from || (!!button && !(await fp.has(button, 0))));
+  for (let t = 0; t < LOADING_MS && !(await left()); t += SETTLE_MS) await fp.wait(SETTLE_MS);
+}
+
 /** Sign in through an identity provider's button: popup or redirect, then back to the site. */
 export function oauthLogin(site: string, spec: OauthLoginSpec): SiteLogin["signIn"] {
   const provider = providerOf(spec.provider ?? "google");
@@ -561,12 +631,9 @@ export function oauthLogin(site: string, spec: OauthLoginSpec): SiteLogin["signI
     // The load itself may sign in (One Tap's auto_select, a live cookie): no button to find then.
     // A URL pattern can match `start` itself, so only a page check counts; signInWith checks again.
     if (typeof spec.success === "function" && (await spec.success(fp).catch(() => false))) return;
-    const opened = () => fp.pages().find((p) => p !== main && provider.host.test(p.url())) ?? null;
-    // One Tap opens its own card as the page loads (`auto_select`), before
-    // anything is pressed — and the button under that card can then be
-    // unclickable. A card that is already there is the sign-in (LinkedIn, 2026-09-22).
-    let page = opened();
-    if (!page) {
+    // One Tap's card already up: the helper takes it before any press.
+    const tapped = fp.pages().some((p) => p !== main && provider.host.test(p.url()));
+    if (!tapped) {
       if (spec.reveal && (await fp.has(spec.reveal, 1_500)))
         await fp.act({ kind: "click" }, spec.reveal, { goal: "past the saved-account chooser" });
       // Absent when the page already shows the method list (or is not the site's: a wall
@@ -580,36 +647,12 @@ export function oauthLogin(site: string, spec: OauthLoginSpec): SiteLogin["signI
         });
         await fp.act({ kind: "click" }, spec.email.next, { goal: `past ${site}'s email` });
       }
-      const button = await providerButton(fp, provider, spec.button);
-      const popup = fp.nextPage(8_000);
-      const failed = await fp
-        .act({ kind: "click" }, button, { goal: `sign in with ${provider.site}` })
-        .then(
-          () => null,
-          (err: unknown) => err,
-        );
-      page = (await popup) ?? opened();
-      if (!page) {
-        if (failed) throw failed;
-        // The site's own hop (Todoist's /oauth-start spinner) can take its time.
-        const reached = async (ms: number) =>
-          (await fp.waitForUrl(provider.host, ms)) || provider.host.test(fp.url());
-        const spinning = async () => !(await untilLoaded(fp, 0));
-        if (!(await reached(15_000)) && !((await spinning()) && (await reached(LOADING_MS))))
-          throw new LoginFailed(
-            site,
-            `pressed the ${provider.site} button but never reached ${provider.site}: ${await pageState(fp)}`,
-          );
-      }
     }
-    if (page) fp.switchTo(page);
-    // A site made through the provider's button signs in as its own username
-    // there, never as the provider's stored default: that was a person's own
-    // account once, its password typed for a Wren site (2026-09-29).
-    const account = spec.account ?? (ctx.cred.via ? ctx.cred.username : undefined);
-    const cred = await ctx.credFor(provider.site, account);
-    await provider.signIn(ctx.as(cred));
-    fp.switchTo(main);
+    await throughProvider(ctx, site, {
+      provider: provider.site,
+      ...(spec.button ? { button: spec.button } : {}),
+      ...(spec.account ? { account: spec.account } : {}),
+    });
     await landAfterOauth(site, spec, ctx);
   };
 }

@@ -8,19 +8,17 @@
 
 import type { FlowPage } from "../browser/flow.js";
 import { backFrom, clickOpening, type Walk, walk } from "../browser/screens.js";
-import { signInToGithub } from "./github.js";
+// registers GitHub as an identity provider
+import "./github.js";
 import { signInToGoogle } from "./google.js";
-import { LINKEDIN_LOGIN_URL, signInToLinkedin } from "./linkedin.js";
 import {
   addressOf,
   LoginFailed,
-  oauthLogin,
   type PasskeySetupSpec,
   type PasswordChangeSpec,
   passwordOf,
   type SignInContext,
   type SiteLogin,
-  serially,
   type TotpSetupSpec,
 } from "./login.js";
 import { MICROSOFT_HOST, signInToMicrosoft } from "./microsoft.js";
@@ -453,187 +451,6 @@ const aws: SiteLogin = {
 };
 
 /**
- * Claude Console (platform.claude.com): the account was made with
- * "Continue with Google", so the stored `google` credential signs in through
- * that button (a popup). Mapped 2026-09-21 in explore mode.
- */
-const ANTHROPIC_HOME = /platform\.claude\.com\/(?!login)/;
-const anthropic: SiteLogin = {
-  site: "anthropic",
-  home: "https://platform.claude.com/dashboard",
-  ask: "Your Claude Console account (platform.claude.com), where API keys are minted",
-  via: ["google"],
-  // The login form renders under the requested URL (/settings/billing stays), so the URL alone lies.
-  loggedIn: async (fp) =>
-    ANTHROPIC_HOME.test(fp.url()) &&
-    !(await fp.has({ role: "button", name: "/continue with google/i" }, 1_500)),
-  signIn: oauthLogin("anthropic", {
-    start: "https://platform.claude.com/login",
-    button: { role: "button", name: "/google/i" },
-    success: ANTHROPIC_HOME,
-  }),
-};
-
-/**
- * Twilio Console: the account was made with "Sign up with Google" (no
- * password exists); the same button on the sign-up page signs an existing
- * Google-linked account in. Mapped 2026-09-21.
- */
-const TWILIO_HOME = /console\.twilio\.com\/account\//;
-const twilio: SiteLogin = {
-  site: "twilio",
-  home: "https://console.twilio.com/",
-  ask: "Your Twilio account (console.twilio.com), for the rented number",
-  via: ["google"],
-  loggedIn: async (fp) => TWILIO_HOME.test(fp.url()),
-  signIn: oauthLogin("twilio", {
-    start: "https://www.twilio.com/try-twilio",
-    button: { role: "button", name: "/google/i" },
-    success: TWILIO_HOME,
-    // Twilio texts a code after the Google round trip (mapped 2026-09-21);
-    // "remember this browser" keeps the profile clear of it for a while.
-    challenge: {
-      at: /login\.twilio\.com\/u\/mfa-sms-challenge/,
-      async run(ctx) {
-        const { fp } = ctx;
-        // One sign-in at a time asks the phone: a texted code names no account.
-        await serially(ctx, "sms", async () => {
-          // A code sent for an earlier attempt is older than this sign-in: ask for a fresh one.
-          const asked = new Date();
-          await fp.act(
-            { kind: "click" },
-            { role: "button", name: "/^resend$/i" },
-            { goal: "have Twilio text a fresh code" },
-          );
-          const code = await ctx.code("sms", "twilio", asked);
-          await fp.act(
-            { kind: "click" },
-            { id: "rememberBrowser" },
-            { goal: "remember this browser" },
-          );
-          await fp.act(
-            { kind: "fill", value: code },
-            { id: "code" },
-            { goal: "enter the SMS code" },
-          );
-          await fp.act(
-            { kind: "click" },
-            { role: "button", name: "/^continue$/i" },
-            { goal: "submit the code" },
-          );
-        });
-      },
-    },
-  }),
-};
-
-/**
- * Sentry: the org was made 2026-09-21 with "Register with Google" (no
- * password); the login page's "Sign in with Google" link signs it in. Signed-in pages
- * live on the org's subdomain, the login page on the bare host.
- */
-/**
- * HubSpot's developer account was made with Google: the login page asks the
- * email first, then shows "Sign in with Google" (mapped 2026-10-09).
- */
-const hubspot: SiteLogin = {
-  site: "hubspot",
-  home: "https://app.hubspot.com/",
-  via: ["google"],
-  loggedIn: async (fp) => /app(-[a-z0-9]+)?\.hubspot\.com\/(?!login|signup)/.test(fp.url()),
-  signIn: oauthLogin("hubspot", {
-    start: "https://app.hubspot.com/login",
-    email: {
-      field: { role: "textbox", name: "Email" },
-      next: { role: "button", name: "Continue" },
-    },
-    button: { role: "button", name: "/sign in with google/i" },
-    success: /app(-[a-z0-9]+)?\.hubspot\.com\/(?!login|signup)/,
-  }),
-};
-
-const SENTRY_HOME = /https:\/\/[a-z0-9-]+\.sentry\.io\//;
-const sentry: SiteLogin = {
-  site: "sentry",
-  home: "https://wren-automation.sentry.io/issues/",
-  ask: "Your Sentry account (sentry.io), where the DSN lives",
-  via: ["google"],
-  loggedIn: async (fp) => SENTRY_HOME.test(fp.url()),
-  signIn: oauthLogin("sentry", {
-    start: "https://sentry.io/auth/login/",
-    button: { role: "link", name: "Sign in with Google" },
-    success: SENTRY_HOME,
-  }),
-};
-
-/**
- * LinkedIn: the member's own login (`creds paste linkedin`: email, password,
- * optional authenticator key), or "Continue with Google" for an account made
- * that way (William's own, `via google`). `signInHere` covers the login page an
- * OAuth authorize URL shows a signed-out profile, keeping its session_redirect.
- */
-const LINKEDIN_FEED = "https://www.linkedin.com/feed/";
-const LINKEDIN_FEED_URL = /linkedin\.com\/feed/;
-const linkedinGoogle = oauthLogin("linkedin", {
-  start: "https://www.linkedin.com/login",
-  // A profile that once held an account opens on "Choose an account", no Google button.
-  reveal: { role: "link", name: "Sign in using another account" },
-  success: LINKEDIN_FEED_URL,
-});
-const linkedin: SiteLogin = {
-  site: "linkedin",
-  home: LINKEDIN_FEED,
-  ask: "Your LinkedIn login (email, password, authenticator key if set)",
-  via: ["google"],
-  loggedIn: async (fp) => LINKEDIN_FEED_URL.test(fp.url()),
-  signIn: async (ctx) => {
-    if (ctx.cred.via === "google") return linkedinGoogle(ctx);
-    await ctx.fp.open("https://www.linkedin.com/login", { allowWall: true });
-    await signInToLinkedin(ctx);
-    if (!(await ctx.fp.waitForUrl(LINKEDIN_FEED_URL, 30_000)))
-      throw new LoginFailed("linkedin", `still on ${ctx.fp.url()} after LinkedIn sign-in`);
-  },
-  signInHere: {
-    at: LINKEDIN_LOGIN_URL,
-    run: (ctx) => (ctx.cred.via === "google" ? linkedinGoogle(ctx) : signInToLinkedin(ctx)),
-  },
-};
-
-const GITHUB_LOGIN = /github\.com\/(login|session)/;
-const githubGoogle = oauthLogin("github", {
-  start: "https://github.com/login",
-  button: { text: "/continue with google/i" },
-  success: async (fp) => /github\.com/.test(fp.url()) && !GITHUB_LOGIN.test(fp.url()),
-});
-
-/**
- * GitHub: its own password (then the authenticator or emailed device code),
- * or "Continue with Google". One account may hold both: the password goes
- * first (`methodsOf`). GitHub turns away the Google route from a fresh
- * profile, so the password is what runs in the background.
- */
-const github: SiteLogin = {
-  site: "github",
-  // The public home page is no wall; settings is, so opening it starts the sign-in.
-  home: "https://github.com/settings/profile",
-  ask: "Your GitHub login (username, password, authenticator key if set)",
-  via: ["google"],
-  loggedIn: async (fp) =>
-    /github\.com/.test(fp.url()) &&
-    !GITHUB_LOGIN.test(fp.url()) &&
-    !(await fp.has({ role: "link", name: "/^sign in$/i" })),
-  signIn: async (ctx) => {
-    if (ctx.cred.via === "google") return githubGoogle(ctx);
-    await ctx.fp.open("https://github.com/login", { allowWall: true });
-    await signInToGithub(ctx);
-  },
-  signInHere: {
-    at: GITHUB_LOGIN,
-    run: (ctx) => (ctx.cred.via === "google" ? githubGoogle(ctx) : signInToGithub(ctx)),
-  },
-};
-
-/**
  * Outlook on the web: the `microsoft` credential signs in (personal at
  * outlook.live.com, work at outlook.office.com; the sign-in host is the
  * same). Unverified until a credential exists.
@@ -686,30 +503,11 @@ const NPM_PASSKEY_SETUP: PasskeySetupSpec = {
 /** npm's key prompt, at sign-in and before sensitive pages ("Click the button below when you are ready to authenticate"). */
 const NPM_USE_KEY = { role: "button", name: "Use security key" } as const;
 
-/**
- * Perplexity: made with "Continue with Google" as william@ (2026-09-29), no
- * password. Its session dies with the browser, so the runner signs in each
- * time: "Sign In" opens the modal that holds the Google button. The page
- * alone does not say who is signed in; its session endpoint does.
- */
-const PERPLEXITY_HOME = "https://www.perplexity.ai/";
+/** Perplexity's page alone does not say who is signed in; its session endpoint does (perplexity-ask). */
 export const perplexitySignedIn = (fp: FlowPage): Promise<boolean> =>
   fp.page.evaluate<boolean>(
     `fetch("/api/auth/session").then((r) => r.json()).then((j) => Boolean(j && j.user)).catch(() => false)`,
   );
-const perplexity: SiteLogin = {
-  site: "perplexity",
-  home: PERPLEXITY_HOME,
-  ask: "Your Perplexity account (perplexity.ai), for answers with their sources",
-  via: ["google"],
-  loggedIn: async (fp) => /perplexity\.ai/.test(fp.url()) && (await perplexitySignedIn(fp)),
-  signIn: oauthLogin("perplexity", {
-    start: PERPLEXITY_HOME,
-    before: [{ role: "button", name: "Sign In" }],
-    button: { role: "button", name: "/continue with google/i" },
-    success: perplexitySignedIn,
-  }),
-};
 
 /**
  * Account chores of sites whose sign-in is a walk file (src/walks/logins/):
@@ -746,14 +544,7 @@ export const SITE_LOGINS: readonly SiteLogin[] = [
   ...GOOGLE_APPS,
   googleAdmin,
   aws,
-  anthropic,
-  twilio,
-  sentry,
-  linkedin,
   outlook,
-  github,
-  perplexity,
-  hubspot,
   learnLogin,
 ];
 
