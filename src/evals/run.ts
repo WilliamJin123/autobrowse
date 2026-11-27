@@ -5,11 +5,11 @@
  */
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RunJson } from "../agent/run-json.js";
 import type { Llm } from "../llm/types.js";
+import { anyPort } from "../share/ports.js";
 import { type EvalResult, type EvalTask, scoreRun } from "./suite.js";
 
 export const EVAL_RUNS_DIR = join(homedir(), "Library", "Caches", "autobrowse", "evals");
@@ -24,17 +24,6 @@ export function readResults(run: string): EvalResult[] {
     .split("\n")
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l) as EvalResult);
-}
-
-function freePort(): Promise<number> {
-  return new Promise((ok, fail) => {
-    const s = createServer();
-    s.once("error", fail);
-    s.listen(0, "127.0.0.1", () => {
-      const a = s.address();
-      s.close(() => (a && typeof a === "object" ? ok(a.port) : fail(new Error("no port"))));
-    });
-  });
 }
 
 export interface EvalRunOptions {
@@ -67,7 +56,7 @@ async function runAgent(task: EvalTask, work: string, o: EvalRunOptions): Promis
     "--max-steps",
     String(task.maxSteps),
     "--port",
-    String(await freePort()),
+    String(await anyPort()),
     "--save",
     `eval-${task.id}`,
     ...(o.headed ? ["--headed"] : []),

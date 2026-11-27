@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { RunEvent } from "../engine/events.js";
 import type { ExploreCommand, Explorer } from "../explore/server.js";
 import type { Llm } from "../llm/types.js";
+import { claimPort, releasePort } from "../share/ports.js";
 import { type AgentResult, exploreWithAgent, type StepRecord } from "./explorer.js";
 import type { StepLedger } from "./ledger.js";
 
@@ -108,8 +109,10 @@ export interface SessionsOptions {
       hosts?: { url: string | null; domains: readonly string[] };
     },
   ): Promise<Explorer>;
-  /** First loopback port; each live session takes the next free one. */
+  /** First loopback port; each live session claims the next free one (`share/ports`). */
   basePort?: number;
+  /** Where port claims live; tests pass their own. */
+  portsDir?: string;
   maxSteps?: number;
   now?: () => Date;
   /** A line to the person when the agent needs them or finishes (a phone, email); optional. */
@@ -221,10 +224,13 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
     const used = new Set(
       [...sessions.values()].filter((s) => s.view.status !== "closed").map((s) => s.view.port),
     );
-    let p = base;
-    while (used.has(p)) p++;
-    return p;
+    return claimPort({
+      from: base,
+      skip: (p) => used.has(p),
+      ...(o.portsDir ? { dir: o.portsDir } : {}),
+    });
   };
+  const release = (port: number) => releasePort(port, o.portsDir);
   const must = (id: string): Live => {
     const live = sessions.get(id);
     if (!live) throw new Error(`no agent session ${id}`);
@@ -335,6 +341,8 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
       } catch (err) {
         view.error = err instanceof Error ? err.message : String(err);
         view.status = "failed";
+        // never listened, so the claim is still ours
+        if (!live.explorer) release(view.port);
         await live.explorer
           ?.exec({ cmd: "done", outcome: "failed", summary: view.error.slice(0, 500) })
           .catch(() => undefined);
@@ -375,7 +383,7 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
         recordingName: null,
         usage: { inputTokens: 0, outputTokens: 0 },
         startedAt: now().toISOString(),
-        port: freePort(),
+        port: await freePort(),
       };
       const live: Live = {
         view,
@@ -407,7 +415,12 @@ export function agentSessions(o: SessionsOptions): AgentSessions {
       if (!live.explorer && !FINAL.has(live.view.status)) {
         if (live.driving) throw new Error(`agent session ${id} is still starting or ending`);
         const view = live.view;
-        Object.assign(view, { status: "starting", error: null, prompt: null, port: freePort() });
+        Object.assign(view, {
+          status: "starting",
+          error: null,
+          prompt: null,
+          port: await freePort(),
+        });
         live.stopFlag = false;
         persist(view);
         drive(live, { site: view.site, goal: view.goal, url: view.steps.at(-1)?.url ?? null });

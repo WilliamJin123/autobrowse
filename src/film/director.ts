@@ -6,7 +6,6 @@
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { chromium, type Page } from "playwright";
@@ -20,6 +19,7 @@ import {
 } from "../browser/film.js";
 import { FILM_PACE, handsFor } from "../browser/human/index.js";
 import { holdsSecret } from "../browser/secrets.js";
+import { anyPort } from "../share/ports.js";
 import type { Tape, TapeStep } from "./tape.js";
 
 /** Terminal colours a viewer reads at 1x on a phone. */
@@ -50,7 +50,7 @@ export async function filmTape(
     join(home, ".zshrc"),
     ["unsetopt PROMPT_SP", "PROMPT='%F{magenta}❯%f '", "RPROMPT=''", ""].join("\n"),
   );
-  const port = await freePort();
+  const port = await anyPort();
   const ttyd = spawn(
     "ttyd",
     [
@@ -218,17 +218,6 @@ async function settled(dir: string): Promise<void> {
     if (Date.now() > until) throw new Error(`film: a pane in ${dir} is still filming`);
     await new Promise((r) => setTimeout(r, 500));
   }
-}
-
-function freePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    const s = createServer();
-    s.once("error", reject);
-    s.listen(0, "127.0.0.1", () => {
-      const a = s.address();
-      s.close(() => (a && typeof a === "object" ? resolvePort(a.port) : reject(new Error("port"))));
-    });
-  });
 }
 
 function stop(p: ChildProcess): void {

@@ -8,6 +8,7 @@ import {
   closeLeftBy,
   type Ended,
   endProcess,
+  minePort,
   type OpenSession,
   openSessions,
   type Post,
@@ -183,15 +184,21 @@ describe("autobrowse stop", () => {
     expect(r.out.join("\n")).toContain("autobrowse stop 9092");
   });
 
-  it("outside Claude Code, no port is 9090, as `cmd` has it", async () => {
+  it("outside Claude Code, no port is the one open session, as `cmd` has it", async () => {
     const { sent, send } = wire(yes);
     const code = await stopMain([], {
       out: () => undefined,
       send,
-      sessions: () => [],
+      sessions: () => [session(9123, { session: "someone" })],
       session: "",
+      end: async () => "exited",
     });
-    expect([code, sent]).toEqual([0, [[9090, { cmd: "close" }]]]);
+    expect([code, sent]).toEqual([0, [[9123, { cmd: "close" }]]]);
+    expect(minePort("", [session(9123)])).toBe(9123);
+    expect(() => minePort("me", [session(9123, { session: "other" })])).toThrow(
+      /no explore session/,
+    );
+    expect(() => minePort("", [session(9123), session(9124)])).toThrow(/--port 9124/);
   });
 
   it("a close with no verdict says so only when the run had none", async () => {

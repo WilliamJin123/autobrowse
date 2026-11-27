@@ -27,6 +27,7 @@ import { type Approver, PaymentGate, PendingApprovals, paymentGate } from "../ga
 import { looksLikeSecretValue, redactText } from "../recorder/redact.js";
 import { saveRecording } from "../recorder/store.js";
 import type { Action, Recording } from "../recorder/types.js";
+import { releasePort } from "../share/ports.js";
 import { desktopAnswer } from "./answer.js";
 import { desktopHands } from "./hands.js";
 import { localDesktop } from "./mac.js";
@@ -521,6 +522,7 @@ export async function startDesktopSession(opts: DesktopSessionOptions): Promise<
   if (opts.tokenFile) {
     mkdirSync(dirname(opts.tokenFile), { recursive: true, mode: 0o700 });
     writeFileSync(opts.tokenFile, token, { mode: 0o600 });
+    releasePort(port, dirname(opts.tokenFile)); // listening now: the OS holds the port
   }
   const idleMs = (opts.idleMinutes ?? DEFAULT_IDLE_MINUTES) * 60_000;
   if (infoFile) {

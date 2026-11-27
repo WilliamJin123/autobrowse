@@ -184,6 +184,7 @@ import type { Action, LocatorHints, Recording } from "../recorder/types.js";
 import { type Capture, captureFor } from "../runs/capture.js";
 import { machine, type RunLog, type RunOutcome, runLog } from "../runs/log.js";
 import { missCause, targetOf } from "../runs/success.js";
+import { releasePort } from "../share/ports.js";
 import { accountIn, compiledDeps, platformOf } from "../workflows/compiled-deps.js";
 import { loginName, loginWorkflows, PAGE_LOGIN } from "../workflows/logins.js";
 import {
@@ -3178,6 +3179,7 @@ async function serve(
   if (opts.tokenFile) {
     mkdirSync(dirname(opts.tokenFile), { recursive: true, mode: 0o700 });
     writeFileSync(opts.tokenFile, token, { mode: 0o600 });
+    releasePort(port, dirname(opts.tokenFile)); // listening now: the OS holds the port
   }
   const idleMs = (opts.idleMinutes ?? DEFAULT_IDLE_MINUTES) * 60_000;
   if (infoFile) {

@@ -64,7 +64,7 @@ export function registerDesktopCommands(
     .description(
       "A desktop session on a loopback port: explore's protocol and steering (os, pause, resume, note, save, close) over native windows, no browser",
     )
-    .option("--port <port>", "loopback port", "9095")
+    .option("--port <port>", "loopback port (default: the first free from 9090)")
     .option(
       "--idle <minutes>",
       "close after this long with no command (journal kept); 0 = never",
@@ -76,12 +76,23 @@ export function registerDesktopCommands(
     .action(
       async (
         name: string,
-        o: { port: string; idle: string; hold?: boolean; fresh?: boolean; overlay: boolean },
+        o: { port?: string; idle: string; hold?: boolean; fresh?: boolean; overlay: boolean },
       ) => {
         if (!/^[a-z][a-z0-9-]*$/.test(name))
           throw new Error("name: lowercase letters, digits and -, starting with a letter");
-        const port = Number(o.port);
-        const { tokenFileFor } = await import("../explore/journal.js");
+        const { desktopJournalFor, tokenFileFor } = await import("../explore/journal.js");
+        const recordingsDir = expandHome(settings.recordingsDir);
+        const picked = o.port === undefined;
+        // No --port: a fresh port, past a dead session's journal (that resume is by its port)
+        const port = picked
+          ? await (await import("../share/ports.js")).claimPort({
+              skip: (p) => existsSync(desktopJournalFor(recordingsDir, name, p)),
+            })
+          : Number(o.port);
+        if (!picked) {
+          const { refuseClaimed } = await import("./cli-record.js");
+          refuseClaimed(port, await import("../share/ports.js"));
+        }
         const tokenFile = tokenFileFor(port);
         const { openSessions } = await import("../explore/stop.js");
         const held = openSessions().find((x) => x.port === port);
@@ -90,8 +101,7 @@ export function registerDesktopCommands(
             `port ${port}: ${held.site} (pid ${held.pid}) holds it. End it: autobrowse stop ${port}`,
           );
         if (existsSync(tokenFile)) rmSync(tokenFile, { force: true });
-        const recordingsDir = expandHome(settings.recordingsDir);
-        const journalFile = join(recordingsDir, `.desktop-${name}`, `journal-port-${port}.jsonl`);
+        const journalFile = desktopJournalFor(recordingsDir, name, port);
         if (o.fresh) rmSync(journalFile, { force: true });
         const { approverFor, gmailFor } = await import("./services.js");
         const { claudeOwner } = await import("./cli-record.js");

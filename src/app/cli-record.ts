@@ -60,6 +60,18 @@ async function postCmd(
 /** How long a signup by hand may take before the wait gives up. */
 const HAND_WAIT_MS = 30 * 60_000;
 
+/** A port named by hand that another start is about to listen on: say so before a browser opens. */
+export function refuseClaimed(
+  port: number,
+  ports: { claimedByOther: (port: number) => number | null },
+): void {
+  const other = ports.claimedByOther(port);
+  if (other !== null)
+    throw new Error(
+      `port ${port}: another start (pid ${other}) claimed it. Leave --port out to get a free one`,
+    );
+}
+
 export function registerRecordCommands(
   program: Command,
   settings: Settings,
@@ -91,7 +103,7 @@ export function registerRecordCommands(
       "Keep one browser open on the site and take commands over loopback (POST JSON to /); every act that works is journaled; `save` writes a recording",
     )
     .option("--url <url>", "start here")
-    .option("--port <port>", "loopback port", "9090")
+    .option("--port <port>", "loopback port (default: the first free from 9090)")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
     .option(ENGINE_FLAG, ENGINE_HELP)
     .option(
@@ -149,7 +161,7 @@ export function registerRecordCommands(
         site: string,
         o: {
           url?: string;
-          port: string;
+          port?: string;
           headed?: boolean;
           window?: string | true;
           live?: boolean;
@@ -168,7 +180,16 @@ export function registerRecordCommands(
         },
       ) => {
         const { tokenFileFor, journalFileFor } = await import("../explore/server.js");
-        const tokenFile = tokenFileFor(Number(o.port));
+        const recordings = expandHome(settings.recordingsDir);
+        const picked = o.port === undefined;
+        // No --port: a fresh port, never one with a dead session's journal (that resume is by its port)
+        const port = picked
+          ? await (await import("../share/ports.js")).claimPort({
+              skip: (p) => existsSync(journalFileFor(recordings, site, `port-${p}`)),
+            })
+          : Number(o.port);
+        if (!picked) refuseClaimed(port, await import("../share/ports.js"));
+        const tokenFile = tokenFileFor(port);
         // by memory, not by count: a 16 GB Mac and a 64 GB box each get what they can hold
         if (!o.force && !existsSync(tokenFile)) {
           const { admit, browsersNow, memoryNow } = await import("../browser/browsers.js");
@@ -177,14 +198,10 @@ export function registerRecordCommands(
           // A warning: said, then the browser opens. The blank line ends the block for start.sh.
           if (mem) console.error(`${mem.text}\n`);
         }
-        if (o.background) return background(site, Number(o.port), tokenFile);
-        const journalFile = journalFileFor(
-          expandHome(settings.recordingsDir),
-          site,
-          `port-${o.port}`,
-        );
+        if (o.background) return background(site, port, tokenFile, picked);
+        const journalFile = journalFileFor(recordings, site, `port-${port}`);
         if (o.fresh) rmSync(journalFile, { force: true });
-        const ex = await (await opener(o))(site, Number(o.port), {
+        const ex = await (await opener(o))(site, port, {
           tokenFile,
           journalFile,
           idleMinutes: o.hold ? 0 : Number(o.idle),
@@ -222,8 +239,14 @@ export function registerRecordCommands(
     );
 
   /** The same command, detached; back once its token file says it takes commands. */
-  const background = async (site: string, port: number, tokenFile: string): Promise<void> => {
-    if (existsSync(tokenFile) && (await postCmd(port, tokenFile, { cmd: "url" })).ok)
+  const background = async (
+    site: string,
+    port: number,
+    tokenFile: string,
+    picked: boolean,
+  ): Promise<void> => {
+    // A port asked for by name and open: the caller's own session, said so
+    if (!picked && existsSync(tokenFile) && (await postCmd(port, tokenFile, { cmd: "url" })).ok)
       return console.log(`port ${port} already open`);
     // A live session that is busy keeps its token: a second start would fight it for the port.
     const { openSessions } = await import("../explore/stop.js");
@@ -235,13 +258,17 @@ export function registerRecordCommands(
     rmSync(tokenFile, { force: true });
     const log = join(dirname(tokenFile), `explore-${port}.log`);
     const argv = process.argv.slice(2).filter((a) => a !== "--background");
+    // the child takes the picked port by name; this pid's claim covers it until it listens
+    if (picked) argv.push("--port", String(port));
     const fd = openSync(log, "w");
+    const { CLAIM_ENV } = await import("../share/ports.js");
     const child = spawn(
       process.execPath,
       [...process.execArgv, process.argv[1] as string, ...argv],
       {
         detached: true,
         stdio: ["ignore", fd, fd],
+        env: { ...process.env, [CLAIM_ENV]: String(process.pid) },
       },
     );
     child.unref();
@@ -267,15 +294,39 @@ export function registerRecordCommands(
     .description(
       'One command to an explore session (`{"cmd":"aria"}`, click, read, save, close…); prints its JSON answer, masked',
     )
-    .option("--port <port>", "the session's loopback port", "9090")
-    .action(async (json: string, o: { port: string }) => {
+    .option(
+      "--port <port>",
+      "the session's loopback port (default: this Claude session's one session)",
+    )
+    .action(async (json: string, o: { port?: string }) => {
       const { tokenFileFor } = await import("../explore/server.js");
-      const tokenFile = tokenFileFor(Number(o.port));
+      const { minePort } = await import("../explore/stop.js");
+      const port = o.port === undefined ? minePort() : Number(o.port);
+      const tokenFile = tokenFileFor(port);
       if (!existsSync(tokenFile))
-        throw new Error(`no explore session on ${o.port}: autobrowse explore <site> --background`);
-      const res = await postCmd(Number(o.port), tokenFile, JSON.parse(json));
+        throw new Error(`no explore session on ${port}: autobrowse explore <site> --background`);
+      const res = await postCmd(port, tokenFile, JSON.parse(json));
       console.log(res.body);
       if (!res.ok) process.exitCode = 1;
+    });
+
+  program
+    .command("port")
+    .description(
+      "Claim the first free session port from 9090 and print it: start.sh with no port. Passes over ports with a dead session's journal of --site",
+    )
+    .option("--site <site>", "the session's site, or desktop:<name>")
+    .option("--for <pid>", "the claim lapses when this pid ends (default: the caller)")
+    .action(async (o: { site?: string; for?: string }) => {
+      const { claimPort } = await import("../share/ports.js");
+      const { sessionJournalFor } = await import("../explore/journal.js");
+      const recordings = expandHome(settings.recordingsDir);
+      const site = o.site;
+      const port = await claimPort({
+        pid: o.for ? Number(o.for) : process.ppid,
+        skip: (p) => site !== undefined && existsSync(sessionJournalFor(recordings, site, p)),
+      });
+      console.log(port);
     });
 
   program
@@ -447,7 +498,7 @@ export function registerRecordCommands(
       'an inbox this system reads (autobrowse accounts): the agent may place{secret:"code"} with the code the site emails there',
     )
     .option("--max-steps <n>", "step budget", "25")
-    .option("--port <port>", "loopback port", "9090")
+    .option("--port <port>", "loopback port (default: the first free from 9090)")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
     .option(
       "--json <file>",
@@ -478,7 +529,7 @@ export function registerRecordCommands(
           save?: string;
           codes?: string;
           maxSteps: string;
-          port: string;
+          port?: string;
           headed?: boolean;
           json?: string;
           signIn: boolean;
@@ -509,7 +560,7 @@ export function registerRecordCommands(
           secrets,
           save: o.save ?? slug(goal),
           maxSteps: Number(o.maxSteps),
-          port: Number(o.port),
+          port: o.port === undefined ? undefined : Number(o.port),
           headed: o.headed ?? false,
           signIn: o.signIn,
           desktop: o.os,
@@ -592,7 +643,7 @@ export function registerRecordCommands(
       "the site's signup page has a bot check: open it in your own browser with the password on the clipboard, and wait for the site's first mail",
     )
     .option("--max-steps <n>", "step budget", "40")
-    .option("--port <port>", "loopback port", "9090")
+    .option("--port <port>", "loopback port (default: the first free from 9090)")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
     .action(
       async (
@@ -608,7 +659,7 @@ export function registerRecordCommands(
           anyway?: boolean;
           byHand?: boolean;
           maxSteps: string;
-          port: string;
+          port?: string;
           headed?: boolean;
         },
       ) => {
@@ -743,7 +794,7 @@ export function registerRecordCommands(
           save: `signup-${site}`,
           signIn: false,
           maxSteps: Number(o.maxSteps),
-          port: Number(o.port),
+          port: o.port === undefined ? undefined : Number(o.port),
           headed: o.headed ?? false,
         });
         if (achieved) {
@@ -871,13 +922,13 @@ export function registerRecordCommands(
     )
     .option("--input <k=v...>", "named values the goal may use")
     .option("--max-steps <n>", "step budget", "25")
-    .option("--port <port>", "loopback port", "9090")
+    .option("--port <port>", "loopback port (default: the first free from 9090)")
     .option("--headed", "show the browser (default: BROWSER_HEADLESS)")
     .action(
       async (
         failure: string,
         goal: string | undefined,
-        o: { input?: string[]; maxSteps: string; port: string; headed?: boolean },
+        o: { input?: string[]; maxSteps: string; port?: string; headed?: boolean },
       ) => {
         const { readFailure, repairGoal, repairName } = await import("../agent/repair.js");
         const record = readFailure(failure);
@@ -889,7 +940,7 @@ export function registerRecordCommands(
           inputs: parseInputs(o.input),
           save: repairName(record),
           maxSteps: Number(o.maxSteps),
-          port: Number(o.port),
+          port: o.port === undefined ? undefined : Number(o.port),
           headed: o.headed ?? false,
         });
       },
@@ -990,7 +1041,8 @@ interface AgentRun {
   inputs: Record<string, string>;
   save: string;
   maxSteps: number;
-  port: number;
+  /** Unset: the first free from 9090. */
+  port?: number | undefined;
   headed: boolean;
   /** False on a signup: its page offers "continue with Google", which is not a login wall. */
   signIn?: boolean;
@@ -1016,12 +1068,13 @@ async function runAgent(settings: Settings, r: AgentRun): Promise<{ achieved: bo
   const llm = llmFor(settings);
   if (!llm) throw new Error("the agent needs a model: set LLM_PROVIDER and its key");
   const { tokenFileFor } = await import("../explore/server.js");
+  const port = r.port ?? (await (await import("../share/ports.js")).claimPort());
   // The token goes to its file, never the terminal: `autobrowse cmd` reads it from there.
   const ex = await explorerOpener(settings, undefined, r.headed ? headed : undefined)(
     r.site,
-    r.port,
+    port,
     {
-      tokenFile: tokenFileFor(r.port),
+      tokenFile: tokenFileFor(port),
       // no `flow` command to hand a guessed wall to
       signInOn: "any",
       ...(r.secrets ? { secrets: r.secrets.values, secretHosts: r.secrets.hosts } : {}),

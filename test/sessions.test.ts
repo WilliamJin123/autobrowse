@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,8 @@ import { agentSessions } from "../src/agent/sessions.js";
 import type { RunEvent } from "../src/engine/events.js";
 import type { ExploreCommand, Explorer } from "../src/explore/server.js";
 import { fakeLlm } from "../src/llm/fake.js";
+
+const PORTS = mkdtempSync(join(tmpdir(), "ports-"));
 
 function fakeExplorer() {
   const calls: ExploreCommand[] = [];
@@ -18,6 +20,11 @@ function fakeExplorer() {
   const ex: Explorer = {
     port: 0,
     token: "t",
+    resumedFrom: null,
+    runId: () => null,
+    files: [],
+    heldSignIns: async () => [],
+    keepSignIn: async () => false,
     paused: () => paused,
     resumed: () => (paused ? new Promise<void>((r) => waiters.push(r)) : Promise.resolve()),
     done,
@@ -67,6 +74,7 @@ describe("agentSessions", () => {
     const s = agentSessions({
       llm,
       open: async () => ex,
+      portsDir: PORTS,
       basePort: 9500,
       emit: async (e) => {
         events.push(e);
@@ -100,7 +108,7 @@ describe("agentSessions", () => {
         action: { cmd: "click", ref: 1, goal: "g" },
       })),
     );
-    const s = agentSessions({ llm, open: async () => ex, basePort: 9500 });
+    const s = agentSessions({ llm, open: async () => ex, portsDir: PORTS, basePort: 9500 });
     const v = await s.start({ site: "site", goal: "loop", maxSteps: 10 });
     await tick();
     await s.pause(v.id);
@@ -126,6 +134,7 @@ describe("agentSessions", () => {
     const s = agentSessions({
       llm,
       open: async () => ex,
+      portsDir: PORTS,
       basePort: 9700,
       notify: async (t) => {
         notes.push(t);
@@ -145,6 +154,7 @@ describe("agentSessions", () => {
     const dir = mkdtempSync(join(tmpdir(), "sessions-"));
     // One step, then the model is gone: the session fails with a step behind it.
     const dying = agentSessions({
+      portsDir: PORTS,
       llm: fakeLlm([{ thought: "go", action: { cmd: "click", ref: 1, goal: "go" } }]),
       open: async () => fakeExplorer().ex,
       dir,
@@ -156,6 +166,7 @@ describe("agentSessions", () => {
     const opened: Array<string | undefined> = [];
     const { ex, calls } = fakeExplorer();
     const again = agentSessions({
+      portsDir: PORTS,
       llm: fakeLlm([{ thought: "x", action: { cmd: "done", summary: "s", achieved: true } }]),
       open: async (_site, _port, session) => {
         opened.push(session);
@@ -175,17 +186,28 @@ describe("agentSessions", () => {
   it("views persist to disk and come back closed after a restart", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sessions-"));
     const llm = fakeLlm([{ thought: "x", action: { cmd: "done", summary: "s", achieved: true } }]);
-    const first = agentSessions({ llm, open: async () => fakeExplorer().ex, basePort: 9650, dir });
+    const first = agentSessions({
+      llm,
+      open: async () => fakeExplorer().ex,
+      portsDir: PORTS,
+      basePort: 9650,
+      dir,
+    });
     const v = await first.start({ site: "a", goal: "persisted" });
     for (let i = 0; i < 20 && first.get(v.id)?.status !== "done"; i++) await tick();
     await first.flush();
     expect(readdirSync(dir)).toEqual([`${v.id}.json`]);
     // A second session dies mid-run (no done reply scripted): it is "running" on disk.
-    const stuck = agentSessions({ llm: fakeLlm([]), open: async () => fakeExplorer().ex, dir });
+    const stuck = agentSessions({
+      portsDir: PORTS,
+      llm: fakeLlm([]),
+      open: async () => fakeExplorer().ex,
+      dir,
+    });
     const w = await stuck.start({ site: "b", goal: "interrupted" }).catch(() => null);
     await tick();
     await stuck.flush();
-    const again = agentSessions({ llm, open: async () => fakeExplorer().ex, dir });
+    const again = agentSessions({ portsDir: PORTS, llm, open: async () => fakeExplorer().ex, dir });
     const views = again.list();
     expect(views.find((x) => x.id === v.id)).toMatchObject({ status: "done", goal: "persisted" });
     if (w) expect(views.find((x) => x.id === w.id)?.status).toMatch(/closed|failed/);
@@ -198,7 +220,7 @@ describe("agentSessions", () => {
         action: { cmd: "click", ref: 1, goal: "g" },
       })),
     );
-    const s = agentSessions({ llm, open: async () => ex, basePort: 9660 });
+    const s = agentSessions({ llm, open: async () => ex, portsDir: PORTS, basePort: 9660 });
     const v = await s.start({ site: "site", goal: "g", maxSteps: 6 });
     await tick();
     await expect(s.exec(v.id, { cmd: "note", text: "hi" })).rejects.toThrow(
@@ -213,9 +235,17 @@ describe("agentSessions", () => {
   });
   it("ports do not collide between live sessions", async () => {
     const llm = fakeLlm([{ thought: "x", action: { cmd: "done", summary: "s", achieved: true } }]);
-    const s = agentSessions({ llm, open: async () => fakeExplorer().ex, basePort: 9600 });
+    const s = agentSessions({
+      llm,
+      open: async () => fakeExplorer().ex,
+      portsDir: PORTS,
+      basePort: 9600,
+    });
     const a = await s.start({ site: "a", goal: "g" });
     const b = await s.start({ site: "b", goal: "g" });
     expect([a.port, b.port]).toEqual([9600, 9601]);
+    // another process's claim (a live pid) is passed over
+    writeFileSync(join(PORTS, "port-9602.claim"), String(process.ppid));
+    expect((await s.start({ site: "c", goal: "g" })).port).toBe(9603);
   });
 });

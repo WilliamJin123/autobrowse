@@ -3,13 +3,47 @@
  * `autobrowse cmd <json> [--port N]` with node builtins only: the explore wire
  * (token file, loopback POST) and nothing else. Same answer as the CLI's `cmd`.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** Must match `tokenFileFor` in src/explore/journal.ts (test/explore-cmd.test.ts). */
 export const tokenFileFor = (port) => join(tmpdir(), "autobrowse", `explore-${port}.token`);
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === "EPERM";
+  }
+};
+
+/** No --port: the caller's one open session (`minePort` in src/explore/stop.ts). */
+export function minePort(
+  me = process.env.CLAUDE_CODE_SESSION_ID,
+  dir = join(tmpdir(), "autobrowse"),
+  isAlive = alive,
+) {
+  const open = [];
+  for (const name of existsSync(dir) ? readdirSync(dir) : []) {
+    if (!/^explore-\d+\.json$/.test(name)) continue;
+    try {
+      const info = JSON.parse(readFileSync(join(dir, name), "utf8"));
+      if (isAlive(info.pid) && (!me || info.session === me)) open.push(info);
+    } catch {
+      // half-written or gone
+    }
+  }
+  if (open.length === 1) return open[0].port;
+  if (open.length === 0)
+    throw new Error("no explore session of yours is open: start one, or name its port (--port N)");
+  open.sort((a, b) => a.port - b.port);
+  throw new Error(
+    `${open.length} sessions open: name one\n${open.map((s) => `  --port ${s.port}   # ${s.site}`).join("\n")}`,
+  );
+}
 
 export async function postCmd(port, body) {
   const tokenFile = tokenFileFor(port);
@@ -43,11 +77,31 @@ export async function postCmd(port, body) {
 }
 
 async function main(argv) {
+  // `--mine`: print the caller's one session's port (cmd.sh with no port)
+  if (argv[0] === "--mine") {
+    try {
+      console.log(minePort());
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+    return;
+  }
   const at = argv.indexOf("--port");
-  const port = Number(at < 0 ? 9090 : argv[at + 1]);
   const json = at < 0 ? argv[0] : argv.filter((_, i) => i !== at && i !== at + 1)[0];
-  if (!json || !Number.isInteger(port)) {
-    console.error("usage: autobrowse cmd '<json>' [--port 9090]");
+  if (!json) {
+    console.error("usage: autobrowse cmd '<json>' [--port N]");
+    process.exit(2);
+  }
+  let port;
+  try {
+    port = at < 0 ? minePort() : Number(argv[at + 1]);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+  if (!Number.isInteger(port)) {
+    console.error("usage: autobrowse cmd '<json>' [--port N]");
     process.exit(2);
   }
   try {

@@ -461,8 +461,8 @@ pnpm autobrowse workspace inbox name will@a.com will jin        # fix a Workspac
 pnpm autobrowse workspace inbox photo will@a.com pfp.png        # a Workspace inbox's picture, no sign-in (admin API; still, 96 px)
 pnpm autobrowse run bootstrap cloudflare --plan '{"provider":"cloudflare"}'   # mints CLOUDFLARE_ACCOUNT_ID + API token into .env (--plan: JSON, a file, or -)
 # map a page by hand or by model: one open browser, one command at a time (token printed at start)
-pnpm autobrowse explore cloudflare --url https://dash.cloudflare.com/profile/api-tokens
-curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9090/ -d '{"cmd":"aria","hints":{"css":"main"}}'
+pnpm autobrowse explore cloudflare --url https://dash.cloudflare.com/profile/api-tokens --background   # no --port: the first free from 9090, claimed (src/share/ports.ts)
+pnpm autobrowse cmd '{"cmd":"aria","hints":{"css":"main"}}'   # no --port: your one open session
 pnpm autobrowse agent google "open Personal info and report the display name" --save google-name   # model explores, journal → recording
 pnpm autobrowse repair ~/.config/autobrowse/artifacts/google-x-2026-….failure.json   # agent picks up where a flow stopped
 pnpm autobrowse creds paste google@ops            # a second account: `email password [key]` on the clipboard (or the UI's Accounts page)
@@ -781,8 +781,9 @@ pnpm autobrowse site call web GET "/exa/companies?q=staffing%20agency%20in%20Aus
 pnpm autobrowse site call web GET "/fetch?url=https://firm.test&from=impersonate"   # one page raw up the fetch ladder: html, tier, block, tries
 pnpm autobrowse doctor                        # which read/search/maps backends and site tokens work now; browser warnings
 pnpm autobrowse browsers                      # our browsers (owner, age, MB) and explore sessions (idle, held); `browsers stop <port>`
+pnpm autobrowse port --site x --for $$          # claim the first free session port and print it (start.sh with no port)
 pnpm autobrowse browsers update-chrome        # Mac: newest Chrome for Testing (the `chrome` engine); the desk runs it daily. CHROME_BUILD=stable rolls back to Chrome.app
-pnpm autobrowse stop [port] achieved|failed "why"   # end an explore session: the verdict, then close. No port: the one this Claude session started (else 9090)
+pnpm autobrowse stop [port] achieved|failed "why"   # end an explore session: the verdict, then close. No port: the one this Claude session started (outside Claude Code: the one open)
 pnpm autobrowse stop --hook                   # Claude Code SubagentStop hook (`{"type":"command","command":"autobrowse stop --hook"}`): closes what an ended subagent started and left open; a paused or held session stays
 pnpm autobrowse site call linkedin GET "/search/results/people?keywords=ria%20founder%20austin&pages=2"   # as Wren's LinkedIn
 pnpm autobrowse site call linkedin GET "/in/<vanity>?company=true"   # one profile, every role, current employer's page

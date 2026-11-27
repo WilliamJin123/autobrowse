@@ -23,7 +23,7 @@ Explore needs a page; a desktop task does not. The session is its own small serv
 - Wire: `commandId`, `withRepeat`, `SENT_KEEP` (a resend with the same id answers the first answer) — `src/explore/wire.ts`
 - Overlay over a window: `overlayFor<WindowHandle>`, `aim`, `hidden`, `hostPid` — `src/explore/overlay.ts`
 - Overlay over a compiled run's desktop steps: `overlaidDesktop(desktop, {name})` wraps `Desktop`, one row per act, aims by `Desktop.bounds` — `src/desktop/overlaid.ts`; `try <workflow> --overlay`
-- CLI: `autobrowse desktop start <name> [--port 9095] [--idle <s>] [--hold] [--fresh] [--no-overlay]` — `src/app/cli-desktop.ts`; `start.sh desktop:<name> "" <port>`
+- CLI: `autobrowse desktop start <name> [--port N] [--idle <s>] [--hold] [--fresh] [--no-overlay]` — `src/app/cli-desktop.ts`; no port: the first free from 9090 (`src/share/ports.ts`); `start.sh desktop:<name> "" [port]`
 
 ## State
 

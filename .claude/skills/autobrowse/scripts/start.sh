@@ -1,17 +1,33 @@
 #!/bin/bash
 # start.sh <site> [url] [port] [explore flags…]  → one explore session in the background; prints the port when it takes commands.
+# No port (or ""): the first free from 9090, claimed so two agents never share one. A port by name resumes its journal.
 # start.sh desktop:<name> "" [port]  → a desktop session (no browser) on the same token file.
 # The token lands in $TMPDIR/autobrowse/explore-<port>.token (owner-only); cmd.sh reads it, nothing prints it.
 set -euo pipefail
-SITE=${1:?site}; URL=${2:-}; PORT=${3:-9090}
+SITE=${1:?site}; URL=${2:-}; PORT=${3:-}
 ROOT=$(cd "$(dirname "$0")/../../../.." && pwd)
 DIR=${TMPDIR:-/tmp}/autobrowse; mkdir -p "$DIR"; chmod 700 "$DIR"
+NAMED=1
+if [ -z "$PORT" ]; then
+  NAMED=0
+  # the claim holds while this shell lives; the session's own files take over once it listens
+  PORT=$("$ROOT/bin/autobrowse" port --for $$ --site "$SITE" 2>&1 | tail -1 || true)
+  [[ $PORT =~ ^[0-9]+$ ]] || { echo "no free port: $PORT"; exit 1; }
+  export AUTOBROWSE_PORT_CLAIM=$$  # the CLI below names our claimed port: it passes the claim check
+fi
 TOKEN="$DIR/explore-$PORT.token"; LOG="$DIR/explore-$PORT.log"
-if [ -f "$TOKEN" ] && curl -s -m 3 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$TOKEN")" "http://127.0.0.1:$PORT/" -d '{"cmd":"url"}' | grep -q 200; then
+if [ $NAMED = 1 ] && [ -f "$TOKEN" ] && curl -s -m 3 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$TOKEN")" "http://127.0.0.1:$PORT/" -d '{"cmd":"url"}' | grep -q 200; then
   echo "port $PORT already open"; exit 0
 fi
 # A live session that is busy keeps its token: a second start would fight it for the port.
 INFO="$DIR/explore-$PORT.json"
+CLAIM="$DIR/port-$PORT.claim"
+if [ $NAMED = 1 ] && [ -f "$CLAIM" ]; then
+  BY=$(cat "$CLAIM" 2>/dev/null || true)
+  if [ -n "$BY" ] && kill -0 "$BY" 2>/dev/null; then
+    echo "port $PORT: another start (pid $BY) claimed it. Leave the port out to get a free one"; exit 1
+  fi
+fi
 if [ -f "$INFO" ]; then
   OLD=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$INFO")
   if [ -n "$OLD" ] && kill -0 "$OLD" 2>/dev/null; then

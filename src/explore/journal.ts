@@ -15,6 +15,16 @@ export type Journaled = Action extends infer A
 export const journalFileFor = (recordingsDir: string, site: string, id: string): string =>
   join(recordingsDir, `.explore-${site}`, `journal-${id}.jsonl`);
 
+/** A desktop session's journal (`autobrowse desktop start <name>`). */
+export const desktopJournalFor = (recordingsDir: string, name: string, port: number): string =>
+  join(recordingsDir, `.desktop-${name}`, `journal-port-${port}.jsonl`);
+
+/** The journal a session on this port keeps: `desktop:<name>` or an explore site. */
+export const sessionJournalFor = (recordingsDir: string, site: string, port: number): string =>
+  site.startsWith("desktop:")
+    ? desktopJournalFor(recordingsDir, site.slice("desktop:".length), port)
+    : journalFileFor(recordingsDir, site, `port-${port}`);
+
 /** The acts a dead session left, oldest first; lines that do not parse are skipped. */
 export function readJournal(file: string): Action[] {
   if (!existsSync(file)) return [];

@@ -27,7 +27,7 @@ Priorities, in order: no window stays open with nobody driving; a session a pers
 ### `autobrowse stop`
 
 - `stop <port> achieved|failed "why"`: sends `done`, then `close`. No verdict: close only, and the answer says the run counts as unknown.
-- No port: the one session this Claude session started (`CLAUDE_CODE_SESSION_ID`). Several open: it lists them and closes none. Outside Claude Code: 9090, as `cmd` has it.
+- No port: the one session this Claude session started (`CLAUDE_CODE_SESSION_ID`). Several open: it lists them and closes none. Outside Claude Code: the one open session, whoever started it (since 2026-11-27, "Ports"; was 9090).
 - A session already gone is exit 0.
 - `src/explore/stop.ts`, node builtins only. `bin/autobrowse stop` runs it alone (0.2 s); the commander command calls the same `stopMain` (the npm package ships `dist`, not `bin`).
 - Every start prints the stop line. `done` answers `close: "autobrowse stop <port>"`. `stop.sh` calls it.
@@ -56,6 +56,25 @@ A subagent's turn also ends when it reports a wall and waits for William. So: at
 - The main session ends its turn with a session open: no hook. The 10-minute lease holds while that Claude lives, 3 minutes once it exits.
 - The desk's own sessions (`agent:<port>`) have no owner and no transcript: untouched.
 
+## Ports (2026-11-27)
+
+Problem: every start defaulted to port 9090. A second agent's `start.sh` found 9090 open, printed `port 9090 already open` and drove the first agent's browser. Agents picked ports by hand to dodge it. The desk's agent sessions counted from 9100 and never asked the OS.
+
+| Option | How | Cost |
+|---|---|---|
+| A. Claim file (chosen) | first port from 9090 that binds; `port-<n>.claim` made O_EXCL with the starter's pid; the session drops it once it listens | a file per start; a dead starter's claim is taken over under a lock dir |
+| B. OS port 0 | the server listens on 0, files named after | token, info and journal names are set before listen; resume by port breaks; ports are 5 digits |
+| C. Retry on EADDRINUSE | pick, and on a taken port try the next | the browser opens before listen, so a retry is a second browser; two starters still probe the same free port in those seconds |
+| D. The desk hands out ports | one registry process | start.sh works with no desk today; one more thing to be up |
+
+Priorities: no two agents on one session, no new process, resume by port kept. A wins on all three.
+
+- No `--port` (explore, desktop, agent, signup, repair, `start.sh`): A. A port with a dead session's journal of that site is passed over: that resume is by its port.
+- A port by name: the old checks (`already open`, a live pid holds it), plus a live claim of another starter refuses it. The starter's own child passes (`AUTOBROWSE_PORT_CLAIM`).
+- `cmd` with no port: the caller's one session, the same lookup as `stop`.
+- Children told a port by flag (ttyd, an eval's agent): `anyPort()`, the OS's pick.
+- Code: `src/share/ports.ts`; card `map/objects/app/loopback-port.md`.
+
 ## Decision log
 
 - 2026-11-05: `autobrowse stop` and the close on an agent's end (William: "I would change that").
@@ -63,3 +82,4 @@ A subagent's turn also ends when it reports a wall and waits for William. So: at
 - 2026-11-05: Owner gone shortens the lease; it does not close at once. A person may still be at the window after Claude Code quits.
 - 2026-11-05: The hook keeps the journal and gives no verdict. A guessed verdict would spoil `autobrowse success`.
 - 2026-11-05: A live session that does not answer is ended by `stop` (SIGTERM, 5 s, SIGKILL), never called "already closed" (WA-1118, `2026-11-05-driver-memory.md`).
+- 2026-11-27: Session ports by claim file (option A in "Ports"). B, C and D rejected for the costs in its table (William: "we might need better port auto management for autobrowse processes… maybe clean this up too").

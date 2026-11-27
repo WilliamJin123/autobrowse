@@ -35,8 +35,8 @@ autobrowse site status <site>          # the site's API and browser routes
 `scripts/` sits beside this file (the skill's folder). Run them from anywhere.
 
 ```bash
-scripts/start.sh <site> [url] [port] [flags]   # default port 9090; prints "port N" when ready
-scripts/cmd.sh <port> '<json>'                 # one command, JSON back
+scripts/start.sh <site> [url] [port] [flags]   # no port: a free one; prints "port N"
+scripts/cmd.sh [port] '<json>'                 # JSON back; no port = your one session
 autobrowse stop [port] achieved|failed "…"     # verdict, then close browser + socket; no port = your one open session
                                                # a session that does not answer: its process is ended, and stop says so
 scripts/state.sh                               # open sessions (held ones marked), resumable journals, profiles
@@ -65,8 +65,8 @@ whose Claude session exited closes after 3 minutes. Ending your turn at a
 person's step: `{"cmd":"pause"}`, report the port. Paused, it waits 40 min.
 
 `<site>` is a profile name (`google`, `cloudflare`, `aws`, `scratch` = no login;
-`<site>@<label>` for a second account). A bare `<site>` opens the site's `main` account ("account main" = `x`); `<site>@<role>` opens another (`x@lana`). `autobrowse creds list <site>` shows each account's roles. One session per site; `start.sh` on an
-open port reports it. A session that died left its journal:
+`<site>@<label>` for a second account). A bare `<site>` opens the site's `main` account ("account main" = `x`); `<site>@<role>` opens another (`x@lana`). `autobrowse creds list <site>` shows each account's roles. One session per site;
+leave the port out. A session that died left its journal:
 `start.sh <site> "" <same port>` resumes on its last page, so `save` still has
 every act. `autobrowse stop` ends it for good. Flags for secrets: signup.md.
 
@@ -142,7 +142,7 @@ Act (journaled):
 - `{"cmd":"tools"}` — each site and its count. `"site":"x"`: that site's workflows (past the 20 an answer shows). `"find":"words"`: a fuzzy search over all of them.
 
 Files (the Mac's sealed store, `autobrowse files`): start with `--files <set>[,<set>]`
-(`start.sh <site> <url> <port> --files coop`) to have a named set at the ready; the
+(`start.sh <site> <url> "" --files coop`) to have a named set at the ready; the
 start log lists each file, as `files` does. Any stored file works by name, set or not.
 - `{"cmd":"files"}` — the session's files (`"all":true`: every one): name, kind, type, size, note.
 - `{"cmd":"upload","hints":{…},"files":["file:resume"]}` — from memory, never a temp file. A `doc` goes at once; a `paper` (an ID document) asks William once per file and host.

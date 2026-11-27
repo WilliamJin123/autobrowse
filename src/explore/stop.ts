@@ -42,6 +42,25 @@ export function openSessions(
   return out.sort((a, b) => a.port - b.port);
 }
 
+/** This Claude session's open sessions; outside Claude Code, every open one. */
+export function mySessions(
+  me = process.env.CLAUDE_CODE_SESSION_ID,
+  sessions = openSessions(),
+): OpenSession[] {
+  return me ? sessions.filter((s) => s.session === me) : sessions;
+}
+
+/** No port named: the caller's one open session. */
+export function minePort(me?: string, sessions?: OpenSession[]): number {
+  const mine = mySessions(me, sessions);
+  if (mine.length === 1) return (mine[0] as OpenSession).port;
+  if (mine.length === 0)
+    throw new Error("no explore session of yours is open: start one, or name its port (--port N)");
+  throw new Error(
+    `${mine.length} sessions open: name one\n${mine.map((s) => `  --port ${s.port}   # ${s.site}`).join("\n")}`,
+  );
+}
+
 const STARTS = /start\.sh|autobrowse\b[^\n|;&]*\bexplore\b/;
 /** `start.sh` prints `port N`; `explore --background` prints `exploring <site> on port N`. */
 const STARTED = /^(?:exploring \S+ on )?port (\d+)$/m;
@@ -254,13 +273,10 @@ export async function stopMain(
     out(USAGE);
     return 2;
   }
-  const me = deps.session ?? process.env.CLAUDE_CODE_SESSION_ID;
-  // Outside Claude Code: the default port, as `cmd` has it.
-  if (port === null && !me) port = 9090;
   if (port === null) {
-    const mine = (deps.sessions ?? openSessions)().filter((s) => s.session === me);
+    const mine = mySessions(deps.session, (deps.sessions ?? openSessions)());
     if (mine.length === 0) {
-      out("no explore session of this Claude session is open");
+      out("no explore session of yours is open");
       return 0;
     }
     if (mine.length > 1) {

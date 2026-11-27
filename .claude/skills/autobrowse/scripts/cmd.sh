@@ -1,11 +1,17 @@
 #!/bin/bash
-# cmd.sh <port> '<json>'  → POST one command; JSON back, already masked. Page commands queue behind each other (one hand);
+# cmd.sh [port] '<json>'  → POST one command; JSON back, already masked. Page commands queue behind each other (one hand);
+# No port: this Claude session's one open session.
 # The run names the Claude Code session that sent it (x-claude-session): the link to its transcript.
 # an `open` that signs in can take minutes, so the request waits up to 15 min.
 # A payment gate holds the request (?wait=1) while the person is texted: yes → the act runs, no → 403.
 # If curl's 15 min run out first, the same command is re-sent and joins the pending ask, up to ~31 minutes.
 set -uo pipefail
-PORT=${1:?port}; BODY=${2:?json}
+if [[ ${1:-} == "{"* ]]; then
+  BODY=$1
+  PORT=$(node "$(cd "$(dirname "$0")/../../../.." && pwd)/bin/explore-cmd.mjs" --mine 2>&1) || { printf '{"error":%s}\n' "$(printf '%s' "$PORT" | node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0,"utf8")))')"; exit 1; }
+else
+  PORT=${1:?port}; BODY=${2:?json}
+fi
 TOKEN="${TMPDIR:-/tmp}/autobrowse/explore-$PORT.token"
 [ -f "$TOKEN" ] || { echo "{\"error\":\"no session on $PORT: run start.sh\"}"; exit 1; }
 for _ in 1 2 3; do
