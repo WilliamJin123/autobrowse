@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { isPassword, LoginFailed, type SignInContext } from "../src/auth/login.js";
+import { signInState } from "../src/auth/sign-in-kit.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import { NeedsHuman } from "../src/browser/session.js";
+import { walkFlow } from "../src/walks/flow.js";
 import { repoWalkLogins, walkLogin } from "../src/walks/login.js";
 import { LOGIN_WALK_FILES } from "../src/walks/logins/index.js";
 import { type WalkSpec, walkSpecSchema } from "../src/walks/spec.js";
@@ -251,6 +253,77 @@ describe("a login walk on the kit", () => {
     await expect(walkLogin(instagramLike([later])).signIn(ctxFor(s.fp).ctx)).rejects.toMatchObject({
       case: "password",
     });
+  });
+});
+
+describe("a form that comes back after the password", () => {
+  const back = (text?: string) =>
+    fakeSite(
+      {
+        login: { ...LOGIN, on: { "click button:Log in": "back" } },
+        back: { ...LOGIN, ...(text ? { text } : {}), on: { "click button:Log in": "back" } },
+      },
+      "login",
+    );
+  const pwFills = (acts: string[]) => acts.filter((a) => a.startsWith("fill Password"));
+  const run = (s: ReturnType<typeof fakeSite>, cred = {}) => {
+    s.fp.page = { url: s.fp.url, evaluate: async () => [], isClosed: () => false } as never;
+    return walkLogin(instagramLike())
+      .signIn(ctxFor(s.fp, cred).ctx)
+      .catch((e: unknown) => e);
+  };
+
+  it("with a locked banner: case account, one password, no previous", async () => {
+    const s = back("Your account is locked.");
+    expect(await run(s, { previousPassword: "pw-a-0" })).toMatchObject({
+      refused: true,
+      case: "account",
+    });
+    expect(pwFills(s.acts)).toEqual(["fill Password=pw-a-1"]);
+  });
+
+  it("saying nothing, with a previous password on file: no second password, a failed try", async () => {
+    const s = back();
+    const err = await run(s, { previousPassword: "pw-a-0" });
+    expect(err).toBeInstanceOf(LoginFailed);
+    expect((err as LoginFailed).refused).toBe(false);
+    expect(pwFills(s.acts)).toEqual(["fill Password=pw-a-1"]);
+  });
+});
+
+describe("a login walk and site calls", () => {
+  it("never loads, learns or saves calls, and never listens to the page", async () => {
+    const s = fakeSite(
+      {
+        login: { ...LOGIN, on: { "click button:Log in": "home" } },
+        home: { url: "https://gram.test/feed", has: [] },
+      },
+      "login",
+    );
+    const listened: string[] = [];
+    s.fp.page = {
+      url: s.fp.url,
+      evaluate: async () => [],
+      isClosed: () => false,
+      on: (e: string) => listened.push(e),
+      off: () => undefined,
+    } as never;
+    const used: string[] = [];
+    const out = await walkFlow(instagramLike(), {
+      signIn: { ctx: ctxFor(s.fp).ctx, state: signInState("gram") },
+      calls: {
+        load: () => {
+          used.push("load");
+          return null;
+        },
+        save: () => {
+          used.push("save");
+        },
+      },
+    }).run(s.fp, {});
+    expect(out.goal).toBe("home");
+    expect(used).toEqual([]);
+    expect(listened).toEqual([]);
   });
 });
 
