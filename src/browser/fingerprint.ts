@@ -32,6 +32,9 @@ export interface Fingerprint {
     mobile: boolean;
     bitness: string;
     wow64: boolean;
+    /** Unset, a worn page says `uaFullVersion` "" and `formFactors` [] (measured 11-27). */
+    fullVersion?: string;
+    formFactors?: string[];
   };
 }
 
@@ -93,9 +96,11 @@ export async function learnFingerprint(
           "architecture",
           "bitness",
           "brands",
+          "formFactors",
           "fullVersionList",
           "model",
           "platformVersion",
+          "uaFullVersion",
           "wow64",
         ])
       : {};
@@ -106,7 +111,10 @@ export async function learnFingerprint(
       high,
     };
   });
-  const h = seen.high as Partial<Fingerprint["metadata"]>;
+  const h = seen.high as Partial<Fingerprint["metadata"]> & {
+    uaFullVersion?: string;
+    formFactors?: string[];
+  };
   return {
     headless: seen.ua.includes("HeadlessChrome"),
     fingerprint: {
@@ -123,18 +131,26 @@ export async function learnFingerprint(
         mobile: h.mobile ?? false,
         bitness: h.bitness ?? "",
         wow64: h.wow64 ?? false,
+        ...(h.uaFullVersion ? { fullVersion: h.uaFullVersion } : {}),
+        ...(h.formFactors?.length ? { formFactors: h.formFactors } : {}),
       },
     },
   };
 }
 
+/** `Sec-CH-UA` as Chrome writes it. */
+export const secChUa = (brands: Brand[]): string =>
+  brands.map((b) => `"${b.brand}";v="${b.version}"`).join(", ");
+
 /**
  * Say `id` on every page and every cross-site frame (a captcha lives in
  * one). Launch with `--user-agent=<id.userAgent>` as well: that flag covers
  * requests made before this lands, but alone it sends the detailed hints
- * (arch, OS version) blank.
+ * (arch, OS version) blank. `Sec-CH-UA` also rides as a context header:
+ * Playwright sets it before a new page runs, so a popup's first request
+ * says it too (the override lands after; measured 11-27).
  */
-export function wearFingerprint(context: BrowserContext, id: Fingerprint): void {
+export async function wearFingerprint(context: BrowserContext, id: Fingerprint): Promise<void> {
   const wear = (target: Page | Frame) =>
     context
       .newCDPSession(target)
@@ -153,6 +169,10 @@ export function wearFingerprint(context: BrowserContext, id: Fingerprint): void 
   };
   for (const p of context.pages()) onPage(p);
   context.on("page", onPage);
+  // best effort, as the override: a throw here would leave the browser running
+  await context
+    .setExtraHTTPHeaders({ "sec-ch-ua": secChUa(id.metadata.brands) })
+    .catch(() => undefined);
 }
 
 /** A headless page's screen: what a common display of this OS measures. */

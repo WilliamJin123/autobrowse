@@ -186,7 +186,8 @@ Chosen: A. Priorities: 1) the person's Chrome is never the desk's; 2) a site see
 
 - `chrome` on a Mac runs the newest CfT in `~/.cache/autobrowse/chrome-for-testing/<version>/`. None installed: `TestingMissing`, never a quiet Chrome.app.
 - `CHROME_BUILD=stable` rolls back to Google Chrome.app. Linux keeps Google Chrome.
-- Brands: `chromeBrands` rebuilds [grease, Chromium, "Google Chrome"] in Chromium's order (`orders[major % 6]`), matched to Chrome 158 here and to the headers of Chrome 120 to 124. Worn headless and headed. The first request of a page can go before the override lands (as it already did headless).
+- Brands: `chromeBrands` rebuilds [grease, Chromium, "Google Chrome"] in Chromium's order (`orders[major % 6]`), matched to Chrome 158 here and to the headers of Chrome 120 to 124. Worn headless and headed, with `fullVersion` and `formFactors` (headless said "" and []).
+- The override races two things: a popup's first request and a page's early inline scripts. `Sec-CH-UA` also rides as a context header, so a popup's first request says "Google Chrome" (measured 11-27). Early inline scripts can still read "Chromium".
 - `--disable-infobars` hides CfT's bar (143 to 87 px, same as Chrome.app). `--test-type` does not.
 - `autobrowse browsers update-chrome` installs Google's last-known-good Stable; the desk runs it daily. The newest two versions stay, and a running version is never deleted.
 - Risk: CfT can be one major ahead of Chrome.app; a rollback then opens a profile from a newer version.

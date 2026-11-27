@@ -781,6 +781,7 @@ pnpm autobrowse site call web GET "/exa/companies?q=staffing%20agency%20in%20Aus
 pnpm autobrowse site call web GET "/fetch?url=https://firm.test&from=impersonate"   # one page raw up the fetch ladder: html, tier, block, tries
 pnpm autobrowse doctor                        # which read/search/maps backends and site tokens work now; browser warnings
 pnpm autobrowse browsers                      # our browsers (owner, age, MB) and explore sessions (idle, held); `browsers stop <port>`
+pnpm autobrowse browsers update-chrome        # Mac: newest Chrome for Testing (the `chrome` engine); the desk runs it daily. CHROME_BUILD=stable rolls back to Chrome.app
 pnpm autobrowse stop [port] achieved|failed "why"   # end an explore session: the verdict, then close. No port: the one this Claude session started (else 9090)
 pnpm autobrowse stop --hook                   # Claude Code SubagentStop hook (`{"type":"command","command":"autobrowse stop --hook"}`): closes what an ended subagent started and left open; a paused or held session stays
 pnpm autobrowse site call linkedin GET "/search/results/people?keywords=ria%20founder%20austin&pages=2"   # as Wren's LinkedIn

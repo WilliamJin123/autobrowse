@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Egress } from "../src/browser/egress.js";
 import { testingBinary } from "../src/browser/engines.js";
-import { chromeBrands } from "../src/browser/fingerprint.js";
+import { chromeBrands, secChUa } from "../src/browser/fingerprint.js";
 import type { BrowserOptions } from "../src/browser/session.js";
 
 type Launch = {
@@ -24,6 +24,7 @@ vi.mock("patchright", () => {
     pages: () => [page],
     newPage: async () => page,
     newCDPSession: async () => ({ send: async () => undefined }),
+    setExtraHTTPHeaders: async () => undefined,
     on: () => undefined,
     close: async () => undefined,
   };
@@ -48,7 +49,7 @@ vi.mock("../src/browser/webauthn.js", () => ({
 vi.mock("../src/browser/fingerprint.js", async (orig) => ({
   ...(await orig<typeof import("../src/browser/fingerprint.js")>()),
   // The launched browser already says the headed fingerprint: no relaunch.
-  learnFingerprint: async () => ({ headless: false, fingerprint: {} }),
+  learnFingerprint: async () => ({ headless: false, fingerprint: { metadata: { brands: [] } } }),
 }));
 
 const opts = (o: Partial<BrowserOptions> = {}): BrowserOptions => ({
@@ -138,6 +139,18 @@ describe("chrome build on a Mac", () => {
     const l = await launchOf("google", {});
     expect(l.executablePath).toBe(testingBinary());
     expect(l.args).toContain("--disable-infobars");
+  });
+});
+
+describe("secChUa", () => {
+  it("writes the header as Chrome 158 sent it", () => {
+    expect(
+      secChUa([
+        { brand: "Chromium", version: "158" },
+        { brand: "Not.A/Brand", version: "24" },
+        { brand: "Google Chrome", version: "158" },
+      ]),
+    ).toBe('"Chromium";v="158", "Not.A/Brand";v="24", "Google Chrome";v="158"');
   });
 });
 

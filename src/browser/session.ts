@@ -724,7 +724,7 @@ async function launchLocal(
   // headed CfT: its UA is true, its brands lack "Google Chrome"; worn with no relaunch
   if (!headless && !testing) return context;
   if (known) {
-    wearFingerprint(context, known);
+    await wearFingerprint(context, known);
     return context;
   }
   // Headless Chrome says "HeadlessChrome/153…" and sites like YouTube Studio refuse it as an
@@ -739,12 +739,12 @@ async function launchLocal(
   if (!learned.headless && !testing) return context;
   headedFingerprints.set(key, learned.fingerprint);
   if (!learned.headless) {
-    wearFingerprint(context, learned.fingerprint);
+    await wearFingerprint(context, learned.fingerprint);
     return context;
   }
   await context.close();
   const relaunched = await launch(base(learned.fingerprint.userAgent));
-  wearFingerprint(relaunched, learned.fingerprint);
+  await wearFingerprint(relaunched, learned.fingerprint);
   return relaunched;
 }
 
