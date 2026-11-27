@@ -151,16 +151,46 @@ export function logHealTries(
 
 /** At most one heal per site per this. */
 export const HEAL_EVERY_MS = 24 * 60 * 60_000;
+/** Two failed heals in this stop heal for the site. */
+export const HEAL_STOP_MS = 7 * HEAL_EVERY_MS;
+const HEAL_STOP_AFTER = 2;
 
-const asksFile = (walksDir: string, site: string) => join(walksDir, site, "login-heal-asks.jsonl");
+export const healAsksFile = (walksDir: string, site: string) =>
+  join(walksDir, site, "login-heal-asks.jsonl");
 
-/** When the site's last heal was asked; null when never. */
-function lastAsk(walksDir: string, site: string): number | null {
-  const file = asksFile(walksDir, site);
-  if (!existsSync(file)) return null;
-  const at = readFileSync(file, "utf8").trim().split("\n").at(-1);
-  const t = at ? Date.parse(at) : Number.NaN;
-  return Number.isNaN(t) ? null : t;
+/** One heal's row: `asked` first (the daily guard holds across racing tries), then its result. */
+interface HealAskRow {
+  at: string;
+  status: "asked" | HealResult["status"];
+  screen?: string;
+  why?: string;
+}
+
+function readAsks(walksDir: string, site: string): HealAskRow[] {
+  const file = healAsksFile(walksDir, site);
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return line ? [JSON.parse(line) as HealAskRow] : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+const addAsk = (walksDir: string, site: string, row: HealAskRow) =>
+  appendFileSync(healAsksFile(walksDir, site), `${JSON.stringify(row)}\n`, { mode: 0o600 });
+
+/** Failed heals since `since`: a model that named nothing usable, or a trial screen dropped. */
+function failedHeals(walksDir: string, site: string, since: number): number {
+  const at = (r: { at: string }) => Date.parse(r.at) >= since;
+  const asks = readAsks(walksDir, site).filter(
+    (r) => at(r) && (r.status === "none" || r.status === "refused"),
+  );
+  const drops = readTries(walksDir, site).filter((r) => at(r) && r.outcome === "failed");
+  return asks.length + new Set(drops.map((r) => r.screen)).size;
 }
 
 /** One screen as a model proposes it: the checks come from the page, never from it. */
@@ -229,7 +259,7 @@ export function healScreenOf(p: HealProposal, url: string): ScreenSpec | string 
 
 export type HealResult =
   | { status: "added"; screen: string }
-  | { status: "skipped" | "none" | "refused"; why: string };
+  | { status: "skipped" | "none" | "refused" | "stopped"; why: string };
 
 /**
  * One heal: a model names the screen from the failure page, the code adds its
@@ -241,30 +271,45 @@ export async function healSignIn(
   now = new Date(),
 ): Promise<HealResult> {
   const { spec, dir } = ask;
-  const last = lastAsk(dir, spec.site);
-  if (last !== null && now.getTime() - last < HEAL_EVERY_MS)
-    return {
-      status: "skipped",
-      why: `one heal per day; the last was ${new Date(last).toISOString()}`,
-    };
+  const t = now.getTime();
+  const asks = readAsks(dir, spec.site);
+  const stopped = asks.findLast((r) => r.status === "stopped");
+  if (stopped && t - Date.parse(stopped.at) < HEAL_STOP_MS)
+    return { status: "skipped", why: `heal stopped for ${spec.site} on ${stopped.at}` };
+  const last = asks.findLast((r) => r.status === "asked");
+  if (last && t - Date.parse(last.at) < HEAL_EVERY_MS)
+    return { status: "skipped", why: `one heal per day; the last was ${last.at}` };
   mkdirSync(join(dir, spec.site), { recursive: true });
-  appendFileSync(asksFile(dir, spec.site), `${now.toISOString()}\n`, { mode: 0o600 });
-  const proposal = await writer.propose({
-    site: spec.site,
-    goal: spec.goal,
-    url: ask.url,
-    snapshot: ask.snapshot,
-    error: ask.error,
-    steps: ask.steps,
-    known: withHeal(spec, dir).spec.screens.map((s) => ({ name: s.name, looks: s.looks })),
+  const result = await (async (): Promise<HealResult> => {
+    if (failedHeals(dir, spec.site, t - HEAL_STOP_MS) >= HEAL_STOP_AFTER)
+      return {
+        status: "stopped",
+        why: `${HEAL_STOP_AFTER} failed heals in 7 days: no more heals for ${spec.site} till a person looks`,
+      };
+    addAsk(dir, spec.site, { at: now.toISOString(), status: "asked" });
+    const proposal = await writer.propose({
+      site: spec.site,
+      goal: spec.goal,
+      url: ask.url,
+      snapshot: ask.snapshot,
+      error: ask.error,
+      steps: ask.steps,
+      known: withHeal(spec, dir).spec.screens.map((s) => ({ name: s.name, looks: s.looks })),
+    });
+    if (!proposal) return { status: "none", why: `${writer.id} named no screen` };
+    const screen = healScreenOf(proposal, ask.url);
+    if (typeof screen === "string") return { status: "refused", why: screen };
+    const fits = walkSpecSchema.safeParse({ ...spec, screens: [...spec.screens, screen] });
+    if (!fits.success)
+      return { status: "refused", why: fits.error.issues[0]?.message ?? "the walk refuses it" };
+    return { status: "added", screen: addHealScreen(dir, spec.site, screen) };
+  })();
+  addAsk(dir, spec.site, {
+    at: now.toISOString(),
+    status: result.status,
+    ...(result.status === "added" ? { screen: result.screen } : { why: result.why }),
   });
-  if (!proposal) return { status: "none", why: `${writer.id} named no screen` };
-  const screen = healScreenOf(proposal, ask.url);
-  if (typeof screen === "string") return { status: "refused", why: screen };
-  const fits = walkSpecSchema.safeParse({ ...spec, screens: [...spec.screens, screen] });
-  if (!fits.success)
-    return { status: "refused", why: fits.error.issues[0]?.message ?? "the walk refuses it" };
-  return { status: "added", screen: addHealScreen(dir, spec.site, screen) };
+  return result;
 }
 
 const proposalSchema = z.object({

@@ -11,7 +11,7 @@ import {
   type SignInContext,
   type SignInHealAsk,
 } from "../src/auth/login.js";
-import { signInState } from "../src/auth/sign-in-kit.js";
+import { CODES_PER_TRY, enterCode, signInState } from "../src/auth/sign-in-kit.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import { NeedsHuman } from "../src/browser/session.js";
 import { walkFlow } from "../src/walks/flow.js";
@@ -587,6 +587,28 @@ describe("writing a heal screen", () => {
     expect(await healSignIn(writer(null), askFor(d), later)).toMatchObject({ status: "none" });
   });
 
+  it("two failed heals in 7 days stop heal for the site, with one note's worth of result", async () => {
+    const d = dir();
+    const day = (n: number) => new Date(Date.parse("2026-11-27T00:00:00Z") + n * HEAL_EVERY_MS);
+    expect(await healSignIn(writer(null), askFor(d), day(0))).toMatchObject({ status: "none" });
+    const buy = { kind: "click", goal: "buy", hints: { role: "button", name: "Buy now" } };
+    expect(await healSignIn(writer(proposal([buy])), askFor(d), day(1))).toMatchObject({
+      status: "refused",
+    });
+    const seen: unknown[] = [];
+    expect(await healSignIn(writer(proposal(), seen), askFor(d), day(2))).toMatchObject({
+      status: "stopped",
+    });
+    expect(seen).toEqual([]);
+    expect(await healSignIn(writer(proposal()), askFor(d), day(3))).toMatchObject({
+      status: "skipped",
+    });
+    // the failures age out after 7 days
+    expect(await healSignIn(writer(proposal()), askFor(d), day(9))).toMatchObject({
+      status: "added",
+    });
+  });
+
   it("a sign-in lost on a new page heals itself: fail, write the screen, then pass", async () => {
     const d = dir();
     const site = (stateDir: string) => {
@@ -649,5 +671,23 @@ describe("writing a heal screen", () => {
       })(s.fp, "gram"),
     ).rejects.toThrow(LoginFailed);
     expect(healed).toEqual([]);
+  });
+});
+
+describe("codes per try", () => {
+  it("a code box that keeps coming back takes at most CODES_PER_TRY codes, then case code", async () => {
+    const acts: string[] = [];
+    const fp = {
+      has: async () => false,
+      act: async (op: { kind: string }) => {
+        acts.push(op.kind);
+      },
+    } as unknown as FlowPage;
+    const ctx = { fp, offers: () => true, code: async () => "000000" } as unknown as SignInContext;
+    const st = signInState("gram");
+    const box = { kinds: ["totp"] as const, field: CODE, submit: LOG_IN };
+    for (let i = 0; i < CODES_PER_TRY; i++) await enterCode(st, ctx, box);
+    await expect(enterCode(st, ctx, box)).rejects.toMatchObject({ case: "code" });
+    expect(acts.filter((a) => a === "fill")).toHaveLength(CODES_PER_TRY);
   });
 });

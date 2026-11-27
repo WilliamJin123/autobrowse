@@ -285,6 +285,7 @@ export function loginFor(
         const r = await healSignIn(llmHealWriter(llm), ask);
         if (r.status === "added")
           await notify?.(`${ask.spec.site}: sign-in heal added trial screen ${r.screen}`);
+        else if (r.status === "stopped") await notify?.(`${ask.spec.site}: ${r.why}`);
         else if (r.status !== "skipped")
           console.warn(`${ask.spec.site}: heal ${r.status}: ${r.why}`);
       }

@@ -26,6 +26,8 @@ export interface SignInState {
   typedUsername: boolean;
   /** When the last code was asked for: the next ask takes only a newer one. */
   codeAsked: Date | null;
+  /** Codes typed this try (`CODES_PER_TRY`). */
+  codes: number;
   /** The form the password last went into: a refusal types the previous one there. */
   form: PasswordForm | null;
 }
@@ -36,8 +38,12 @@ export const signInState = (site: string): SignInState => ({
   typedPrevious: false,
   typedUsername: false,
   codeAsked: null,
+  codes: 0,
   form: null,
 });
+
+/** A code screen may come back (a wrong code, a resend); one try types at most this many. */
+export const CODES_PER_TRY = 3;
 
 /** The try fails; with `failCase`, the site refused it and that case's hold follows. */
 export function failSignIn(
@@ -124,6 +130,9 @@ export async function enterCode(st: SignInState, ctx: SignInContext, box: CodeBo
     box.kinds.length === 1 ? box.kinds[0] : (box.kinds.find((k) => ctx.offers(k)) ?? box.kinds[0]);
   if (!kind) failSignIn(st, "a code box with no code kind");
   const { fp } = ctx;
+  if (st.codes >= CODES_PER_TRY)
+    failSignIn(st, `the site took none of ${CODES_PER_TRY} codes`, "code");
+  st.codes += 1;
   await serially(ctx, kind as CodeKind, async () => {
     if (box.send && (await fp.has(box.send, 1_000)))
       await fp.act({ kind: "click" }, box.send, { goal: `send the ${kind} code` });

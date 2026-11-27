@@ -311,7 +311,12 @@ async function walkSpec(
     }
     return out;
   };
-  if (fresh && spec.start) await fp.open(await fill(spec.start, "open the start", true));
+  // a sign-in's start is the login page: a wall there is the walk's job, not a person's
+  if (fresh && spec.start)
+    await fp.open(
+      await fill(spec.start, "open the start", true),
+      isLoginWalk(spec) ? { allowWall: true } : undefined,
+    );
   const hintsFor = async (h: WalkOp & { kind: "click" }): Promise<Hints> => {
     const { nth, ...rest } = h.hints;
     const out = { ...rest } as Hints & { text?: string | null; name?: string | null };
