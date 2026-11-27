@@ -1,11 +1,12 @@
 /** Signing in: walks and their secrets, watchers, the paired phone, one-time codes, logins, Linq, the runner's pace. */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Logger } from "pino";
 import {
   type CodeSource,
   codeSources,
   fileSignInHolds,
+  fileSignInLog,
   type LoginProvider,
   loginProvider,
   messageSource,
@@ -283,6 +284,9 @@ export function loginFor(
     codes: codesFor(settings, gmail, http),
     audit: auditFor(settings),
     holds: fileSignInHolds(expandHome(settings.signInHoldsFile)),
+    tries: fileSignInLog(
+      join(dirname(expandHome(settings.signInHoldsFile)), "sign-in-tries.jsonl"),
+    ),
     shots: join(expandHome(settings.artifactsDir), "sign-in-misread"),
     ...(notify ? { notify } : {}),
   });

@@ -16,17 +16,18 @@ import {
   loginProvider,
   type Message,
   messageSource,
-  OWN_FAILURE_HOLD_MS,
   passwordOf,
   resolveLogin,
-  SIGN_IN_HOLD_MS,
   type SignInContext,
+  SignInHeld,
   type SignInHolds,
+  type SignInTry,
   type SiteLogin,
   totpSource,
   viaLogin,
 } from "../src/auth/index.js";
-import { EMAIL_CODE, EMAIL_CODE_PAGE, liftHolds } from "../src/auth/login.js";
+import { EMAIL_CODE, EMAIL_CODE_PAGE, type Hold, liftHolds, nextHold } from "../src/auth/login.js";
+import { DAY_MS } from "../src/auth/sign-in-holds.js";
 import type { FlowPage } from "../src/browser/flow.js";
 import type { Hints } from "../src/browser/locate.js";
 import { NeedsHuman } from "../src/browser/session.js";
@@ -349,14 +350,30 @@ describe("loginProvider", () => {
     expect(await login(at("https://id.p.test/signin"), "p", "p")).toBe("signed-in");
     expect(ran).toEqual(["here as u2", "here as u2", "here as u"]);
   });
+  const memHolds = () => {
+    const marks: Record<string, Hold> = {};
+    const holds: SignInHolds = {
+      get: (n) => marks[n] ?? null,
+      set: (n, h) => {
+        marks[n] = h;
+      },
+      clear: (n) => {
+        delete marks[n];
+      },
+    };
+    return { marks, holds };
+  };
+  const MIN = 60_000;
   it.each([
-    ["password rejected", false, SIGN_IN_HOLD_MS, /sign-in refused/],
-    ["still on the login page", false, OWN_FAILURE_HOLD_MS, /on our side/],
-    ["still on the login page", true, SIGN_IN_HOLD_MS, /sign-in refused/],
-    ["still on the login page", "missed", OWN_FAILURE_HOLD_MS, /on our side/],
+    ["password rejected", false, "password", DAY_MS, true],
+    ["too many failed attempts", false, "account", DAY_MS, true],
+    ["code rejected", false, "code", MIN, false],
+    ["still on the login page", false, "ours", MIN, false],
+    ["still on the login page", true, "unproven", 10 * MIN, false],
+    ["still on the login page", "missed", "ours", MIN, false],
   ] as const)(
-    "a failed sign-in (%s, typed a secret: %s) holds the credential: the next call types no password till the hold ends",
-    async (why, types, ms, note) => {
+    "a failed sign-in (%s, typed a password: %s) is case %s: no try till the hold ends; only a strict hold needs a person",
+    async (why, types, failCase, ms, strict) => {
       let tries = 0;
       const refusing: SiteLogin = {
         site: "s",
@@ -367,27 +384,25 @@ describe("loginProvider", () => {
           tries++;
           if (types)
             await c.fp
-              .act({ kind: "fill", value: passwordOf("s", c.cred) }, { role: "textbox" })
+              .act(
+                { kind: "fill", value: passwordOf("s", c.cred) },
+                { role: "textbox" },
+                { goal: "g" },
+              )
               .catch(() => undefined);
           throw new LoginFailed("s", why);
         },
       };
-      const marks: Record<string, { until: number; error: string }> = {};
-      const holds: SignInHolds = {
-        get: (n) => marks[n] ?? null,
-        set: (n, h) => {
-          marks[n] = h;
-        },
-        clear: (n) => {
-          delete marks[n];
-        },
-      };
+      const { marks, holds } = memHolds();
       let t = Date.parse("2026-10-29T00:00:00Z");
       const notes: string[] = [];
+      const rows: SignInTry[] = [];
       const login = loginProvider([refusing], {
         credentials: memoryCredentials({ s: { username: "u", password: "pass-1" } }),
         codes: totpSource(),
         holds,
+        tries: { add: (r) => rows.push(r) },
+        random: () => 0.5,
         notify: async (n) => {
           notes.push(n);
         },
@@ -403,32 +418,168 @@ describe("loginProvider", () => {
         return fp;
       };
       await expect(login(page(), "s")).rejects.toThrow(why);
+      expect(marks.s).toMatchObject({ case: failCase, fails: 1, strict, until: t + ms });
       t += ms - 1;
-      await expect(login(page(), "s")).rejects.toThrow(/no sign-in till/);
+      const held = login(page(), "s");
+      await expect(held).rejects.toThrow(/no sign-in till/);
+      await expect(held).rejects.toBeInstanceOf(strict ? NeedsHuman : SignInHeld);
       expect(tries).toBe(1);
-      expect(notes).toEqual([expect.stringMatching(note)]);
+      expect(notes).toEqual(strict ? [expect.stringMatching(`\\(${failCase}\\)`)] : []);
+      expect(rows.map((r) => [r.outcome, r.case])).toEqual([
+        ["failed", failCase],
+        ["held", failCase],
+      ]);
+      expect(rows[0]?.typed).toEqual({ password: types === true ? 1 : 0, code: 0 });
       t += 2;
       await expect(login(page(), "s")).rejects.toThrow(why);
       expect(tries).toBe(2);
+      expect(marks.s?.fails).toBe(2);
     },
   );
+  it("the ladder climbs 1, 3, 5, 10, 30, 60 min and stays; jitter is ±20 %; a sign-in that works resets it", async () => {
+    let ok = false;
+    const flaky: SiteLogin = {
+      site: "s",
+      home: "https://site.test/",
+      loggedIn: async () => ok,
+      async signIn() {
+        if (!ok) throw new LoginFailed("s", "no form on the page");
+      },
+    };
+    const { marks, holds } = memHolds();
+    let t = Date.parse("2026-11-26T00:00:00Z");
+    const login = loginProvider([flaky], {
+      credentials: memoryCredentials({ s: { username: "u", password: "pass-1" } }),
+      codes: totpSource(),
+      holds,
+      random: () => 0.5,
+      now: () => new Date(t),
+    });
+    const fp = () => fakePage({ text: [], present: () => true }).fp;
+    const waits: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      await expect(login(fp(), "s")).rejects.toThrow(/no form/);
+      const h = marks.s as Hold;
+      waits.push((h.until - t) / MIN);
+      t = h.until;
+    }
+    expect(waits).toEqual([1, 3, 5, 10, 30, 60, 60]);
+    expect(marks.s?.strict).toBe(false);
+    ok = true;
+    expect(await login(fp(), "s")).toBe("signed-in");
+    expect(marks.s).toBeUndefined();
+    expect(nextHold("ours", "e", null, 0, () => 0).until).toBe(0.8 * MIN);
+    expect(nextHold("ours", "e", null, 0, () => 0.999999).until).toBe(1.2 * MIN);
+  });
+  it("caps per 24 h: the third unproven password and the sixth code failure hold 24 h for a person", () => {
+    let h: Hold | null = null;
+    const t0 = Date.parse("2026-11-26T00:00:00Z");
+    const seen: [string, boolean | undefined][] = [];
+    for (let i = 0; i < 3; i++) {
+      h = nextHold("unproven", "e", h, t0 + i * 2 * 60 * MIN, () => 0.5);
+      seen.push([`${(h.until - (t0 + i * 2 * 60 * MIN)) / MIN}`, h.strict]);
+    }
+    expect(seen).toEqual([
+      ["10", false],
+      ["30", false],
+      [`${DAY_MS / MIN}`, true],
+    ]);
+    // a day later the old ones age out
+    expect(nextHold("unproven", "e", h, t0 + DAY_MS + 5 * 60 * MIN, () => 0.5).strict).toBe(false);
+    let c: Hold | null = null;
+    for (let i = 0; i < 6; i++) c = nextHold("code", "e", c, t0 + i * MIN * 90, () => 0.5);
+    expect(c?.strict).toBe(true);
+    // nothing typed: no cap, ever
+    let o: Hold | null = null;
+    for (let i = 0; i < 20; i++) o = nextHold("ours", "e", o, t0 + i * MIN * 61, () => 0.5);
+    expect(o?.strict).toBe(false);
+  });
+  it("a password then an act on another page proves it: a failure after is `later`, not `unproven`", async () => {
+    let url = "https://site.test/login";
+    const later: SiteLogin = {
+      site: "s",
+      home: "https://site.test/",
+      loggedIn: async () => false,
+      async signIn(c) {
+        await c.fp.act(
+          { kind: "fill", value: passwordOf("s", c.cred) },
+          { role: "textbox" },
+          { goal: "g" },
+        );
+        url = "https://site.test/choose-account";
+        await c.fp.act({ kind: "click" }, { role: "button", name: "Personal" }, { goal: "g" });
+        throw new LoginFailed("s", "a page no screen knows");
+      },
+    };
+    const { marks, holds } = memHolds();
+    const login = loginProvider([later], {
+      credentials: memoryCredentials({ s: { username: "u", password: "pass-1" } }),
+      codes: totpSource(),
+      holds,
+      random: () => 0.5,
+      now: () => new Date(0),
+    });
+    const { fp } = fakePage({ text: [], present: () => true, url: () => url });
+    fp.open = async (u) => {
+      url = u;
+    };
+    await expect(login(fp, "s")).rejects.toThrow(/no screen knows/);
+    expect(marks.s).toMatchObject({ case: "later", until: MIN, strict: false });
+  });
+  it("a provider's password counts as a password, a code as a code", async () => {
+    const both: SiteLogin = {
+      site: "s",
+      home: "https://site.test/",
+      loggedIn: async () => false,
+      async signIn(c) {
+        const g = await c.credFor("p");
+        await c.fp.act(
+          { kind: "fill", value: passwordOf("p", g) },
+          { role: "textbox" },
+          { goal: "g" },
+        );
+        await c.fp.act(
+          { kind: "fill", value: await c.code("totp") },
+          { role: "textbox" },
+          { goal: "g" },
+        );
+        throw new LoginFailed("s", "still on the code page");
+      },
+    };
+    const { marks, holds } = memHolds();
+    const rows: SignInTry[] = [];
+    const login = loginProvider([both], {
+      credentials: memoryCredentials({
+        s: { username: "u", password: "pass-1", totpSecret: "JBSWY3DPEHPK3PXP" },
+        p: { username: "pu", password: "provider-pass" },
+      }),
+      codes: totpSource(),
+      holds,
+      tries: { add: (r) => rows.push(r) },
+      random: () => 0.5,
+      now: () => new Date(0),
+    });
+    await expect(login(fakePage({ text: [], present: () => true }).fp, "s")).rejects.toThrow();
+    expect(rows[0]?.typed).toEqual({ password: 1, code: 1 });
+    expect(marks.s?.case).toBe("code");
+  });
   it.each([
     [
       "signed in after all",
       async () => true,
       "signed-in",
       null,
-      /flow bug after a good password: .*account\/access/,
+      [/flow bug after a good password: .*account\/access/],
     ],
-    ["not signed in", async () => false, "throws", SIGN_IN_HOLD_MS, /sign-in refused/],
+    ["not signed in", async () => false, "throws", 10 * MIN, []],
     [
       "the check fails",
       async () => {
         throw new Error("page crashed");
       },
       "throws",
-      SIGN_IN_HOLD_MS,
-      /sign-in refused/,
+      10 * MIN,
+      [],
     ],
   ] as const)(
     "a failure past a typed password checks the session first (%s)",
@@ -440,26 +591,22 @@ describe("loginProvider", () => {
         home: "https://x.test/home",
         loggedIn,
         async signIn(c) {
-          await c.fp.act({ kind: "fill", value: passwordOf("s", c.cred) }, { role: "textbox" });
+          await c.fp.act(
+            { kind: "fill", value: passwordOf("s", c.cred) },
+            { role: "textbox" },
+            { goal: "g" },
+          );
           throw new LoginFailed("s", "no code box on the next page");
         },
       };
-      const marks: Record<string, { until: number; error: string }> = {};
-      const holds: SignInHolds = {
-        get: (n) => marks[n] ?? null,
-        set: (n, h) => {
-          marks[n] = h;
-        },
-        clear: (n) => {
-          delete marks[n];
-        },
-      };
+      const { marks, holds } = memHolds();
       const t = Date.parse("2026-11-26T00:00:00Z");
       const notes: string[] = [];
       const login = loginProvider([misreads], {
         credentials: memoryCredentials({ s: { username: "u", password: "pass-1" } }),
         codes: totpSource(),
         holds,
+        random: () => 0.5,
         notify: async (n) => {
           notes.push(n);
         },
@@ -475,7 +622,7 @@ describe("loginProvider", () => {
       else await expect(run).rejects.toThrow(/no code box/);
       expect(opened).toEqual(["https://x.test/home"]);
       expect(marks.s?.until ?? null).toBe(ms === null ? null : t + ms);
-      expect(notes).toEqual([expect.stringMatching(note)]);
+      expect(notes).toEqual(note.map((n) => expect.stringMatching(n)));
     },
   );
   it("a refusal the site said is held with no session check", async () => {
@@ -488,7 +635,11 @@ describe("loginProvider", () => {
         return true;
       },
       async signIn(c) {
-        await c.fp.act({ kind: "fill", value: passwordOf("s", c.cred) }, { role: "textbox" });
+        await c.fp.act(
+          { kind: "fill", value: passwordOf("s", c.cred) },
+          { role: "textbox" },
+          { goal: "g" },
+        );
         throw new LoginFailed("s", "password rejected", true);
       },
     };

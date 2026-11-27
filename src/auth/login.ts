@@ -9,8 +9,8 @@
  * branching one is a walk of screens (`google.ts`).
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { Credential, CredentialStore, SecretAudit } from "credvault";
 import { banHit } from "../browser/ban-signals.js";
 import type { FlowPage } from "../browser/flow.js";
@@ -25,6 +25,24 @@ import { guardedPage, hostNamed, hostUnder, registrable } from "./guard.js";
 import { pageLogin } from "./page-login.js";
 import { type IdentityProvider, type Provider, providerOf } from "./providers.js";
 import { claims, MAIN, siteOf } from "./roles.js";
+import {
+  type FailCase,
+  nextHold,
+  type SignInHolds,
+  type SignInLog,
+  type SignInTry,
+} from "./sign-in-holds.js";
+
+export {
+  type FailCase,
+  fileSignInHolds,
+  fileSignInLog,
+  type Hold,
+  nextHold,
+  type SignInHolds,
+  type SignInLog,
+  type SignInTry,
+} from "./sign-in-holds.js";
 
 /** The page left the address it was at: a person's step is past. */
 export const movedOn = (fp: FlowPage): (() => Promise<boolean>) => {
@@ -90,6 +108,8 @@ export interface SignInContext {
   credFor(site: string, account?: string): Promise<Credential>;
   /** This context signing in as another credential: its codes come from that one. */
   as(cred: Credential): SignInContext;
+  /** Screens a login walk passed, in order, for the try log; shared with `as`. */
+  steps?: string[];
 }
 
 export interface SiteLogin {
@@ -241,13 +261,42 @@ export interface FormLoginSpec {
 const SITE_REFUSAL =
   /password rejected|code rejected|code was refused|code was wrong|too many failed attempts|refused this browser|unknown account/i;
 
+/** The case a refusal's words name; sites not yet walks say it in words. */
+function refusalCase(reason: string): FailCase | undefined {
+  if (/password rejected/i.test(reason)) return "password";
+  if (/code rejected|code was refused|code was wrong/i.test(reason)) return "code";
+  if (/too many failed attempts|refused this browser|unknown account/i.test(reason))
+    return "account";
+  return undefined;
+}
+
 export class LoginFailed extends Error {
   /** The site said it turned the account away (`SITE_REFUSAL`). */
   readonly refused: boolean;
-  constructor(site: string, reason: string, refused = SITE_REFUSAL.test(reason)) {
+  /** Set by the one who knows (a kit op, a refusal's words); else the hold works it out. */
+  readonly case: FailCase | undefined;
+  constructor(
+    site: string,
+    reason: string,
+    refused = SITE_REFUSAL.test(reason),
+    failCase: FailCase | undefined = refused ? refusalCase(reason) : undefined,
+  ) {
     super(safeUrls(`${site}: ${reason}`));
     this.name = "LoginFailed";
     this.refused = refused;
+    this.case = failCase;
+  }
+}
+
+/** A short hold: no sign-in till `until`; the caller tries again then, no person needed. */
+export class SignInHeld extends Error {
+  readonly until: number;
+  readonly failCase: FailCase | undefined;
+  constructor(until: number, failCase: FailCase | undefined, message: string) {
+    super(message);
+    this.name = "SignInHeld";
+    this.until = until;
+    this.failCase = failCase;
   }
 }
 
@@ -267,6 +316,10 @@ async function keepSignedIn(fp: FlowPage, hints: Hints): Promise<void> {
   });
 }
 
+/** Passwords this process read to type (a provider's too): a typed secret in this set is a password, else a code. */
+const PASSWORDS = new Set<string>();
+export const isPassword = (value: string): boolean => PASSWORDS.has(value);
+
 /** The credential's password, or a clear failure: a `via` credential has none and belongs on the provider path. */
 export function passwordOf(site: string, cred: Credential): string {
   if (!cred.password)
@@ -274,7 +327,15 @@ export function passwordOf(site: string, cred: Credential): string {
       site,
       `the ${site} credential has no password (it signs in via ${cred.via})`,
     );
+  PASSWORDS.add(cred.password);
   return secret(cred.password);
+}
+
+/** The password before the last rotation, held and known as a password like `passwordOf`'s. */
+export function previousPasswordOf(cred: Credential): string | null {
+  if (!cred.previousPassword) return null;
+  PASSWORDS.add(cred.previousPassword);
+  return secret(cred.previousPassword);
 }
 
 /**
@@ -355,9 +416,10 @@ function formWalk(
             says: spec.rejected,
             async act({ fp }: SignInContext) {
               // A rotation the site took without saying so: the one before still works once.
-              if (!cred.previousPassword || typedPrevious) fail("password rejected");
+              const previous = previousPasswordOf(cred);
+              if (!previous || typedPrevious) fail("password rejected");
               typedPrevious = true;
-              await submit(fp, cred.previousPassword as string, "type the previous password");
+              await submit(fp, previous as string, "type the previous password");
             },
           },
         ]
@@ -740,17 +802,16 @@ export interface LoginOptions {
   notify?: (text: string) => Promise<void>;
   /** Where every password use is recorded (allowed or refused). */
   audit?: SecretAudit;
-  /** Refused sign-ins, so the next call does not type the password again (`fileSignInHolds`). */
+  /** Failed sign-ins and how long each name waits (`fileSignInHolds`). */
   holds?: SignInHolds;
+  /** Every try, kept (`fileSignInLog`). */
+  tries?: SignInLog;
+  /** For the hold's jitter; default `Math.random`. */
+  random?: () => number;
   /** Where a "signed in after all" page is shot: the page our flow misread. */
   shots?: string;
   now?: () => Date;
 }
-
-/** No automatic sign-in on a credential this long after one was refused: repeated refusals flag an account. */
-export const SIGN_IN_HOLD_MS = 12 * 60 * 60 * 1000;
-/** After our own failure (no secret typed, no refusal said): a short pause, so a broken flow cannot loop on the account. */
-export const OWN_FAILURE_HOLD_MS = 30 * 60 * 1000;
 
 /**
  * After a failure past a typed secret: signed in anyway (our flow misread the next page)?
@@ -781,53 +842,61 @@ async function shotOf(fp: FlowPage, dir: string | undefined, name: string, at: D
   }
 }
 
-/** The page that notes each typed secret (a password, a code): a failed sign-in that typed none is ours. */
-function typedSecret(fp: FlowPage, typed: () => void): FlowPage {
+/** What one try typed, and whether a later page proved the password. */
+export interface TryTrack {
+  password: number;
+  code: number;
+  last: "password" | "code" | null;
+  /** The path the last password went in on. */
+  passwordPath: string | null;
+  /** A code went in, or an act ran on another path, after the password: the site took it. */
+  proven: boolean;
+}
+
+const pathOf = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname}`;
+  } catch {
+    return url;
+  }
+};
+
+/** The page that notes each typed secret, password or code: a failed sign-in that typed none is ours. */
+function typedSecret(fp: FlowPage, track: TryTrack, passwords: () => string[]): FlowPage {
   return {
     ...fp,
     get page() {
       return fp.page;
     },
     async act(op, hints, o) {
+      const at = fp.url();
       const done = await fp.act(op, hints, o);
       // after the fill: a fill that throws typed nothing (a locate miss)
-      if (op.kind === "fill" && holdsSecret(op.value)) typed();
+      if (op.kind === "fill" && holdsSecret(op.value)) {
+        if (isPassword(op.value) || passwords().includes(op.value)) {
+          track.password++;
+          track.last = "password";
+          track.passwordPath = pathOf(at);
+          track.proven = false;
+        } else {
+          track.code++;
+          track.last = "code";
+          if (track.passwordPath) track.proven = true;
+        }
+      } else if (track.passwordPath && pathOf(at) !== track.passwordPath) track.proven = true;
       return done;
     },
   };
 }
 
-/** Refused sign-ins by credential name: until when, and the refusal's words. */
-export interface SignInHolds {
-  get(name: string): { until: number; error: string } | null;
-  set(name: string, hold: { until: number; error: string }): void;
-  clear(name: string): void;
-}
-
-/** Holds in one JSON file (an absolute path); a broken file reads as none. */
-export function fileSignInHolds(file: string): SignInHolds {
-  type Marks = Record<string, { until: number; error: string }>;
-  const read = (): Marks => {
-    try {
-      return JSON.parse(readFileSync(file, "utf8")) as Marks;
-    } catch {
-      return {};
-    }
-  };
-  const write = (m: Marks) => {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify(m, null, 2)}\n`);
-  };
-  return {
-    get: (name) => read()[name] ?? null,
-    set: (name, hold) => write({ ...read(), [name]: hold }),
-    clear(name) {
-      const m = read();
-      if (!(name in m)) return;
-      delete m[name];
-      write(m);
-    },
-  };
+/** The case of a failure: its own, else what the try typed. */
+export function caseOf(err: LoginFailed, track: TryTrack): FailCase {
+  if (err.case) return err.case;
+  if (track.last === "code" || /no \w+ code available|code never came/i.test(err.message))
+    return "code";
+  if (track.password) return track.proven ? "later" : "unproven";
+  return "ours";
 }
 
 /**
@@ -933,6 +1002,8 @@ export interface SignInParts {
   /** Domains a credential's password may be typed on; the page refuses it elsewhere. Absent: unbound. */
   domainsFor?: (name: string, cred: Credential) => readonly string[];
   audit?: SecretAudit;
+  /** Where a login walk notes the screens it passes, for the try log. */
+  steps?: string[];
 }
 
 /**
@@ -970,7 +1041,7 @@ export function signInContext(p: SignInParts): SignInContext {
       const from = after && after > since ? after : since;
       const req = hint ? { site, kind, since: from, hint } : { site, kind, since: from };
       const c = await p.codes.get(req, cred);
-      if (!c) throw new LoginFailed(site, `no ${kind} code available`);
+      if (!c) throw new LoginFailed(site, `no ${kind} code available`, false, "code");
       return secret(c);
     },
     offers: (kind) => p.codes.offers(kind, cred),
@@ -1006,6 +1077,7 @@ export function signInContext(p: SignInParts): SignInContext {
       );
     },
     as: contextAs,
+    ...(p.steps ? { steps: p.steps } : {}),
   });
   return contextAs(p.cred);
 }
@@ -1065,19 +1137,30 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
     }
     if (!cred) return known ? "no-credential" : "unknown-site";
     const since = now();
+    const log = (row: Omit<SignInTry, "at" | "name">) =>
+      opts.tries?.add({
+        at: since.toISOString(),
+        name,
+        ...row,
+        ms: now().getTime() - since.getTime(),
+      });
     const hold = opts.holds?.get(name);
-    if (hold && hold.until > since.getTime())
-      throw new NeedsHuman(
-        `${name}: no sign-in till ${new Date(hold.until).toISOString()}, the last one failed (${hold.error}); sign in by hand`,
-        "login",
-      );
+    if (hold && hold.until > since.getTime()) {
+      const why = `${name}: no sign-in till ${new Date(hold.until).toISOString()}, the last one failed (${hold.error})`;
+      log({ outcome: "held", ...(hold.case ? { case: hold.case } : {}), error: hold.error });
+      // a short hold: the caller tries again then; a strict one (old records too) is a person's
+      if (hold.strict === false) throw new SignInHeld(hold.until, hold.case, why);
+      throw new NeedsHuman(`${why}; sign in by hand`, "login");
+    }
     // One account, several ways in: each method in turn until one signs in.
     let first: unknown = null;
     let failedIn: SiteLogin | null = null;
-    let typed = false;
-    const watched = typedSecret(fp, () => {
-      typed = true;
-    });
+    let failedVia: string | undefined;
+    const track: TryTrack = { password: 0, code: 0, last: null, passwordPath: null, proven: false };
+    const passwords = [cred.password, cred.previousPassword].filter((p): p is string => !!p);
+    const watched = typedSecret(fp, track, () => passwords);
+    const typed = () => ({ password: track.password, code: track.code });
+    const steps: string[] = [];
     for (const method of methodsOf(cred)) {
       // A method via a provider takes the generic provider path when the
       // site's own spec does not know that provider (or there is no spec at all).
@@ -1096,27 +1179,61 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
         credentials: opts.credentials,
         codes: opts.codes,
         domainsFor: (name, c) => passwordDomains(sites, name, c),
+        steps,
         ...(opts.audit ? { audit: opts.audit } : {}),
         ...(opts.notify ? { notify: opts.notify } : {}),
       });
+      const via = method.via ? `via:${method.via}` : "password";
       try {
         await signInWith(name, login, ctx);
         opts.holds?.clear(name);
+        log({
+          method: via,
+          outcome: "signed-in",
+          url: fp.url(),
+          typed: typed(),
+          ...stepsOf(steps),
+        });
         return "signed-in";
       } catch (err) {
         // Only a refused sign-in moves on; a page that needs a person stops here.
-        if (!(err instanceof LoginFailed)) throw err;
-        if (!first) failedIn = login;
+        if (!(err instanceof LoginFailed)) {
+          log({
+            method: via,
+            outcome: "failed",
+            error: errText(err),
+            url: fp.url(),
+            typed: typed(),
+            ...stepsOf(steps),
+          });
+          throw err;
+        }
+        if (!first) {
+          failedIn = login;
+          failedVia = via;
+        }
         first ??= err;
       }
     }
+    if (!first) return "unknown-site";
+    const failed = first as LoginFailed;
+    const error = failed.message.slice(0, 300);
+    const failCase = caseOf(failed, track);
     // a typed secret and no refusal said: the password may have worked and our flow misread what came next
-    if (first && typed && !(first as LoginFailed).refused && known && failedIn === known) {
+    if ((track.password || track.code) && !failed.refused && known && failedIn === known) {
       const misread = fp.url();
       const shot = await shotOf(fp, opts.shots, name, now());
       if (await signedInAnyway(fp, known)) {
         opts.holds?.clear(name);
-        const error = (first as Error).message.slice(0, 300);
+        log({
+          ...viaOf(failedVia),
+          outcome: "signed-in-anyway",
+          case: failCase,
+          error,
+          url: misread,
+          typed: typed(),
+          ...stepsOf(steps),
+        });
         await opts
           .notify?.(
             `${name}: flow bug after a good password: signed in, but the flow read ${misread} as a failure (${error})${shot ? `; shot ${shot}` : ""}`,
@@ -1125,26 +1242,44 @@ export function loginProvider(sites: readonly SiteLogin[], opts: LoginOptions) {
         return "signed-in";
       }
     }
-    if (first) {
-      if (opts.holds) {
-        const error = (first as Error).message.slice(0, 300);
-        // a typed password or code the site then kept out: its refusal, whatever our flow read
-        const refused = (first as LoginFailed).refused || typed;
-        const ms = refused ? SIGN_IN_HOLD_MS : OWN_FAILURE_HOLD_MS;
-        opts.holds.set(name, { until: since.getTime() + ms, error });
+    const next = opts.holds
+      ? nextHold(failCase, error, opts.holds.get(name), since.getTime(), opts.random)
+      : null;
+    if (next && opts.holds) {
+      opts.holds.set(name, next);
+      // a strict hold is a person's; a short one tries again on its own
+      if (next.strict)
         await opts
           .notify?.(
-            refused
-              ? `${name}: sign-in refused, no more tries for 12 h: ${error}`
-              : `${name}: sign-in failed on our side (a flow bug, not a refusal), no tries for 30 min: ${error}`,
+            `${name}: sign-in failed (${failCase}), no more tries till ${new Date(next.until).toISOString()}: ${error}`,
           )
           .catch(() => undefined);
-      }
-      throw first;
     }
-    return "unknown-site";
+    log({
+      ...viaOf(failedVia),
+      outcome: "failed",
+      case: failCase,
+      error,
+      url: fp.url(),
+      typed: typed(),
+      ...stepsOf(steps),
+      ...(next
+        ? {
+            hold: {
+              until: new Date(next.until).toISOString(),
+              strict: !!next.strict,
+              fails: next.fails ?? 1,
+            },
+          }
+        : {}),
+    });
+    throw first;
   };
 }
+
+const errText = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
+const viaOf = (via: string | undefined) => (via ? { method: via } : {});
+const stepsOf = (steps: string[]) => (steps.length ? { screens: [...steps] } : {});
 
 async function signInWith(name: string, login: SiteLogin, ctx: SignInContext): Promise<void> {
   const { fp } = ctx;
