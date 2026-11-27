@@ -981,6 +981,27 @@ const browsers = program
       console.log(warn(`${profile} reserved from the desk until ${r.until} (${r.by}: ${r.why})`));
   });
 browsers
+  .command("update-chrome")
+  .description(
+    "Install Chrome for Testing's last-known-good Stable (the chrome engine's build on a Mac) if it is new; keeps the newest two (the desk runs it daily)",
+  )
+  .option("--json", "as JSON")
+  .action(async (o: { json?: boolean }) => {
+    if (process.platform !== "darwin")
+      throw new Error(
+        "update-chrome: Chrome for Testing runs on a Mac only; Linux runs Google Chrome",
+      );
+    const { updateChrome } = await import("../browser/chrome-testing.js");
+    const r = await updateChrome();
+    if (o.json) return console.log(JSON.stringify(r, null, 2));
+    console.log(
+      `Chrome for Testing ${r.version}: ${r.installed ? "installed" : "already the newest"}`,
+    );
+    if (r.removed.length) console.log(dim(`removed ${r.removed.join(", ")}`));
+    if (settings.chromeBuild !== "testing")
+      console.log(warn("CHROME_BUILD=stable: the chrome engine runs Google Chrome.app"));
+  });
+browsers
   .command("reserve <profile>")
   .description(
     "The desk opens no browser on <profile> until the reserve ends: its browser there closes now, its watcher pauses, its calls wait. Explore sessions still open it",

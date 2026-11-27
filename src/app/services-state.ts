@@ -252,7 +252,7 @@ export function profileTrimFor(settings: Settings, o: { dry?: boolean } = {}) {
 /**
  * This disk's upkeep, one timer for desk and box: every SHOTS_EVERY_MINUTES (at least 15) and a
  * minute after start, traces copied then swept, shots shipped then old dumps cleared; once a day,
- * closed profiles trimmed. One run at a time. `ship` is for a stop: the shots now.
+ * closed profiles trimmed and, on a Mac, Chrome for Testing updated. One run at a time. `ship` is for a stop: the shots now.
  */
 export function keepDiskOnTimer(
   settings: Settings,
@@ -276,6 +276,7 @@ export function keepDiskOnTimer(
     return shipping;
   };
   let trimmedAt = 0;
+  let chromeAt = 0;
   let busy = false;
   const tick = (): void => {
     if (busy) return;
@@ -292,6 +293,19 @@ export function keepDiskOnTimer(
           .catch((e) => log.warn(err(e), "profiles trim"));
       }
       if (await holding(log)) return;
+      if (
+        process.platform === "darwin" &&
+        settings.chromeBuild === "testing" &&
+        Date.now() - chromeAt >= 86_400_000
+      ) {
+        chromeAt = Date.now();
+        await import("../browser/chrome-testing.js")
+          .then((m) => m.updateChrome())
+          .then((r) => {
+            if (r.installed || r.removed.length) log.info(r, "chrome for testing");
+          })
+          .catch((e) => log.warn(err(e), "chrome for testing"));
+      }
       if (keep)
         await (async () => {
           const r = await keep.backup();

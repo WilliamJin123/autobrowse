@@ -171,6 +171,26 @@ Proof run, 11-26 (scratchpad `engines/liveproof.mts`: `openSession` with `--live
 - The front app changed twice during the runs, at times that match no session event. It held through every open and close.
 - Playwright's WebKit reports `navigator.maxTouchPoints` 0 with `hasTouch` on, but touch events fire.
 
+## Chrome for Testing on a Mac (11-27)
+
+Problem: `chrome` launched Google Chrome.app. With the person's own Chrome closed, a desk browser became that app's process: the Dock showed it as the front app and the person's Chrome icon opened the desk's window. Fixes inside Chrome.app hold only while the person's Chrome runs.
+
+| Option | Own app in the Dock | Widevine, H.264 | Cookies kept | Cost |
+|---|---|---|---|---|
+| A. Chrome for Testing (CfT), Google's own build | yes (`com.google.chrome.for.testing`) | yes (measured) | yes (`linkedin@wren` clone kept `li_at`) | brands say only "Chromium"; a 56 px "for testing" bar; our own updates |
+| B. A re-signed private copy of Chrome.app | yes | yes | — | fails: "MachPortRendezvousServer Permission denied (1100)" (measured) |
+| C. Playwright's Chromium | yes | no | yes | a Chromium fingerprint; media sites break |
+| D. Keep Chrome.app, steal focus back | no | yes | yes | the takeover returns whenever the person quits Chrome |
+
+Chosen: A. Priorities: 1) the person's Chrome is never the desk's; 2) a site sees Google Chrome; 3) no new upkeep by hand.
+
+- `chrome` on a Mac runs the newest CfT in `~/.cache/autobrowse/chrome-for-testing/<version>/`. None installed: `TestingMissing`, never a quiet Chrome.app.
+- `CHROME_BUILD=stable` rolls back to Google Chrome.app. Linux keeps Google Chrome.
+- Brands: `chromeBrands` rebuilds [grease, Chromium, "Google Chrome"] in Chromium's order (`orders[major % 6]`), matched to Chrome 158 here and to the headers of Chrome 120 to 124. Worn headless and headed. The first request of a page can go before the override lands (as it already did headless).
+- `--disable-infobars` hides CfT's bar (143 to 87 px, same as Chrome.app). `--test-type` does not.
+- `autobrowse browsers update-chrome` installs Google's last-known-good Stable; the desk runs it daily. The newest two versions stay, and a running version is never deleted.
+- Risk: CfT can be one major ahead of Chrome.app; a rollback then opens a profile from a newer version.
+
 ## Open decisions (William)
 
 - **Real Safari and iOS Safari.** A second driver (WebdriverIO with `safaridriver`, Appium XCUITest on the Simulator). Costs a second API and loses request interception. Recommendation: wait until a site works in Safari only.
@@ -182,3 +202,4 @@ Proof run, 11-26 (scratchpad `engines/liveproof.mts`: `openSession` with `--live
 - 2026-11-26: live proof on opera-gx, firefox, webkit and ios passed (Tests). Edge and Brave stay unit-tested only.
 - 2026-11-26: `BrowserOptions.engine` is required; the `"chrome"` fallback is gone. 24 test files still passed the removed `channel: "chromium"`, so they ran real Chrome, and parallel launches raced its code-sign clones ("Library missing"). `pnpm typecheck` skips `test/`, so only a typecheck that includes the tests catches a stale option.
 - 2026-11-26: fenced runs off Chromium decided. William: "redirect is fine, but maybe maximize optionality". `FENCE_HOPS=blank|block`, default blank; `agent --fence-hops` per run. Live proof through explore (scratchpad `engines/fenceexplore.mts`): firefox blank: direct, link, script and meta refresh stopped unsent, the 302 hop blanked, its answer dropped, no outside text in any answer; webkit blank: nothing left the sites; firefox block: refused. Test: `test/nav-fence.test.ts` (Firefox).
+- 2026-11-27: `chrome` on a Mac runs Chrome for Testing (section above). William: "idk your call on that". Options A to D; A chosen. Gates measured: cookies, Widevine and H.264, the bar, the brands.

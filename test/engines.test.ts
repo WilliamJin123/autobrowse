@@ -10,11 +10,16 @@ import {
   profileDirOf,
   refusalOf,
   type SessionNeeds,
+  TestingMissing,
+  testingBinary,
+  testingBinaryIn,
 } from "../src/browser/engines.js";
 import { treeOf } from "../src/browser/memory-guard.js";
 import { orphanBrowsers, type Proc, profileFolderOf, profileRoots } from "../src/browser/reap.js";
 
 const P = "/Users/u/.config/autobrowse/profiles";
+const CFT =
+  "/Users/u/.cache/autobrowse/chrome-for-testing/158.0.8127.88/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
 const PW = "/Users/u/Library/Caches/ms-playwright";
 const FF = `${PW}/firefox-1543/firefox/Nightly.app/Contents/MacOS`;
 const WK = `${PW}/webkit-2359`;
@@ -188,12 +193,16 @@ describe("engine rows", () => {
   });
 
   it("finds each build: a channel, an app binary or Playwright's own", () => {
-    expect(launchTarget("chrome", "darwin", () => false)).toEqual({ channel: "chrome" });
-    expect(launchTarget("edge", "darwin", () => false)).toEqual({ channel: "msedge" });
+    const mac = { platform: "darwin" as const, exists: () => false };
+    expect(launchTarget("chrome", { ...mac, build: "stable" })).toEqual({ channel: "chrome" });
+    expect(launchTarget("chrome", { platform: "linux", testing: () => CFT })).toEqual({
+      channel: "chrome",
+    });
+    expect(launchTarget("edge", mac)).toEqual({ channel: "msedge" });
     expect(launchTarget("chromium")).toEqual({});
     expect(launchTarget("firefox")).toEqual({});
     expect(launchTarget("ios")).toEqual({});
-    expect(launchTarget("opera-gx", "darwin", (p) => p === OPERA)).toEqual({
+    expect(launchTarget("opera-gx", { platform: "darwin", exists: (p) => p === OPERA })).toEqual({
       executablePath: OPERA,
     });
   });
@@ -201,7 +210,7 @@ describe("engine rows", () => {
   it("refuses a brand that is not installed", () => {
     const miss = (() => {
       try {
-        launchTarget("opera-gx", "linux", () => true);
+        launchTarget("opera-gx", { platform: "linux", exists: () => true });
       } catch (e) {
         return e;
       }
@@ -211,7 +220,40 @@ describe("engine rows", () => {
       engine: "opera-gx",
       message: expect.stringContaining("Opera GX is not installed"),
     });
-    expect(() => launchTarget("brave", "darwin", () => false)).toThrow(EngineMissing);
+    expect(() => launchTarget("brave", { platform: "darwin", exists: () => false })).toThrow(
+      EngineMissing,
+    );
+  });
+
+  it("runs Chrome for Testing for chrome on a Mac; a missing one stops loud", () => {
+    expect(launchTarget("chrome", { platform: "darwin", testing: () => CFT })).toEqual({
+      executablePath: CFT,
+    });
+    // never a quiet Google Chrome.app, even when it is installed
+    expect(() =>
+      launchTarget("chrome", { platform: "darwin", exists: () => true, testing: () => null }),
+    ).toThrow(TestingMissing);
+    expect(() => launchTarget("chrome", { platform: "darwin", testing: () => null })).toThrow(
+      /browsers update-chrome/,
+    );
+  });
+
+  it("picks the newest installed CfT version with its app", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cft-"));
+    try {
+      for (const v of ["158.0.8127.88", "158.0.8127.9", "159.0.1.2", "notes"])
+        mkdirSync(join(dir, v));
+      const has = new Set(
+        ["158.0.8127.88", "158.0.8127.9"].map((v) => testingBinaryIn(join(dir, v))),
+      );
+      // 159 has no app (a half-made folder): skipped; 88 beats 9 by number
+      expect(testingBinary(dir, (p) => has.has(p))).toBe(
+        testingBinaryIn(join(dir, "158.0.8127.88")),
+      );
+      expect(testingBinary(join(dir, "none"))).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

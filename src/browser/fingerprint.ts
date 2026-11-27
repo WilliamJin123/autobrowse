@@ -7,7 +7,9 @@
  *
  * Headed Chrome is already true and is left alone. Headless Chrome is
  * learned once, then made to say the same with one word changed:
- * "HeadlessChrome" becomes "Chrome".
+ * "HeadlessChrome" becomes "Chrome". Chrome for Testing says only
+ * "Chromium" in its brands: `chrome: true` adds "Google Chrome" in the
+ * order Google Chrome of that version sends.
  */
 import type { BrowserContext, Frame, Page } from "playwright";
 
@@ -36,13 +38,43 @@ export interface Fingerprint {
 const unheadless = (list: Brand[]) =>
   list.map((b) => (b.brand === "HeadlessChrome" ? { ...b, brand: "Google Chrome" } : b));
 
+/** Chromium's brand order: [grease, Chromium, brand] placed by `orders[major % 6]` (user_agent_utils.cc; measured on Chrome 158). */
+const ORDERS = [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0],
+] as const;
+
+/** The list Google Chrome of the same version says; unchanged when it has no Chromium or grease entry. */
+export function chromeBrands(list: Brand[]): Brand[] {
+  const chromium = list.find((b) => b.brand === "Chromium");
+  const grease = list.find(
+    (b) => !["Chromium", "Google Chrome", "HeadlessChrome"].includes(b.brand),
+  );
+  if (!chromium || !grease) return unheadless(list);
+  const [g, c, b] = ORDERS[Number.parseInt(chromium.version, 10) % 6] ?? ORDERS[0];
+  const out: Brand[] = [];
+  out[g] = grease;
+  out[c] = chromium;
+  out[b] = { brand: "Google Chrome", version: chromium.version };
+  return out;
+}
+
 /** Where the fingerprint is read: https (client hints need a secure context), answered locally. */
 const PROBE_URL = "https://fingerprint.autobrowse.invalid/";
 
-/** Read the fingerprint off a page of this host's Chrome; `headless` says whether it needs wearing. */
+/**
+ * Read the fingerprint off a page of this host's Chrome; `headless` says whether it needs wearing.
+ * `chrome`: say Google Chrome's brands (the `chrome` engine, whose CfT build lacks them).
+ */
 export async function learnFingerprint(
   page: Page,
+  o: { chrome?: boolean } = {},
 ): Promise<{ headless: boolean; fingerprint: Fingerprint }> {
+  const brands = o.chrome ? chromeBrands : unheadless;
   await page.route(PROBE_URL, (r) => r.fulfill({ contentType: "text/html", body: "" }));
   // Opera GX aborts the first navigation of a fresh profile (its start page wins): once more
   await page.goto(PROBE_URL).catch((err: Error) => {
@@ -82,8 +114,8 @@ export async function learnFingerprint(
       platform: seen.platform,
       acceptLanguage: seen.languages.join(","),
       metadata: {
-        brands: unheadless(h.brands ?? []),
-        fullVersionList: unheadless(h.fullVersionList ?? []),
+        brands: brands(h.brands ?? []),
+        fullVersionList: brands(h.fullVersionList ?? []),
         platform: h.platform ?? "",
         platformVersion: h.platformVersion ?? "",
         architecture: h.architecture ?? "",

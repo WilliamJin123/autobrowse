@@ -66,10 +66,11 @@ function run(argv) {
     since(1) < ${PERSON_S} || since(3) < ${PERSON_S} || (since(12) < ${PERSON_S} && since(12) < since(10));
   const app = Application.currentApplication();
   app.includeStandardAdditions = true;
-  const chromes = ["com.google.Chrome", "com.google.Chrome.for.Testing", "com.google.Chrome.beta",
-    "com.google.Chrome.dev", "com.google.Chrome.canary", "org.chromium.Chromium"];
+  // lower case: CfT says com.google.chrome.for.testing (measured 11-27)
+  const chromes = ["com.google.chrome", "com.google.chrome.for.testing", "com.google.chrome.beta",
+    "com.google.chrome.dev", "com.google.chrome.canary", "org.chromium.chromium"];
   const otherAutobrowse = (a, p) => {
-    if (!chromes.includes(ObjC.unwrap(a.bundleIdentifier) || "")) return false;
+    if (!chromes.includes((ObjC.unwrap(a.bundleIdentifier) || "").toLowerCase())) return false;
     try {
       return app.doShellScript("ps -o command= -p " + p).includes("--autobrowse-owner=");
     } catch (e) {

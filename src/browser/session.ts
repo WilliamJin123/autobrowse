@@ -17,6 +17,7 @@ import { type Dialogs, watchDialogs } from "./dialogs.js";
 import { boundRequests } from "./driver-memory.js";
 import type { Egress, Exit } from "./egress.js";
 import {
+  type ChromeBuild,
   deviceOf,
   type Engine,
   EngineMissing,
@@ -29,6 +30,7 @@ import {
   missingOf,
   profileDirOf,
   refusalOf,
+  runsTesting,
 } from "./engines.js";
 import { type FilmOptions, filmContext, filmGeometry } from "./film.js";
 import { type Fingerprint, geometry, learnFingerprint, wearFingerprint } from "./fingerprint.js";
@@ -73,9 +75,12 @@ async function browserTypeOf(e: Engine): Promise<BrowserType> {
   return f === "firefox" ? pw.firefox : pw.webkit;
 }
 
+/** CfT's "for testing" bar over the page: 56 px off a headed window (measured 11-27). */
+const TESTING_ARGS = ["--disable-infobars"];
+
 /** The binary that runs: the fingerprint's key, the relay's target, ⌘⇧O's app. */
-async function binaryOf(e: Engine): Promise<string> {
-  const bin = installedBinary(e);
+async function binaryOf(e: Engine, build?: ChromeBuild): Promise<string> {
+  const bin = installedBinary(e, build ? { build } : {});
   if (bin) return bin;
   if (hasAppBinary(e) && e !== "chrome") throw new EngineMissing(e);
   return (await browserTypeOf(e)).executablePath();
@@ -185,6 +190,8 @@ export interface BrowserOptions {
   fenced?: boolean;
   /** A fenced run off Chromium (`FENCE_HOPS`): "block" refuses it (`refusalOf`), "blank" runs it. */
   fenceHops?: FenceHops;
+  /** `chrome` on a Mac: Chrome for Testing or Google Chrome.app (`CHROME_BUILD`; default testing). */
+  chromeBuild?: ChromeBuild;
   browserbase?: { apiKey: string; projectId: string; http: HttpClient } | null;
   /** `BROWSER=cdp`: the endpoint to attach to (`http://127.0.0.1:9222` or a `ws://` URL). */
   cdpUrl?: string | null;
@@ -274,9 +281,15 @@ export function isLive(
 }
 
 /** ⌘⇧O: the same Chromium build on the profile, in a window, the tabs reopened; no automation attached. */
-async function openInWindow(profileDir: string, urls: string[], engine: Engine) {
-  const args = [`--user-data-dir=${profileDir}`, "--no-first-run", ...urls];
-  spawn(await binaryOf(engine), args, { detached: true, stdio: "ignore" }).unref();
+async function openInWindow(
+  profileDir: string,
+  urls: string[],
+  engine: Engine,
+  build?: ChromeBuild,
+) {
+  const testing = runsTesting(engine, build ? { build } : {}) ? TESTING_ARGS : [];
+  const args = [`--user-data-dir=${profileDir}`, "--no-first-run", ...testing, ...urls];
+  spawn(await binaryOf(engine, build), args, { detached: true, stdio: "ignore" }).unref();
 }
 
 export async function openSession(site: string, given: BrowserOptions): Promise<Session> {
@@ -420,7 +433,7 @@ export async function openSession(site: string, given: BrowserOptions): Promise<
                 onWindow: async (urls: string[]) => {
                   await keepSessionCookies(context, /./, Date.now(), LIVE_COOKIE_MS).catch(() => 0);
                   await session?.close();
-                  await openInWindow(profileDir, urls, engine);
+                  await openInWindow(profileDir, urls, engine, opts.chromeBuild);
                   return null;
                 },
               }
@@ -627,6 +640,8 @@ async function launchLocal(
   if (familyOf(engine) !== "chromium") return launchPlaywrightBuild(profileDir, opts, exit, engine);
   const proxy = exit?.proxy ?? null;
   const headless = opts.headless ?? true;
+  const lookup = opts.chromeBuild ? { build: opts.chromeBuild } : {};
+  const testing = runsTesting(engine, lookup);
   // headed with no place: the screen's free area, never Chrome's own 1280x900 in a corner
   const place =
     opts.window ??
@@ -655,6 +670,7 @@ async function launchLocal(
         ? [`--force-device-scale-factor=${size.deviceScaleFactor}`]
         : []),
       ...(headless ? [] : [...X11_ARGS, ...HEADED_ARGS]),
+      ...(testing ? TESTING_ARGS : []),
     ],
     ignoreDefaultArgs: ["--enable-automation"],
     // else Playwright adds --no-sandbox: an infobar and a bot tell; the Linux worker runs as root, keeps it
@@ -670,7 +686,7 @@ async function launchLocal(
   // headed on a Mac: launched in the background (`browser/background-launch`); a failed relay costs one steal
   const launch = async (o: ReturnType<typeof base>) => {
     if (o.headless || process.platform !== "darwin") return plainLaunch(o);
-    const real = await binaryOf(engine);
+    const real = await binaryOf(engine, opts.chromeBuild);
     try {
       return await (await chromium()).launchPersistentContext(profileDir, {
         ...o,
@@ -687,7 +703,7 @@ async function launchLocal(
     return plainLaunch(o);
   };
   const type = await browserTypeOf(engine);
-  const target = launchTarget(engine);
+  const target = launchTarget(engine, lookup);
   const plainLaunch = async (o: ReturnType<typeof base>) => {
     try {
       return await type.launchPersistentContext(profileDir, { ...o, ...target });
@@ -696,15 +712,17 @@ async function launchLocal(
       const missing = /executable doesn't exist|chrome/i.test(
         err instanceof Error ? err.message : "",
       );
-      if (engine !== "chrome" || !missing) throw err;
+      // CfT named by path: a missing one is a loud stop (`TestingMissing`), never a quiet fallback
+      if (engine !== "chrome" || target.executablePath || !missing) throw err;
     }
     console.error("autobrowse: Google Chrome is not installed here; using Playwright's Chromium");
     return type.launchPersistentContext(profileDir, o);
   };
-  const key = await binaryOf(engine).catch(() => engine);
+  const key = await binaryOf(engine, opts.chromeBuild).catch(() => engine);
   const known = headedFingerprints.get(key) ?? null;
   const context = await launch(base(known?.userAgent ?? null));
-  if (!headless) return context;
+  // headed CfT: its UA is true, its brands lack "Google Chrome"; worn with no relaunch
+  if (!headless && !testing) return context;
   if (known) {
     wearFingerprint(context, known);
     return context;
@@ -712,14 +730,18 @@ async function launchLocal(
   // Headless Chrome says "HeadlessChrome/153…" and sites like YouTube Studio refuse it as an
   // unsupported browser. The version is only known once launched: learn it, relaunch as the headed one.
   // a throw here would leave the browser running under a live owner, which no reap touches
-  const learned = await learnFingerprint(context.pages()[0] ?? (await context.newPage())).catch(
-    async (err) => {
-      await context.close().catch(() => undefined);
-      throw err;
-    },
-  );
-  if (!learned.headless) return context;
+  const learned = await learnFingerprint(context.pages()[0] ?? (await context.newPage()), {
+    chrome: engine === "chrome",
+  }).catch(async (err) => {
+    await context.close().catch(() => undefined);
+    throw err;
+  });
+  if (!learned.headless && !testing) return context;
   headedFingerprints.set(key, learned.fingerprint);
+  if (!learned.headless) {
+    wearFingerprint(context, learned.fingerprint);
+    return context;
+  }
   await context.close();
   const relaunched = await launch(base(learned.fingerprint.userAgent));
   wearFingerprint(relaunched, learned.fingerprint);

@@ -1,10 +1,11 @@
 /**
- * Which browser build a local session runs (designs/2026-11-26-browser-engines.md): Google
- * Chrome by default, a Chromium brand by its binary, or Playwright's own Firefox or WebKit.
+ * Which browser build a local session runs (designs/2026-11-26-browser-engines.md): Chrome by
+ * default (Chrome for Testing on a Mac), a Chromium brand by its binary, or Playwright's own
+ * Firefox or WebKit.
  * One row per engine; the family is the protocol that drives it. What a family cannot do
  * refuses the session here, before a launch: a guard the session needs is never skipped.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -23,6 +24,12 @@ export type Family = "chromium" | "firefox" | "webkit";
 /** A fenced run off Chromium: refuse it, or fence by route and blank a redirect hop's outside page. */
 export const FENCE_HOPS = ["block", "blank"] as const;
 export type FenceHops = (typeof FENCE_HOPS)[number];
+/**
+ * `chrome` on a Mac: testing = Chrome for Testing, its own app, so a desk browser is never the
+ * person's Google Chrome in the Dock (11-27); stable = Google Chrome.app (`CHROME_BUILD`, the rollback).
+ */
+export const CHROME_BUILDS = ["testing", "stable"] as const;
+export type ChromeBuild = (typeof CHROME_BUILDS)[number];
 
 interface Row {
   family: Family;
@@ -101,6 +108,77 @@ export function profileDirOf(profilesDir: string, profile: string, engine: Engin
     : join(profilesDir, ".engines", engine, profile);
 }
 
+/** Where `autobrowse browsers update-chrome` keeps Chrome for Testing, one folder per version. */
+export const TESTING_DIR = join(homedir(), ".cache", "autobrowse", "chrome-for-testing");
+
+/** The binary inside a version folder: Google's zip layout. */
+export const testingBinaryIn = (versionDir: string, arch: string = process.arch): string => {
+  const plat = arch === "arm64" ? "mac-arm64" : "mac-x64";
+  return join(
+    versionDir,
+    `chrome-${plat}`,
+    "Google Chrome for Testing.app",
+    "Contents",
+    "MacOS",
+    "Google Chrome for Testing",
+  );
+};
+
+const byVersionDesc = (a: string, b: string): number => {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 4; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pb[i] ?? 0) - (pa[i] ?? 0);
+  return 0;
+};
+
+/** Installed CfT versions, newest first (folder names `158.0.8127.88`). */
+export function testingVersions(dir: string = TESTING_DIR): string[] {
+  try {
+    return readdirSync(dir)
+      .filter((v) => /^\d+\.\d+\.\d+\.\d+$/.test(v))
+      .sort(byVersionDesc);
+  } catch {
+    return [];
+  }
+}
+
+/** The newest installed CfT binary, or null. */
+export function testingBinary(
+  dir: string = TESTING_DIR,
+  exists: (p: string) => boolean = existsSync,
+): string | null {
+  for (const v of testingVersions(dir)) {
+    const bin = testingBinaryIn(join(dir, v));
+    if (exists(bin)) return bin;
+  }
+  return null;
+}
+
+/** How a build is looked up; tests pass every field. */
+export interface BuildLookup {
+  platform?: NodeJS.Platform;
+  exists?: (p: string) => boolean;
+  build?: ChromeBuild;
+  /** The CfT binary to run, or null (default: the newest in `TESTING_DIR`). */
+  testing?: () => string | null;
+}
+
+/** `chrome` runs Chrome for Testing here. */
+export const runsTesting = (e: Engine, o: BuildLookup = {}): boolean =>
+  e === "chrome" &&
+  (o.build ?? "testing") === "testing" &&
+  (o.platform ?? process.platform) === "darwin";
+
+/** No Chrome for Testing where `chrome` needs it: a loud stop, never a quiet Google Chrome.app. */
+export class TestingMissing extends Error {
+  constructor() {
+    super(
+      "Chrome for Testing is not installed: run `autobrowse browsers update-chrome` (or CHROME_BUILD=stable for Google Chrome.app)",
+    );
+    this.name = "TestingMissing";
+  }
+}
+
 export class EngineMissing extends Error {
   readonly engine: Engine;
   constructor(engine: Engine) {
@@ -110,29 +188,30 @@ export class EngineMissing extends Error {
   }
 }
 
-/** The brand's installed binary, or null; `chrome` and brands only. */
-export function installedBinary(
-  e: Engine,
-  platform: NodeJS.Platform = process.platform,
-  exists: (p: string) => boolean = existsSync,
-): string | null {
-  return TABLE[e].bins?.[platform]?.find(exists) ?? null;
+/** The brand's installed binary, or null; `chrome` (CfT on a Mac) and brands only. */
+export function installedBinary(e: Engine, o: BuildLookup = {}): string | null {
+  if (runsTesting(e, o)) return (o.testing ?? testingBinary)();
+  return TABLE[e].bins?.[o.platform ?? process.platform]?.find(o.exists ?? existsSync) ?? null;
 }
 
 /**
- * What Playwright needs to find the build: a channel (Chrome, Edge), an app binary (brands)
- * or nothing (Playwright's own). `chrome` with no Chrome falls back to Playwright's Chromium
- * at launch (a container); a missing brand fails here.
+ * What Playwright needs to find the build: CfT (`chrome` on a Mac), a channel (Chrome, Edge),
+ * an app binary (brands) or nothing (Playwright's own). Stable `chrome` with no Chrome falls back
+ * to Playwright's Chromium at launch (a container); a missing CfT or brand fails here.
  */
 export function launchTarget(
   e: Engine,
-  platform: NodeJS.Platform = process.platform,
-  exists: (p: string) => boolean = existsSync,
+  o: BuildLookup = {},
 ): { executablePath?: string; channel?: string } {
+  if (runsTesting(e, o)) {
+    const bin = (o.testing ?? testingBinary)();
+    if (bin) return { executablePath: bin };
+    throw new TestingMissing();
+  }
   const row = TABLE[e];
   if (row.channel) return { channel: row.channel };
   if (!row.bins) return {};
-  const bin = installedBinary(e, platform, exists);
+  const bin = installedBinary(e, o);
   if (bin) return { executablePath: bin };
   throw new EngineMissing(e);
 }

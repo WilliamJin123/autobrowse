@@ -118,6 +118,7 @@ export function browserOptions(
     ...(display.live ? { live: true } : {}),
     engine: display.engine ?? settings.browserEngine,
     fenceHops: settings.fenceHops,
+    chromeBuild: settings.chromeBuild,
     headedView: settings.headedView,
     liveViewScale: settings.liveViewScale,
     // The site's account's passkeys ride along in its session.

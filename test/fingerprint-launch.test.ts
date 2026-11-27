@@ -4,9 +4,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Egress } from "../src/browser/egress.js";
+import { testingBinary } from "../src/browser/engines.js";
+import { chromeBrands } from "../src/browser/fingerprint.js";
 import type { BrowserOptions } from "../src/browser/session.js";
 
-type Launch = { args: string[]; proxy?: unknown; env?: Record<string, string | undefined> };
+type Launch = {
+  args: string[];
+  proxy?: unknown;
+  env?: Record<string, string | undefined>;
+  executablePath?: string;
+  channel?: string;
+};
 const launches: Launch[] = [];
 
 vi.mock("patchright", () => {
@@ -15,6 +23,7 @@ vi.mock("patchright", () => {
   const context = {
     pages: () => [page],
     newPage: async () => page,
+    newCDPSession: async () => ({ send: async () => undefined }),
     on: () => undefined,
     close: async () => undefined,
   };
@@ -114,6 +123,62 @@ describe("local launch behind a proxy", () => {
   it("always hides the automation flag", async () => {
     const l = await launchOf("google", {});
     expect(l.args).toContain("--disable-blink-features=AutomationControlled");
+  });
+});
+
+describe("chrome build on a Mac", () => {
+  const mac = process.platform === "darwin";
+  it.runIf(mac)("stable: Google Chrome by channel, no infobar flag", async () => {
+    const l = await launchOf("google", { chromeBuild: "stable" });
+    expect(l.channel).toBe("chrome");
+    expect(l.args).not.toContain("--disable-infobars");
+  });
+
+  it.runIf(mac && !!testingBinary())("testing: CfT by path, its bar hidden", async () => {
+    const l = await launchOf("google", {});
+    expect(l.executablePath).toBe(testingBinary());
+    expect(l.args).toContain("--disable-infobars");
+  });
+});
+
+describe("chromeBrands", () => {
+  const grease = { brand: "Not.A/Brand", version: "24" };
+  it("adds Google Chrome in Chrome's own order (measured on 158)", () => {
+    expect(chromeBrands([grease, { brand: "Chromium", version: "158" }])).toEqual([
+      { brand: "Chromium", version: "158" },
+      grease,
+      { brand: "Google Chrome", version: "158" },
+    ]);
+  });
+
+  it("orders by major % 6 and swaps HeadlessChrome out", () => {
+    const at = (major: number) =>
+      chromeBrands([
+        { brand: "HeadlessChrome", version: `${major}` },
+        { brand: "Chromium", version: `${major}` },
+        grease,
+      ]).map((b) => b.brand[0]);
+    // [grease, Chromium, brand] placed by orders[major % 6]
+    expect([156, 157, 158, 159, 160, 161].map((m) => at(m).join(""))).toEqual([
+      "NCG",
+      "NGC",
+      "CNG",
+      "GNC",
+      "CGN",
+      "GCN",
+    ]);
+  });
+
+  it("keeps the full versions and leaves a list with no Chromium alone", () => {
+    expect(
+      chromeBrands([
+        { brand: "Not.A/Brand", version: "24.0.0.0" },
+        { brand: "Chromium", version: "158.0.8127.88" },
+      ]).at(2),
+    ).toEqual({ brand: "Google Chrome", version: "158.0.8127.88" });
+    expect(chromeBrands([{ brand: "Microsoft Edge", version: "158" }])).toEqual([
+      { brand: "Microsoft Edge", version: "158" },
+    ]);
   });
 });
 
