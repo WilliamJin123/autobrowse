@@ -1,6 +1,6 @@
 # Sign-ins as branching walks: no hand-written sign-in, heal adds a branch
 
-2026-11-26. Status: design, option A picked; C is the direction after it. Task WA-1461.
+2026-11-26. Status: building option A; C is the direction after it. Task WA-1461.
 
 ## Ask
 
@@ -37,7 +37,7 @@ Branching inside rendered workflows (an outline step that runs a walk) is its ow
 - **Recognizer**: how a screen knows its page. The code `Screen` has `at` (URL regex), `shows` and `hides` (elements), `says` (text regex) and `is` (a function) (`screens.ts:34-57`). A `ScreenSpec` has only a URL shape and exact landmark strings (`spec.ts:188`).
 - **Kit**: the screens and ops every sign-in shares.
 - **Person step**: the run stops and asks William to act in the window (`personStep`).
-- **Hold**: after a failed sign-in, the account waits before the next try: 12 h when the site refused or a secret was typed, else 30 min (`src/auth/login.ts:1036-1084`).
+- **Hold**: after a failed sign-in, the account waits before the next try. The wait depends on the case ("Holds" below). Before this task: 12 h when the site refused or a secret was typed, else 30 min (`src/auth/login.ts:1036-1084`).
 - **Heal**: an agent changes a stored artifact after a failure.
 
 William said "compiled workflows". Two artifacts here are made from runs: rendered TypeScript and built walks. The options differ on which one a sign-in becomes.
@@ -81,7 +81,7 @@ All five keep one runtime (`walk()`) and one hook: the artifact runs as a `SiteL
 
 ### A. A sign-in is a built walk (`WalkSpec`); the kit is shared screens and ops
 
-- Each site: `src/walks/logins/<site>.json` in the repo. A loader reads that dir before the state dir. The commit that adds a site's file removes its built-in entry.
+- Each site: `src/walks/logins/<site>.ts` in the repo, one typed object literal (data only: regexes as strings, no functions), checked by `walkSpecSchema` on load. A static index (`src/walks/logins/index.ts`) lists them, since the npm build has no `.ts` to scan. They load before the state dir. The commit that adds a site's file removes its built-in entry.
 - The recognizer becomes the code `Screen` as data: `at`, `shows`, `hides`, `says`, regexes as strings through `regexOf`. Built walks gain it too. Login walks keep file order: site screens, then kit screens.
 - Outcomes: ops, goal, `refused { says }` (throws `LoginFailed` with `refused: true`), `person { why }`.
 - `walkFlow` takes `fail` (a login walk fails with `LoginFailed`) and `signIn: SignInContext`.
@@ -91,13 +91,13 @@ All five keep one runtime (`walk()`) and one hook: the artifact runs as a `SiteL
   - `passkey`, `push { waitMs }`, `provider { name }` (hands off to `providerOf(name).signIn`).
   - `second-step { order }`: Google's choice of passkey, totp, a masked phone by its last digits, or push, from the credential and the page (`google.ts:110-166`). Microsoft's push and Cloudflare's saved-profile chooser get the same treatment: decision code lives in a kit op; the data file names it.
 - Google, Microsoft and Cloudflare convert too (William, 11-26), last, after the form sites prove the kit.
-- Example, Instagram:
+- Example, Instagram (the shape; the real file is `src/walks/logins/instagram.ts`). The goal counts only after a secret was submitted, and `/challenge/` is a sign-in page, not the goal:
 
 ```json
 {
   "name": "login", "site": "instagram",
   "start": "https://www.instagram.com/accounts/login/",
-  "signedIn": { "url": "/^https:\\/\\/www\\.instagram\\.com\\/(?!accounts)/" },
+  "signedIn": { "url": "/^https:\\/\\/www\\.instagram\\.com\\/(?!accounts|challenge)/" },
   "screens": [
     { "name": "login form", "shows": [{ "role": "textbox", "name": "/username|email/i" }],
       "ops": [{ "kind": "fill", "field": { "role": "textbox", "name": "/username|email/i" }, "value": "$username" },
@@ -155,42 +155,68 @@ Trade-offs: the least new code, on a path with 7 live sites. Sign-ins get a seco
 
 ## Heal on a sign-in (option A)
 
-- **Trigger:** `loginProvider`'s catch (`login.ts:1073`) starts one heal when a sign-in fails with its own `LoginFailed`, never a refused one. One heal per site per hold. It does not go through the failure-record pipeline.
+- **Trigger:** `loginProvider`'s catch (`login.ts:1073`) starts one heal when a sign-in fails with its own `LoginFailed`, never one with case `password` or `account`. One heal per site per 24 h. It does not go through the failure-record pipeline.
 - **A moved control:** fixes and the repairer, as today. Sign-in acts key their fixes under `<site>/login`, so one fix serves every caller.
 - **A known screen with a new look:** learned rows, as today. A row maps the look to the screen; the screen stays.
 - **A page no screen acts on:** an agent session from the failure page, goal "finish this sign-in screen". The agent never holds a secret; where one goes it names a kit op. The result is one screen in `walks/<site>/login-heal.json` (state dir), marked `from: heal`.
-- **Trial:** every heal screen runs as a trial, a secret op included (William, 11-26). One sign-in that passes through it makes it kept; a failure drops it. A session may later commit a kept screen to the repo file (`walks promote`). A bad try sets a 12 h hold; the session check (771eacb) lifts a false one.
+- **Trial:** every heal screen runs as a trial, a secret op included (William, 11-26). One sign-in that passes through it makes it kept; a failure drops it. A session may later commit a kept screen to the repo file (`walks promote`). A bad try sets the hold its case gives; the session check (771eacb) lifts a false one.
 - **Overlay load:** per screen, after the repo file. A screen that fails the schema (a repo screen it names was renamed) drops alone with a warning; the rest load. Trial counts go to an append-only log, so two accounts of one site never overwrite each other.
 - **Reader fix (all walks):** screens with a secret op leave the reader's `known` list (`screens.ts:393`). A secret then goes only on a page a recognizer matched.
 
+## Holds
+
+William, 11-26: the hold depends on the case, with a short backoff ("1 min 3 min 5 min etc"). "one time code fials are pretty lenient, because a lot of the times emials dont work or need resend". A password the site rejected stays strict. This replaces the 12 h hold on any typed secret (378afbe).
+
+The case comes from the failure, not from words. `LoginFailed` carries `case`: the kit ops and `typedSecret` set it from which secret went last and which screen came after. The `SITE_REFUSAL` regex stays only for sites not yet converted.
+
+| Case | When | Wait | Cap per 24 h, then 24 h and a note |
+|---|---|---|---|
+| `password` | the site said the password is wrong | until the stored password changes (`liftHolds`), or 24 h | none: one is the cap |
+| `account` | the site locked or refused the account or this browser | 24 h | none |
+| `unproven` | a password went in, no later screen came, the site said nothing | the ladder from 10 min | 3 password fills |
+| `code` | a code went in and the site said no, or no code came | the ladder from 1 min | 6 |
+| `later` | the password worked (a later screen came), then the walk failed | the ladder from 1 min | 6 |
+| `ours` | nothing secret went in | the ladder from 1 min | none: nothing typed |
+
+- **The ladder:** 1, 3, 5, 10, 30, 60 min, then 60 min. The rung is the count of failures in a row since the last sign-in that worked. Each wait gets ±20 % jitter, so tries fall on no fixed rhythm.
+- **Only a later screen proves a password.** A password typed and the form back with no words is `unproven`, never `later`. So a wrong password the site did not name is typed at most 3 times in 24 h.
+- **A short hold pages nobody.** A hold of 60 min or less throws `SignInHeld` (the run fails; its caller tries again later). A 24 h hold throws `NeedsHuman` and notes William.
+- **The hold file** keeps `until` and `error` (the sidecar reads them) and adds `case`, `fails` (in a row) and `recent` (the capped failures of the last 24 h). The jitter takes an injected random source.
+- **Every try is logged:** one JSON line per sign-in try in `sign-in-tries.jsonl` beside the hold file: name, method, case, the screens passed, the URL it ended on, typed or not, the hold set, the time. No secret goes in it.
+
 ## Lockout
 
-A site locks an account after several bad secrets in a short time. The 12 h hold is the guard against that: after a failed try that typed a secret, nothing types on that account for 12 h. So a trial screen adds at most one bad try per 12 h. These rules keep the count there:
+A site locks an account after several bad secrets in a short time. The guard is a count per 24 h, not a long wait:
 
+- At most 3 password fills per account per 24 h that no later screen proved (`unproven`, plus the previous password once on a rejected screen). A rejected password stops all fills until the password changes, or 24 h.
+- At most 6 failed code tries per account per 24 h. Codes are lenient: a site sends a new one.
 - `password` fills only an `input[type=password]`. `code` fills only a box shaped for a code (`autocomplete=one-time-code`, a numeric input mode, or a max length of 4 to 8). A heal screen cannot aim a secret at any other box.
 - A secret goes only on the spec's origins (the guard), with an audit row.
-- One heal per site per hold. The heal continues the failed try from its page; it starts no new try.
+- At most one heal per site per 24 h. The heal continues the failed try from its page; it starts no new try.
 - A trial screen that fails is dropped and never runs again.
 - Two failed heals for one site in 7 days: heal stops for that site, and William gets a note.
-- Worst case per account: the normal try (with the previous password once on a rejected screen) and one heal, then 12 h of nothing.
 
-The cost is the other way round: a held account does no work for 12 h. The session check (771eacb) lifts a hold when the account is in fact signed in.
+The session check (771eacb) lifts a hold when the account is in fact signed in.
 
 ## Proof (designed first)
+
+Build order: the kit leaves `formWalk` first, with `test/auth.test.ts` unchanged as the parity bar (7 live sites run on it). The simulated site comes before any site converts. The live Instagram try is last.
 
 1. **Parity.** Data screens compile to `Screen` objects and match through `fp.has` and `fp.text` (`isOn`, `screens.ts:309`), so the `fakePage` scripts (`test/auth-fakes.ts`, the site tests) run on them. The old and new sign-in must give the same act lines on each script. The old tests go with the old code.
 2. **Fixtures.** Each real sign-in screen as scrubbed HTML: signed-out pages saved look-only, later screens from past failure artifacts. A Playwright test walks each branch: chooser, code, save login, refused, and an unknown page that ends in `LoginFailed`.
 3. **Look-only live.** `explore --look-only` opens each site's login page. The walk names the screen. Nothing is typed.
 4. **One live sign-in, Instagram first,** after 1 to 3 pass. One try; the hold applies. Then the rest by shape.
-5. **Switch per site.** The site's file and the removal of its TypeScript sign-in go in one commit, after its parity and look-only checks pass.
+5. **Simulated site.** A local server (`test/sim-site/`) serves a sign-in that changes on command: a renamed field, a new page between steps, a wrong password, a wrong code and a resend, a page no screen knows. It counts bad passwords and locks the account as a real site would; each test asserts it never locks. The heal agent is scripted and the clock injected. It runs its own headless browser and stops it after. Cases: renamed field (a fix heals it), new page (a trial screen heals it and is kept), wrong password (no retype), wrong code then resend, unknown page (`LoginFailed`), a trial that fails (dropped), a second failed heal (heal stops), a secret aimed at a box that is not a password box (refused), a wrong origin (refused).
+6. **Switch per site.** The site's file and the removal of its TypeScript sign-in go in one commit, after its parity and look-only checks pass.
 
 ## One format, one schema
 
 William, 11-26: "i just want things to be unified where typing can be similar so theres less maitenance overhead". So C follows A.
 
 - One zod schema (`walkSpecSchema`) types every walk: sign-ins, taught walks, and later the rendered workflows.
-- `z.toJSONSchema` emits it as a JSON Schema file (as `cutJsonSchema` does, `src/walks/cut.ts:144`). Each walk file names it in `$schema`, so the editor checks and completes a walk file as it does TypeScript.
-- A walk file in the repo is checked in CI by the same schema, and its parity and fixture tests run in the gate.
+- A repo walk is a `.ts` file: `export default { … } satisfies WalkSpecInput` (`z.input` of the schema), so tsc checks it as you type. William agreed (11-26): typed `.ts` walk files plus one shared test runner.
+- One test file (`test/login-walks.test.ts`) loads every repo walk through the schema and runs each site's scripted pages; a new site adds a script, not a test file.
+- A walk in the state dir (taught, cut, or a heal overlay) stays JSON. `z.toJSONSchema` emits the schema as a file (as `cutJsonSchema` does, `src/walks/cut.ts:144`) for those. `walks promote` copies a kept heal screen into the repo file as text.
 
 ## Non-goals
 
@@ -203,10 +229,11 @@ William, 11-26: "i just want things to be unified where typing can be similar so
 
 - A data file can hide a typo a type would catch. Mitigation: the schema, parity and fixtures.
 - A kit screen can match a site's own page (a "Not now" that is the flow's own). Mitigation: file order puts site screens first; kit screens act only on exact names.
-- A failed trial screen that typed a secret sets a 12 h hold. Mitigation: one heal per hold; the origin guard and the audit row; the session check lifts a hold when the account is signed in.
+- A failed trial screen that typed a secret counts toward the caps. Mitigation: one heal per site per 24 h; the origin guard and the audit row; the session check lifts a hold when the account is signed in.
 - Google's walk has 19 screens and two 180 s waits. It goes last.
 - `walkLogin` has no live run. Mitigation: Instagram alone first, behind steps 1 to 3.
 - A resumed try runs a `once` password screen again (`handled` is fresh per try, `flow.ts:518`). `formWalk` does the same today; out of scope.
+- A short hold (1 min) lets a broken flow try again soon. Mitigation: the ladder, the caps per 24 h, and the try log to see it.
 - The walk name changes from `sign-in` to `login`, so learned rows under the old name stop matching. They come back on use.
 
 ## Cards that change
@@ -226,3 +253,4 @@ William, 11-26: "i just want things to be unified where typing can be similar so
 - 2026-11-26: William: Google, Microsoft and Cloudflare in scope ("shoudl be in scope"); a secret on a trial screen is fine ("typing a secret befor ea commit is fine"). Added the `second-step` kit op. Open: decision 1.
 - 2026-11-26: William picked A ("sure we cand o A") and asked for one format with shared typing. C follows A as its own task. Added "One format, one schema".
 - 2026-11-26: William asked if the 12 h hold plus secrets on trial screens risks lockout. Added "Lockout": the hold caps bad tries at one per 12 h; secret ops fill only password or code boxes; two failed heals in 7 days stop heal for that site.
+- 2026-11-26: William: case-aware holds with a short ladder ("1 min 3 min 5 min etc"), lenient codes, a rejected password strict; typed `.ts` walk files and one shared test runner. Added "Holds"; Lockout now counts per 24 h. My calls: `unproven` for a password with no later screen, caps 3 and 6, a 60 min ceiling then 24 h at the cap, `SignInHeld` for short holds, the simulated site before any conversion.
