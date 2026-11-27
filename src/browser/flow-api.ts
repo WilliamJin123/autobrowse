@@ -29,7 +29,8 @@ export const SITES: Record<string, { home: string }> = {
 /** One recorded gesture, replayed. */
 export type Op =
   | { kind: "click" }
-  | { kind: "fill"; value: string }
+  /** `into`: a secret's box; the fill refuses any other (`WrongSecretBox`). */
+  | { kind: "fill"; value: string; into?: SecretBox }
   | { kind: "select"; value: string }
   | { kind: "press"; key: string }
   /** The pointer onto the control, and it stays: a hover menu, a control shown on hover, a tooltip. */
@@ -41,6 +42,9 @@ export type Op =
   | { kind: "upload"; files: string[] | FilePayload[] }
   /** A script: a function of `el` on the target, or an expression on the page when there are no hints. */
   | { kind: "script"; js: string };
+
+/** A box a secret may go into: a password box, or a short code box. */
+export type SecretBox = "password" | "code";
 
 /** No hints at all: an act on the page, not an element. */
 export const pageWide = (h: Hints): boolean => !Object.values(h).some((v) => v != null);

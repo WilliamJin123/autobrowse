@@ -211,10 +211,10 @@ describe("formLogin", () => {
     expect(asked).toEqual(["totp"]);
     expect(acts.map((a) => a.op)).toEqual([
       { kind: "fill", value: "u" },
-      { kind: "fill", value: "p" },
+      { kind: "fill", value: "p", into: "password" },
       { kind: "script", js: "(el) => { if (!el.checked) el.click(); }" }, // keep me signed in
       { kind: "click" },
-      { kind: "fill", value: "123456" },
+      { kind: "fill", value: "123456", into: "code" },
       { kind: "click" },
     ]);
   });

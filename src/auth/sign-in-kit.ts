@@ -83,7 +83,7 @@ export async function typePassword(
 ): Promise<void> {
   if (!previous && st.submitted && !st.typedPrevious)
     failSignIn(st, `the form came back after the password, saying nothing known: ${fp.url()}`);
-  await fp.act({ kind: "fill", value }, form.field, { goal });
+  await fp.act({ kind: "fill", value, into: "password" }, form.field, { goal });
   await keepSignedIn(fp, form.keepSignedIn ?? KEEP_SIGNED_IN);
   await fp.act({ kind: "click" }, form.submit, { goal: "submit login form" });
   st.submitted = true;
@@ -130,7 +130,9 @@ export async function enterCode(st: SignInState, ctx: SignInContext, box: CodeBo
     const asked = new Date();
     const code = await ctx.code(kind as CodeKind, box.hint, st.codeAsked ?? undefined);
     st.codeAsked = asked;
-    await fp.act({ kind: "fill", value: code }, box.field, { goal: "type verification code" });
+    await fp.act({ kind: "fill", value: code, into: "code" }, box.field, {
+      goal: "type verification code",
+    });
     await fp.act({ kind: "click" }, box.submit, { goal: "submit verification code" });
   });
 }

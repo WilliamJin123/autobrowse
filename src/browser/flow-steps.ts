@@ -9,6 +9,7 @@ import {
   type Op,
   pageWide,
   type ReadTab,
+  type SecretBox,
   type Site,
 } from "./flow-api.js";
 import { type Hands, instantHands, pickOption } from "./human/index.js";
@@ -107,6 +108,47 @@ export async function chooseOption(
   await pickOption(target, value, o, (l) => hands.click(l, o), null);
 }
 
+/** A secret aimed at a box of another kind: nothing typed. */
+export class WrongSecretBox extends Error {
+  constructor(box: SecretBox, saw: string) {
+    super(`a ${box} goes only into a ${box} box; the box found is ${saw}`);
+    this.name = "WrongSecretBox";
+  }
+}
+
+/**
+ * The box's shape, or "" when it takes this secret. A password: `input[type=password]`.
+ * A code: a text, tel or number input that reads as a code (one-time-code, numeric, short, or named so).
+ * A string, not a function: a bundler's `__name` would not exist in the page.
+ */
+const BOX_CHECK = `(el, box) => {
+  const tag = el.tagName.toLowerCase();
+  const type = (el.getAttribute("type") || "text").toLowerCase();
+  const saw = tag === "input" ? "input[type=" + type + "]" : tag;
+  if (tag !== "input") return saw;
+  if (box === "password") return type === "password" ? "" : saw;
+  if (!["text", "tel", "number"].includes(type)) return saw;
+  const words = [el.name, el.id, el.getAttribute("aria-label"), el.placeholder, el.autocomplete].join(" ");
+  if (/user|email|e-mail|search|phone number/i.test(words) && !/code|otp/i.test(words)) return saw + " named " + JSON.stringify(words.trim());
+  const coded =
+    el.autocomplete === "one-time-code" ||
+    el.inputMode === "numeric" ||
+    (el.maxLength > 0 && el.maxLength <= 12) ||
+    /code|otp|pin|token|verif|2fa|mfa|passcode/i.test(words);
+  return coded ? "" : saw + " that reads as no code box";
+}`;
+
+const boxSaw = new Function("el", "box", `return (${BOX_CHECK})(el, box);`) as (
+  el: unknown,
+  box: SecretBox,
+) => string;
+
+/** Refuses a secret's fill into a box not of its kind. */
+async function checkBox(target: Locator, box: SecretBox, timeout: number): Promise<void> {
+  const saw = await target.first().evaluate(boxSaw, box, { timeout });
+  if (saw) throw new WrongSecretBox(box, saw);
+}
+
 export async function doOp(
   page: Page,
   hints: Hints,
@@ -136,6 +178,7 @@ export async function doOp(
     case "click":
       return hands.click(target, { timeout });
     case "fill":
+      if (op.into) await checkBox(target, op.into, timeout);
       await hands.type(target, op.value, { timeout });
       return;
     case "select":

@@ -127,6 +127,10 @@ export function boundPage(fp: FlowPage, b: BindOptions): FlowPage {
             match.field === "secret" ? "value" : "password",
           );
       }
+      // a password goes only into a password box, whoever wrote the fill
+      const isPassword = match?.field === "password" || match?.field === "previousPassword";
+      if (isPassword && op.kind === "fill" && !op.into)
+        return fp.act({ ...op, into: "password" }, hints, opts);
       return fp.act(op, hints, opts);
     },
   };
