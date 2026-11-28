@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { leaseMs, TAKE_IDLE_MINUTES } from "../src/explore/lease.js";
 import {
   CLOSE_WAIT_MS,
   closeLeftBy,
+  dropDeadFiles,
   type Ended,
   endProcess,
   minePort,
@@ -146,6 +147,7 @@ describe("autobrowse stop", () => {
       send,
       sessions: () => sessions,
       session: "sess-1",
+      drop: () => false,
       end: async (pid, waitMs) => {
         ended.push([pid, waitMs]);
         return how;
@@ -210,6 +212,28 @@ describe("autobrowse stop", () => {
   it("a session already gone is no error", async () => {
     const r = await run(["9091", "achieved"], [], () => ({ ok: false, body: "" }));
     expect(r).toMatchObject({ code: 0, out: ["no explore session on 9091: already closed"] });
+  });
+
+  it("a dead session's token and info go; a live one's stay; the journal is never touched", () => {
+    const dir = mkdtempSync(join(tmpdir(), "stop-drop-"));
+    try {
+      const files = (p: number) =>
+        [`explore-${p}.json`, `explore-${p}.token`].map((n) => join(dir, n));
+      writeFileSync(join(dir, "explore-9091.json"), JSON.stringify({ port: 9091, pid: 11 }));
+      writeFileSync(join(dir, "explore-9091.token"), "t");
+      writeFileSync(join(dir, "explore-9091.journal.jsonl"), "{}");
+      writeFileSync(join(dir, "explore-9092.json"), JSON.stringify({ port: 9092, pid: 22 }));
+      writeFileSync(join(dir, "explore-9092.token"), "t");
+      const alive = (pid: number) => pid === 22;
+      expect(dropDeadFiles(9091, dir, alive)).toBe(true);
+      expect(dropDeadFiles(9092, dir, alive)).toBe(false);
+      expect(dropDeadFiles(9093, dir, alive)).toBe(false);
+      expect(files(9091).some((f) => existsSync(f))).toBe(false);
+      expect(files(9092).every((f) => existsSync(f))).toBe(true);
+      expect(existsSync(join(dir, "explore-9091.journal.jsonl"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("is back only when the process is gone; one that stays is ended and named", async () => {

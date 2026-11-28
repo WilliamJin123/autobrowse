@@ -6,7 +6,7 @@
  *   autobrowse stop --hook                           Claude Code's SubagentStop hook (JSON on stdin)
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -40,6 +40,27 @@ export function openSessions(
     }
   }
   return out.sort((a, b) => a.port - b.port);
+}
+
+/** A dead session's token and info files; its journal stays (the next start resumes). True = dropped. */
+export function dropDeadFiles(
+  port: number,
+  dir = join(tmpdir(), "autobrowse"),
+  isAlive = pidAlive,
+): boolean {
+  const info = join(dir, `explore-${port}.json`);
+  const token = join(dir, `explore-${port}.token`);
+  let pid = 0;
+  try {
+    pid = (JSON.parse(readFileSync(info, "utf8")) as OpenSession).pid;
+  } catch {
+    // no info: a token alone is a leftover too
+  }
+  if (pid && isAlive(pid)) return false;
+  if (!existsSync(info) && !existsSync(token)) return false;
+  rmSync(info, { force: true });
+  rmSync(token, { force: true });
+  return true;
 }
 
 /** This Claude session's open sessions; outside Claude Code, every open one. */
@@ -248,6 +269,7 @@ export async function stopMain(
     session?: string;
     stdin?: () => Promise<string>;
     end?: (pid: number, waitMs: number) => Promise<Ended>;
+    drop?: (port: number) => boolean;
   } = {},
 ): Promise<number> {
   const out = deps.out ?? ((line: string) => console.log(line));
@@ -302,7 +324,11 @@ export async function stopMain(
   res ??= await send(port, { cmd: "close" });
   if (!res.ok && !res.body) {
     if (!live) {
-      out(`no explore session on ${port}: already closed`);
+      // a dead server's token makes state.sh list the port as taken
+      const dropped = (deps.drop ?? dropDeadFiles)(port);
+      out(
+        `no explore session on ${port}: already closed${dropped ? " (its leftover files removed)" : ""}`,
+      );
       return 0;
     }
     const how = await end(live.pid, 0);
