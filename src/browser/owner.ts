@@ -1,6 +1,6 @@
 /**
  * The job that owns a browser (wren designs/2026-11-27-central-queue.md, "Browser owner"):
- * `AUTOBROWSE_OWNER` (a runner sets it for its children: `job:<name>/<run>`), else launchd's
+ * `AUTOBROWSE_JOB` (a runner sets it for its children: `job:<name>/<run>`), else launchd's
  * `XPC_SERVICE_NAME` (every launchd job has it; children inherit it).
  * - autobrowse's own Chrome launches carry it as `--autobrowse-job=<job>`: it shows in `ps` and
  *   outlives the launcher (an orphan still names its job)
@@ -16,7 +16,7 @@ const JOB_RE = new RegExp(`${JOB_FLAG}=(\\S+)`);
 
 /** The job this process runs for, from its env; null for a shell or a GUI app. */
 export function jobOfEnv(env: NodeJS.ProcessEnv = process.env): string | null {
-  const own = env.AUTOBROWSE_OWNER?.trim();
+  const own = env.AUTOBROWSE_JOB?.trim();
   if (own) return own.replace(/\s+/g, "_");
   const xpc = env.XPC_SERVICE_NAME?.trim();
   // "0": no launchd job; "application.*": an app (Terminal, an IDE), not a job
@@ -41,7 +41,7 @@ export function jobsOfEnvLines(out: string): Map<number, string> {
     const pid = Number(/^\s*(\d+)\s/.exec(line)?.[1]);
     if (!pid) continue;
     const env: NodeJS.ProcessEnv = {};
-    for (const key of ["AUTOBROWSE_OWNER", "XPC_SERVICE_NAME"]) {
+    for (const key of ["AUTOBROWSE_JOB", "XPC_SERVICE_NAME"]) {
       // the env follows the command: the last match is the env's, not an argument's
       const all = [...line.matchAll(new RegExp(`(?:^|\\s)${key}=(\\S*)`, "g"))];
       const v = all.at(-1)?.[1];

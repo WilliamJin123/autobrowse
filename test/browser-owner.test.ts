@@ -3,8 +3,8 @@ import { ProfileBusy, profileBusyOf } from "../src/browser/browsers.js";
 import { jobArgs, jobOfCommand, jobOfEnv, jobsOf, jobsOfEnvLines } from "../src/browser/owner.js";
 
 describe("browser owner", () => {
-  it("reads the job from the env: AUTOBROWSE_OWNER, then a launchd label", () => {
-    expect(jobOfEnv({ AUTOBROWSE_OWNER: "job:capture/7", XPC_SERVICE_NAME: "com.x" })).toBe(
+  it("reads the job from the env: AUTOBROWSE_JOB, then a launchd label", () => {
+    expect(jobOfEnv({ AUTOBROWSE_JOB: "job:capture/7", XPC_SERVICE_NAME: "com.x" })).toBe(
       "job:capture/7",
     );
     expect(jobOfEnv({ XPC_SERVICE_NAME: "com.wrenautomation.desk" })).toBe(
@@ -13,7 +13,7 @@ describe("browser owner", () => {
     expect(jobOfEnv({ XPC_SERVICE_NAME: "0" })).toBeNull();
     expect(jobOfEnv({ XPC_SERVICE_NAME: "application.com.apple.Terminal.123" })).toBeNull();
     expect(jobOfEnv({})).toBeNull();
-    expect(jobArgs({ AUTOBROWSE_OWNER: "job:a b" })).toEqual(["--autobrowse-job=job:a_b"]);
+    expect(jobArgs({ AUTOBROWSE_JOB: "job:a b" })).toEqual(["--autobrowse-job=job:a_b"]);
     expect(jobArgs({})).toEqual([]);
   });
   it("reads the flag from a command line", () => {
@@ -23,7 +23,7 @@ describe("browser owner", () => {
   it("reads ps eww lines: the env after the command wins", () => {
     const out = [
       "  12 node mail.mjs XPC_SERVICE_NAME=0 HOME=/u",
-      "  13 node run.mjs --x XPC_SERVICE_NAME=com.a AUTOBROWSE_OWNER=job:c/1",
+      "  13 node run.mjs --x XPC_SERVICE_NAME=com.a AUTOBROWSE_JOB=job:c/1",
       "  14 /bin/zsh XPC_SERVICE_NAME=com.b",
       "  15 node x.js XPC_SERVICE_NAME=application.foo",
     ].join("\n");
