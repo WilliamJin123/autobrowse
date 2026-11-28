@@ -50,6 +50,7 @@ import type { Hints } from "./locate.js";
 import { guardMemory, treeOf } from "./memory-guard.js";
 import { notReachable, type OwnBrowser, ownEndpoint, runsInOwn } from "./own.js";
 import { addTab, backgroundTab, dropTab, ownTabsFile, reapTabs } from "./own-tabs.js";
+import { jobArgs } from "./owner.js";
 import { DISK_CACHE_BYTES } from "./profile-trim.js";
 import { listProcs, reapOrphans, reapTempDirs } from "./reap.js";
 import { assertNotReserved, isDesk } from "./reserve.js";
@@ -671,6 +672,7 @@ async function launchLocal(
         : []),
       ...(headless ? [] : [...X11_ARGS, ...HEADED_ARGS]),
       ...(testing ? TESTING_ARGS : []),
+      ...jobArgs(), // the job that owns it, in `ps` (`browser/owner`)
     ],
     ignoreDefaultArgs: ["--enable-automation"],
     // else Playwright adds --no-sandbox: an infobar and a bot tell; the Linux worker runs as root, keeps it

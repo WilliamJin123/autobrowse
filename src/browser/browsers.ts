@@ -11,6 +11,7 @@ import { join } from "node:path";
 import type { ExploreInfo } from "../explore/server.js";
 import { ENGINES, familyOf } from "./engines.js";
 import { type Crash, recentCrashes } from "./launch-hygiene.js";
+import { jobOfCommand, jobsOf } from "./owner.js";
 import {
   browserRoots,
   footprintKb,
@@ -53,6 +54,8 @@ export interface BrowserRow {
   age: number;
   /** Memory of the process tree: the footprint on macOS, resident elsewhere. */
   mb: number;
+  /** The job that owns it (`browser/owner`): `job:<name>/<run>` or a launchd label. */
+  job?: string;
 }
 
 export interface ExplorerRow extends ExploreInfo {
@@ -96,21 +99,24 @@ export function openerOf(
 const argsAfter = (command: string, script: RegExp): string | undefined =>
   command.split(script)[1]?.trim().slice(0, 120) || undefined;
 
-/** `openerOf`, plus what the opener runs (`op`) and how long the browser has lived. */
+/** `openerOf`, plus what the opener runs (`op`), how long the browser has lived and its job (`jobs`, else its flag). */
 export function holderOf(
   pid: number,
   profile: string,
   procs: Proc[],
   explorers: ExploreInfo[],
-): { opener: Opener; op?: string; ageS?: number } {
+  jobs: Map<number, string> = new Map(),
+): { opener: Opener; op?: string; ageS?: number; job?: string } {
   const byPid = new Map(procs.map((p) => [p.pid, p]));
   const root = byPid.get(pid);
   if (!root) return { opener: "gone" };
   const ageS = root.age;
+  const job = jobs.get(pid) ?? jobOfCommand(root.command);
   const out = (opener: Opener, op?: string) => ({
     opener,
     ...(op ? { op } : {}),
     ...(ageS !== undefined ? { ageS } : {}),
+    ...(job ? { job } : {}),
   });
   const owner = ownerPid(root.command);
   const first = byPid.get(owner ?? root.ppid);
@@ -184,8 +190,10 @@ const LOCKLESS_FOLDER = new RegExp(
 /** Everything `browsers` and `doctor` show; never throws. */
 export async function browsersNow(profilesDir: string, procs?: Proc[]): Promise<BrowsersView> {
   const ps = procs ?? (await withFootprint(await listProcs().catch(() => []), profilesDir));
+  const roots = browserRoots(ps, profilesDir).map((p) => p.pid);
+  const jobs = await jobsOf(roots, ps).catch(() => new Map<number, string>());
   return {
-    ...viewOf(ps, profilesDir, readExplorers(ps), totalmem() / 2 ** 20),
+    ...viewOf(ps, profilesDir, readExplorers(ps), totalmem() / 2 ** 20, undefined, jobs),
     crashes: recentCrashes(),
   };
 }
@@ -229,6 +237,7 @@ export function viewOf(
   explorers: ExplorerRow[],
   ramMb: number,
   locks = (profile: string) => lockHolder(join(profilesDir, profile)),
+  jobs: Map<number, string> = new Map(),
 ): BrowsersView {
   const kids = new Map<number, Proc[]>();
   for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p]);
@@ -237,13 +246,15 @@ export function viewOf(
   const enginesDir = join(profilesDir, ".engines");
   const browsers = browserRoots(procs, profilesDir).map((p) => {
     const engine = engineOfFolder(profileFolderOf(p.command) ?? "", enginesDir);
+    const { opener, job } = holderOf(p.pid, p.profile, procs, explorers, jobs);
     return {
       pid: p.pid,
-      opener: openerOf(p.pid, p.profile, procs, explorers),
+      opener,
       profile: p.profile,
       ...(engine ? { engine } : {}),
       age: p.age ?? 0,
       mb: Math.round(treeKb(p) / 1024),
+      ...(job ? { job } : {}),
     };
   });
   const ours = new Set(browsers.map((b) => b.pid));
@@ -343,6 +354,8 @@ export class ProfileBusy extends Error {
   /** What the holder runs (`site call x GET /me`, an explore session) and its browser's age. */
   readonly op?: string | undefined;
   readonly ageS?: number | undefined;
+  /** The job that owns the holder (`browser/owner`). */
+  readonly job?: string | undefined;
   constructor(
     profile: string,
     pid: number,
@@ -350,13 +363,14 @@ export class ProfileBusy extends Error {
     opener: Opener,
     /** The profile's directory: where its `SingletonLock` is. */
     profileDir: string,
-    held: { op?: string; ageS?: number } = {},
+    held: { op?: string; ageS?: number; job?: string } = {},
   ) {
     super(
-      `profile ${profile} is open in pid ${pid} (${opener})${held.op ? `: ${held.op}` : ""}${held.ageS !== undefined ? `, for ${ageText(held.ageS)}` : ""}`,
+      `profile ${profile} is open in pid ${pid} (${opener})${held.op ? `: ${held.op}` : ""}${held.ageS !== undefined ? `, for ${ageText(held.ageS)}` : ""}${held.job ? `; job ${held.job}` : ""}`,
     );
     this.op = held.op;
     this.ageS = held.ageS;
+    this.job = held.job;
     this.profile = profile;
     this.pid = pid;
     this.opener = opener;
@@ -365,7 +379,7 @@ export class ProfileBusy extends Error {
   }
 }
 
-const BUSY_TEXT = /profile (\S+) is open in pid (\d+) \(([^)]+)\)/;
+const BUSY_TEXT = /profile (\S+) is open in pid (\d+) \(([^)]+)\)(?:.*; job (\S+))?/;
 
 /**
  * The `ProfileBusy` behind `err`: itself, a cause down its chain, or (a wrapper that kept only
@@ -377,7 +391,9 @@ export function profileBusyOf(err: unknown): ProfileBusy | null {
     e = (e as { cause?: unknown }).cause;
   }
   const m = BUSY_TEXT.exec(err instanceof Error ? err.message : String(err ?? ""));
-  return m ? new ProfileBusy(m[1] as string, Number(m[2]), m[3] as string, "") : null;
+  return m
+    ? new ProfileBusy(m[1] as string, Number(m[2]), m[3] as string, "", m[4] ? { job: m[4] } : {})
+    : null;
 }
 
 /**
@@ -398,7 +414,8 @@ export async function assertProfileFree(
     pid = holderPid(procs, profileDir);
   }
   if (!pid) return;
-  const { opener, ...held } = holderOf(pid, profile, procs, readExplorers(procs));
+  const jobs = await jobsOf([pid], procs).catch(() => new Map<number, string>());
+  const { opener, ...held } = holderOf(pid, profile, procs, readExplorers(procs), jobs);
   throw new ProfileBusy(profile, pid, opener, profileDir, held);
 }
 

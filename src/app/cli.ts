@@ -939,7 +939,7 @@ program
 const browsers = program
   .command("browsers")
   .description(
-    "Every browser of ours on this machine (opener, age, memory) and every explore server (idle, held); warnings name their fix",
+    "Every browser of ours on this machine (opener, age, memory, job) and every explore server (idle, held); warnings name their fix",
   )
   .option("--json", "as JSON, warnings included")
   .action(async (o: { json?: boolean }) => {
@@ -960,6 +960,7 @@ const browsers = program
         b.profile,
         ago(b.age),
         `${b.mb} MB`,
+        b.job ? `job ${b.job}` : "",
       ]),
       ...v.explorers.map((e) => [
         `:${e.port}`,
@@ -967,6 +968,7 @@ const browsers = program
         e.driver,
         `up ${ago((Date.now() - Date.parse(e.startedAt)) / 1000)}`,
         `${e.mb} MB driver${e.held ? `, ${warn("held")}` : `, idle ${e.idleMinutes}m`}`,
+        "",
       ]),
     ];
     for (const line of columns(rows)) console.log(line);
